@@ -1,0 +1,24 @@
+{
+  "name": "our-little-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A cute top-down pixel life-sim, made with love.",
+  "scripts": {
+    "predev": "node scripts/generate-icons.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/generate-icons.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "phaser": "^3.88.2"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
