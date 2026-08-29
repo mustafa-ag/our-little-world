@@ -98,7 +98,8 @@ export class DrivingScene extends Phaser.Scene {
     this.finished = true;
     this.cameras.main.fadeOut(220, 20, 30, 50);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start(SceneKeys.World, { locationId: this.destId });
+      store.setInJeep(true);
+      this.scene.start(SceneKeys.World, { locationId: this.destId, driving: true });
     });
   }
 
@@ -212,7 +213,8 @@ export class DrivingScene extends Phaser.Scene {
   private leaveArrived() {
     this.cameras.main.fadeOut(400, 20, 30, 50);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start(SceneKeys.World, { locationId: this.destId });
+      store.setInJeep(true);
+      this.scene.start(SceneKeys.World, { locationId: this.destId, driving: true });
     });
   }
 }

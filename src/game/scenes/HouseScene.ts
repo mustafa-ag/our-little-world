@@ -153,6 +153,7 @@ export class HouseScene extends Phaser.Scene {
     this.scene.start(SceneKeys.World, {
       locationId: loc.id,
       spawn: { x: s.tx * TILE + TILE / 2, y: (s.ty + 2) * TILE },
+      driving: store.state.inJeep,
     });
   }
 

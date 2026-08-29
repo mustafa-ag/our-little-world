@@ -91,7 +91,7 @@ export class TitleScene extends Phaser.Scene {
     store.save();
     this.cameras.main.fadeOut(300, 142, 202, 230);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start(SceneKeys.World, { locationId: store.state.currentLocation });
+      this.scene.start(SceneKeys.World, { locationId: store.state.currentLocation, driving: store.state.inJeep });
     });
   }
 }

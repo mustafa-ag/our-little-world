@@ -40,7 +40,7 @@ export class WorldScene extends Phaser.Scene {
     super(SceneKeys.World);
   }
 
-  create(data: { locationId?: string; spawn?: { x: number; y: number }; from?: Cardinal }) {
+  create(data: { locationId?: string; spawn?: { x: number; y: number }; from?: Cardinal; driving?: boolean }) {
     this.interactables = [];
     this.npcs = [];
     this.currentPrompt = null;
@@ -82,7 +82,11 @@ export class WorldScene extends Phaser.Scene {
 
     this.physics.add.collider(this.player, this.solids);
 
-    for (const z of world.zones) this.addZoneInteractable(z);
+    for (const z of world.zones) {
+      if (z.action === "drive") continue;
+      this.addZoneInteractable(z);
+    }
+    this.placeFollowJeep(spawn.x, spawn.y, data.driving ?? store.state.inJeep);
 
     this.setupMinimap(def);
 
@@ -283,20 +287,35 @@ export class WorldScene extends Phaser.Scene {
     this.interactables.push({ x: z.x, y: z.y, radius: z.radius, prompt: z.prompt, trigger });
   }
 
-  private hopIn() {
+  private placeFollowJeep(x: number, y: number, stayIn: boolean) {
+    const jx = x + 18;
+    const jy = y + 6;
+    this.addZoneInteractable({
+      x: jx,
+      y: jy,
+      radius: 28,
+      action: "drive",
+      prompt: "Get in the Jeep",
+    });
+    if (stayIn) this.hopIn({ quiet: true });
+  }
+
+  private hopIn(opts?: { quiet?: boolean }) {
     this.closeDriveMenu();
     this.driving = true;
+    store.setInJeep(true);
     this.player.speed = this.baseSpeed * 2.8;
     this.player.setVisible(false);
     this.player.setAlpha(0);
     this.parkedJeep?.setVisible(false);
     this.rideJeep = this.add.image(this.player.x, this.player.y, "v_jeep_blue").setDepth(this.player.y + 1);
-    store.toast("Jeep time — hold a direction. A to hop out.", "#2f6fd0");
+    if (!opts?.quiet) store.toast("Jeep time — hold a direction. A to hop out.", "#2f6fd0");
     uiEvents.emit("prompt", "A · hop out of the Jeep");
   }
 
   private hopOut() {
     this.driving = false;
+    store.setInJeep(false);
     this.player.speed = this.baseSpeed;
     this.player.setVisible(true);
     this.player.setAlpha(1);
@@ -374,7 +393,7 @@ export class WorldScene extends Phaser.Scene {
     this.cameras.main.fadeOut(180, 40, 60, 90);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       uiEvents.emit("prompt", null);
-      this.scene.start(SceneKeys.World, { locationId: dest.id, from });
+      this.scene.start(SceneKeys.World, { locationId: dest.id, from, driving: this.driving || store.state.inJeep });
     });
   }
 

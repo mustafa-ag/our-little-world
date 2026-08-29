@@ -107,6 +107,35 @@ export function bed(x: number, y: number, w: number, h: number, tex = "t_sand"):
   return { x, y, w, h, tex, walkable: true };
 }
 
+/** Manicured grass — walkable, just looks planted. */
+export function lawn(x: number, y: number, w: number, h: number): SurfaceSpec {
+  return { x, y, w, h, tex: "t_lawn", alt: "t_grass", walkable: true };
+}
+
+export function golf(x: number, y: number, w: number, h: number): SurfaceSpec {
+  return { x, y, w, h, tex: "t_golf", alt: "t_grass", walkable: true };
+}
+
+export function parking(x: number, y: number, w: number, h: number): SurfaceSpec {
+  return { x, y, w, h, tex: "t_parking", walkable: true };
+}
+
+export function stonePlaza(x: number, y: number, w: number, h: number): SurfaceSpec {
+  return { x, y, w, h, tex: "t_plaza_stone", alt: "t_pavement", walkable: true };
+}
+
+export function hedge(points: PathPoint[], width = 1): PathSpec {
+  return { points, width, tex: "t_hedge", kind: "path", walkable: false };
+}
+
+export function crossing(a: PathPoint, b: PathPoint): PathSpec {
+  return street([a, b], 2, "t_crossing");
+}
+
+export function driveway(from: PathPoint, to: PathPoint): PathSpec {
+  return walkPath([from, to], 2, "t_asphalt");
+}
+
 /** Average unit normal at a polyline vertex (screen y-down). */
 function normals(points: PathPoint[]): PathPoint[] {
   const n = points.length;

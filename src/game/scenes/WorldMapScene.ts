@@ -302,7 +302,7 @@ export class WorldMapScene extends Phaser.Scene {
       store.unlockLocation(loc.cityId);
       store.unlockLocation(loc.id);
       uiEvents.emit("prompt", null);
-      this.scene.start(SceneKeys.World, { locationId: loc.id });
+      this.scene.start(SceneKeys.World, { locationId: loc.id, driving: store.state.inJeep });
     });
   }
 }

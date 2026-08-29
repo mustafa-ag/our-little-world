@@ -200,7 +200,8 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
 
   // ---- authored surfaces (plazas, parks, gardens, parking) ----
   for (const s of city.surfaces ?? []) {
-    paintRect(s, s.tex, s.alt, s.walkable === false || s.tex === "t_water");
+    const shut = s.walkable === false || s.tex === "t_water" || s.tex === "t_hedge";
+    paintRect(s, s.tex, s.alt, shut, !shut);
   }
 
   // ---- water ----
@@ -224,22 +225,22 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     return e?.ty ?? Math.floor(h / 2);
   };
 
-  // road through exit gaps (aligned to the authored entry, not the map centre)
+  // road through exit gaps — deep enough that you can actually reach the edge
   (Object.keys(def.exits ?? {}) as Cardinal[]).forEach((dir) => {
     const axis = gapAxis(dir);
     if (dir === "north" || dir === "south") {
-      const y0 = dir === "north" ? 0 : h - 4;
-      for (let y = y0; y < y0 + 4; y++)
-        for (let x = axis - 7; x <= axis + 7; x++) {
+      const y0 = dir === "north" ? 0 : h - 12;
+      for (let y = y0; y < y0 + 12; y++)
+        for (let x = axis - 8; x <= axis + 8; x++) {
           if (!inB(x, y)) continue;
           ground[y][x] = city.road;
           blocked[y][x] = false;
           walk[y][x] = true;
         }
     } else {
-      const x0 = dir === "west" ? 0 : w - 4;
-      for (let x = x0; x < x0 + 4; x++)
-        for (let y = axis - 7; y <= axis + 7; y++) {
+      const x0 = dir === "west" ? 0 : w - 12;
+      for (let x = x0; x < x0 + 12; x++)
+        for (let y = axis - 8; y <= axis + 8; y++) {
           if (!inB(x, y)) continue;
           ground[y][x] = city.road;
           blocked[y][x] = false;
@@ -254,8 +255,8 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   const gap = (dir: Cardinal, x: number, y: number) => {
     if (!def.exits?.[dir]) return false;
     const axis = gapAxis(dir);
-    if (dir === "north" || dir === "south") return Math.abs(x - axis) <= 7;
-    return Math.abs(y - axis) <= 7;
+    if (dir === "north" || dir === "south") return Math.abs(x - axis) <= 8;
+    return Math.abs(y - axis) <= 8;
   };
   for (let x = 0; x < w; x++) {
     for (const y of [0, h - 1]) {
@@ -283,21 +284,32 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     const cx = p.tx * TILE + TILE / 2;
     const baseY = (p.ty + 1) * TILE;
 
-    if (role === "drive") {
-      zones.push({ x: cx, y: baseY, radius: 26, action: "drive", prompt: "Get in the Jeep" });
-      return;
-    }
+    if (role === "drive") return;
 
     props.push({ tex: p.tex, x: cx, y: baseY });
 
-    // footprint collision (2 rows for buildings, 1 for small props)
-    const isBuilding = pw >= TILE * 1.5 || ph >= TILE * 1.5;
     const solid = p.solid !== false;
     if (solid) {
-      for (let x = leftTx; x < leftTx + wTiles; x++) {
-        if (x <= 0 || x >= w - 1) continue;
-        if (inB(x, p.ty) && !walk[p.ty][x]) blocked[p.ty][x] = true;
-        if (isBuilding && inB(x, p.ty - 1) && !walk[p.ty - 1][x]) blocked[p.ty - 1][x] = true;
+      if (p.footprint) {
+        const fw = p.footprint.w;
+        const fh = p.footprint.h;
+        const fx0 = p.tx + (p.footprint.ox ?? -Math.floor(fw / 2));
+        const fy0 = p.ty + (p.footprint.oy ?? 1 - fh);
+        for (let y = fy0; y < fy0 + fh; y++)
+          for (let x = fx0; x < fx0 + fw; x++) {
+            if (!inB(x, y) || x <= 0 || x >= w - 1 || y <= 0 || y >= h - 1) continue;
+            if (!walk[y][x]) blocked[y][x] = true;
+          }
+      } else {
+        const isBuilding = pw >= TILE * 1.5 || ph >= TILE * 1.5;
+        const depth = isBuilding ? Math.max(2, Math.round(ph / TILE) - 1) : 1;
+        for (let x = leftTx; x < leftTx + wTiles; x++) {
+          if (x <= 0 || x >= w - 1) continue;
+          for (let dy = 0; dy < depth; dy++) {
+            const yy = p.ty - dy;
+            if (inB(x, yy) && !walk[yy][x]) blocked[yy][x] = true;
+          }
+        }
       }
     }
 

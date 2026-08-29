@@ -20,6 +20,8 @@ export interface GameState {
   coins: number;
   outfit: string;
   currentLocation: string;
+  /** True while she's in the Jeep — survives map / district travel. */
+  inJeep: boolean;
   unlockedLocations: string[];
   quests: Record<string, QuestProgress>;
   flags: Record<string, boolean>;
@@ -38,6 +40,7 @@ export function defaultState(): GameState {
     coins: 10,
     outfit: "casual",
     currentLocation: "abudhabi_yas",
+    inJeep: false,
     unlockedLocations: ["abudhabi", "abudhabi_yas"],
     quests: {},
     flags: {},
@@ -52,7 +55,7 @@ export function loadState(): GameState {
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw) as GameState;
     if (parsed.version !== VERSION) return { ...defaultState(), ...parsed, version: VERSION };
-    return { ...defaultState(), ...parsed };
+    return { ...defaultState(), ...parsed, version: VERSION };
   } catch {
     return defaultState();
   }

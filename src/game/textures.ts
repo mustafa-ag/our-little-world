@@ -122,6 +122,40 @@ function buildTiles(scene: Phaser.Scene) {
     px(ctx, 0, 2, TILE, 3, "#efe8d6");
     px(ctx, 0, 10, TILE, 3, "#efe8d6");
   });
+  createTex(scene, "t_asphalt", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#4a4e56");
+    speckle(ctx, TILE, TILE, "#3a3e46", 8, 4);
+  });
+  createTex(scene, "t_road_lane", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, Palette.road);
+    px(ctx, 7, 2, 2, 4, "#efe8d6");
+    px(ctx, 7, 10, 2, 4, "#efe8d6");
+  });
+  createTex(scene, "t_lawn", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#6aaa58");
+    speckle(ctx, TILE, TILE, "#5a9a48", 7, 19);
+  });
+  createTex(scene, "t_golf", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#8ec86a");
+    px(ctx, 0, 0, TILE, 1, "#7ab858");
+    speckle(ctx, TILE, TILE, "#9ad878", 6, 31);
+  });
+  createTex(scene, "t_plaza_stone", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#d4cfc2");
+    px(ctx, 0, 0, TILE, 1, "#c4bfb2");
+    px(ctx, 0, 0, 1, TILE, "#c4bfb2");
+    speckle(ctx, TILE, TILE, "#e4dfd2", 5, 41);
+  });
+  createTex(scene, "t_parking", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#4a4e56");
+    px(ctx, 1, 1, 1, 14, "#efe8d6");
+    px(ctx, 14, 1, 1, 14, "#efe8d6");
+  });
+  createTex(scene, "t_hedge", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#3f7a3a");
+    speckle(ctx, TILE, TILE, "#4f8a4a", 10, 12);
+    px(ctx, 0, 0, TILE, 2, "#2f6a2a");
+  });
   // interiors
   createTex(scene, "t_wood", TILE, TILE, (ctx) => {
     px(ctx, 0, 0, TILE, TILE, Palette.wood);
@@ -413,7 +447,56 @@ function buildBuildings(scene: Phaser.Scene) {
     px(ctx, 10, 76, 6, 8, "#7a5238");
   });
 
-  // Dubai Mall / Yas Mall — wide modern mall
+  createTex(scene, "b_yas_mall", 148, 74, (ctx) => {
+    px(ctx, 4, 18, 140, 56, "#efe6d4");
+    px(ctx, 4, 18, 140, 5, "#d8cdb8");
+    px(ctx, 0, 12, 60, 18, "#f4eee0");
+    px(ctx, 52, 8, 44, 22, "#eadfc8");
+    px(ctx, 96, 14, 52, 16, "#f4eee0");
+    px(ctx, 8, 28, 28, 16, "#bfe6ff");
+    px(ctx, 60, 26, 28, 18, "#bfe6ff");
+    px(ctx, 112, 28, 24, 16, "#bfe6ff");
+    px(ctx, 64, 52, 20, 22, "#6a5a48");
+    px(ctx, 68, 14, 12, 4, "#f4c95d");
+    for (let x = 16; x < 132; x += 18) px(ctx, x, 48, 8, 8, "#d4c8ae");
+  });
+  createTex(scene, "b_dubai_mall", 136, 82, (ctx) => {
+    px(ctx, 6, 22, 124, 60, "#e8dcc4");
+    px(ctx, 6, 22, 124, 6, "#d0c2a8");
+    px(ctx, 18, 10, 48, 24, "#f0e6d0");
+    px(ctx, 70, 14, 40, 20, "#e0d2b6");
+    px(ctx, 0, 28, 22, 40, "#d8ccb0");
+    px(ctx, 114, 30, 22, 38, "#d8ccb0");
+    px(ctx, 36, 28, 28, 20, "#9fd4f0");
+    px(ctx, 40, 32, 20, 12, "#cfeaff");
+    px(ctx, 58, 58, 18, 24, "#5a4a3a");
+    px(ctx, 62, 18, 10, 4, "#c6a463");
+    for (let x = 12; x < 120; x += 14) px(ctx, x, 50, 8, 10, "#cfe6f5");
+  });
+  createTex(scene, "b_dubai_hills_mall", 108, 62, (ctx) => {
+    px(ctx, 4, 16, 100, 46, "#f2f0ea");
+    px(ctx, 4, 16, 100, 4, "#d8d4cc");
+    px(ctx, 20, 6, 68, 16, "#e6e2da");
+    ctx.fillStyle = "#e6e2da";
+    ctx.beginPath();
+    ctx.moveTo(8, 22);
+    ctx.lineTo(28, 8);
+    ctx.lineTo(80, 8);
+    ctx.lineTo(100, 22);
+    ctx.fill();
+    px(ctx, 40, 20, 28, 16, "#bfe6ff");
+    px(ctx, 46, 44, 16, 18, "#3a6b4a");
+    px(ctx, 12, 36, 16, 10, "#cfe6f5");
+    px(ctx, 80, 36, 16, 10, "#cfe6f5");
+  });
+  createTex(scene, "o_ferrari", 42, 28, (ctx) => {
+    circle(ctx, 21, 16, 14, "#c0392b");
+    circle(ctx, 21, 16, 10, "#e74c3c");
+    px(ctx, 18, 8, 6, 4, "#f4c95d");
+    px(ctx, 8, 20, 26, 6, "#2a2a2a");
+  });
+
+  // generic leftover mall (unused by named places)
   createTex(scene, "b_mall", 88, 52, (ctx) => {
     px(ctx, 2, 10, 84, 42, "#e8eef4");
     px(ctx, 2, 10, 84, 4, "#c5d0dc");
@@ -638,6 +721,42 @@ function buildCityBuildings(scene: Phaser.Scene) {
   pitchedHouse(scene, "b_front_red", 32, 52, "#a5462f", "#8a3a26", "#4a2c1e", "#382116", { brick: true, chimney: false });
   pitchedHouse(scene, "b_front_cream", 32, 52, "#e4d3b0", "#cdb98f", "#5a5560", "#454049", { brick: false, chimney: false });
   pitchedHouse(scene, "b_pub", 40, 56, "#6b3a2a", "#542c20", "#3a2b3a", "#2a1b1a", { brick: true, chimney: true });
+  pitchedHouse(scene, "b_stucco", 34, 56, "#f2ebe0", "#ddd4c6", "#5a5560", "#454049", { brick: false, chimney: true });
+  pitchedHouse(scene, "b_soho_narrow", 26, 50, "#c9a07a", "#b08862", "#4a2c1e", "#382116", { brick: true, chimney: false });
+  pitchedHouse(scene, "b_shopfront_ldn", 36, 54, "#e8d8b8", "#d0c09e", "#3a2b3a", "#2a1b1a", { brick: false, chimney: false });
+
+  createTex(scene, "b_mansion", 52, 72, (ctx) => {
+    px(ctx, 2, 16, 48, 56, "#c4b49a");
+    px(ctx, 2, 16, 48, 4, "#a89478");
+    px(ctx, 0, 10, 52, 8, "#6a5a48");
+    for (let y = 24; y < 64; y += 12)
+      for (let x = 8; x < 46; x += 12) {
+        px(ctx, x, y, 7, 8, "#bfe6ff");
+        px(ctx, x + 3, y, 1, 8, "#c4b49a");
+      }
+    px(ctx, 22, 58, 8, 14, "#3a2b3a");
+  });
+  createTex(scene, "b_cream_comm", 48, 62, (ctx) => {
+    px(ctx, 1, 10, 46, 52, "#efe4cc");
+    px(ctx, 1, 10, 46, 3, "#d4c8ae");
+    px(ctx, 0, 6, 48, 6, "#8a7a62");
+    for (let x = 6; x < 44; x += 10) px(ctx, x, 18, 7, 14, "#cfe6f5");
+    px(ctx, 6, 38, 36, 10, "#3a2b3a");
+    px(ctx, 20, 50, 8, 12, "#5a4a3a");
+  });
+  createTex(scene, "b_ritz", 76, 72, (ctx) => {
+    px(ctx, 2, 18, 72, 54, "#f3ead4");
+    px(ctx, 2, 18, 72, 4, "#d8ccb0");
+    px(ctx, 0, 8, 76, 12, "#3a2b3a");
+    px(ctx, 4, 6, 68, 6, "#5a4a3a");
+    px(ctx, 28, 2, 20, 8, "#c0392b");
+    px(ctx, 32, 3, 12, 4, "#f4d35e");
+    for (let y = 26; y < 58; y += 12)
+      for (let x = 8; x < 70; x += 10) px(ctx, x, y, 6, 8, "#cfe6f5");
+    px(ctx, 32, 58, 12, 14, "#3a2b3a");
+    px(ctx, 6, 16, 4, 8, "#c0392b");
+    px(ctx, 66, 16, 4, 8, "#c0392b");
+  });
 
   // Edinburgh — tall grey stone tenement
   createTex(scene, "b_tenement", 42, 98, (ctx) => {
@@ -947,6 +1066,35 @@ function buildLandmarks(scene: Phaser.Scene) {
     ctx.closePath();
     ctx.fill();
     px(ctx, 21, 0, 2, 5, "#f4c95d");
+  });
+
+  createTex(scene, "lm_westminster", 132, 88, (ctx) => {
+    const stone = "#c6a463";
+    const stoneD = "#a9853f";
+    px(ctx, 4, 36, 124, 52, stone);
+    px(ctx, 4, 36, 124, 5, stoneD);
+    for (let x = 10; x < 120; x += 14) {
+      px(ctx, x, 44, 8, 16, "#5c4626");
+      px(ctx, x + 1, 46, 6, 12, "#a9c7dd");
+    }
+    px(ctx, 8, 18, 18, 22, stoneD);
+    px(ctx, 106, 18, 18, 22, stoneD);
+    for (let x = 12; x < 24; x += 6) px(ctx, x, 22, 3, 10, "#4a3a24");
+    for (let x = 110; x < 122; x += 6) px(ctx, x, 22, 3, 10, "#4a3a24");
+    ctx.fillStyle = stoneD;
+    ctx.beginPath();
+    ctx.moveTo(8, 18);
+    ctx.lineTo(17, 4);
+    ctx.lineTo(26, 18);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(106, 18);
+    ctx.lineTo(115, 4);
+    ctx.lineTo(124, 18);
+    ctx.fill();
+    px(ctx, 56, 64, 20, 24, "#5c4626");
+    px(ctx, 60, 68, 12, 16, "#3a2b3a");
+    for (let x = 16; x < 116; x += 10) px(ctx, x, 70, 2, 10, stoneD);
   });
 
   // ---- Edinburgh Castle: multi-tower fortress on a crag ----

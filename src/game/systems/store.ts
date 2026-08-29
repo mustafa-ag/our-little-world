@@ -77,6 +77,11 @@ class Store extends Phaser.Events.EventEmitter {
     this.save();
   }
 
+  setInJeep(on: boolean) {
+    this.state.inJeep = on;
+    this.save();
+  }
+
   // ---- flags & pickups ----
   setFlag(key: string, value = true) {
     this.state.flags[key] = value;
