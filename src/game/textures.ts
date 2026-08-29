@@ -358,6 +358,33 @@ function buildProps(scene: Phaser.Scene) {
     px(ctx, 13, 2, 2, 8, "#cfeaff");
     circle(ctx, 14, 12, 3, "#8fdcf3");
   });
+  createTex(scene, "o_cat", 16, 14, (ctx) => {
+    px(ctx, 3, 5, 10, 6, "#c9a06a");
+    px(ctx, 3, 4, 3, 2, "#c9a06a");
+    px(ctx, 10, 4, 3, 2, "#c9a06a");
+    px(ctx, 3, 4, 2, 2, "#8a6a3a");
+    px(ctx, 11, 4, 2, 2, "#8a6a3a");
+    px(ctx, 5, 7, 1, 1, "#2a2230");
+    px(ctx, 9, 7, 1, 1, "#2a2230");
+    px(ctx, 7, 8, 2, 1, "#e8b4c8");
+    px(ctx, 12, 8, 4, 1, "#c9a06a");
+    px(ctx, 2, 10, 2, 3, "#c9a06a");
+    px(ctx, 11, 10, 2, 3, "#c9a06a");
+  });
+  createTex(scene, "o_note", 12, 14, (ctx) => {
+    px(ctx, 1, 1, 10, 12, "#fff4e6");
+    px(ctx, 1, 1, 10, 1, "#e8d6be");
+    px(ctx, 3, 4, 6, 1, "#e46d94");
+    px(ctx, 3, 7, 6, 1, "#caa27a");
+    px(ctx, 3, 10, 4, 1, "#caa27a");
+  });
+  createTex(scene, "o_postcard", 16, 12, (ctx) => {
+    px(ctx, 0, 1, 16, 10, "#fff4e6");
+    px(ctx, 1, 2, 7, 8, "#8ecae6");
+    px(ctx, 9, 3, 5, 1, "#e46d94");
+    px(ctx, 9, 6, 5, 1, "#caa27a");
+    px(ctx, 13, 8, 2, 2, "#e46d94");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1568,6 +1595,14 @@ function buildUI(scene: Phaser.Scene) {
     ctx.beginPath();
     ctx.arc(24, 24, 12, 0, Math.PI * 2);
     ctx.fill();
+  });
+  createTex(scene, "ui_phone", 16, 22, (ctx) => {
+    ctx.fillStyle = "#3a2b3a";
+    ctx.fillRect(2, 0, 12, 22);
+    ctx.fillStyle = "#bfe6ff";
+    ctx.fillRect(3, 3, 10, 14);
+    ctx.fillStyle = "#e46d94";
+    ctx.fillRect(7, 19, 2, 2);
   });
   createTex(scene, "ui_btn", 64, 64, (ctx) => {
     ctx.fillStyle = "rgba(255,255,255,0.85)";

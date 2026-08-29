@@ -63,6 +63,12 @@ export const Outfits: Record<string, { top: string; topShade: string; bottom: st
   sporty: { label: "Sporty", top: "#7be0a3", topShade: "#57bf82", bottom: "#333a45", shoes: "#f4f4f4" },
   elegant: { label: "Elegant", top: "#e2637a", topShade: "#bf4a60", bottom: "#3a2b3a", shoes: "#2a2230" },
   winter: { label: "Winter", top: "#8ecae6", topShade: "#6aa9c8", bottom: "#3d5a80", shoes: "#2a2230" },
+  london_coat: { label: "London Coat", top: "#3d4a6b", topShade: "#2a334d", bottom: "#2a2230", shoes: "#1a1420" },
+  pink_dress: { label: "Pink Dress", top: "#ff8fb8", topShade: "#e46d94", bottom: "#ff8fb8", shoes: "#fff4e6" },
+  edi_hoodie: { label: "Edinburgh Hoodie", top: "#3d8b6e", topShade: "#2d6b54", bottom: "#333a45", shoes: "#2a2230" },
+  sneakers: { label: "Mall sneakers", top: "#fff4e6", topShade: "#e8d6be", bottom: "#5b6ee1", shoes: "#ffffff" },
+  city_bag: { label: "City bag", top: "#c9a27a", topShade: "#a8845c", bottom: "#3a2b3a", shoes: "#2a2230" },
+  secret_gold: { label: "Golden hour", top: "#f4c95d", topShade: "#d4a83a", bottom: "#3a2b3a", shoes: "#fff4e6" },
 };
 
 export type OutfitId = keyof typeof Outfits;

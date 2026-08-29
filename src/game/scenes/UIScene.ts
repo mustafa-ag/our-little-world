@@ -4,7 +4,13 @@ import { store } from "../systems/store";
 import { controls, uiEvents, minimap } from "../systems/controls";
 import { activeQuests } from "../systems/quests";
 import { Outfits } from "../palette";
+import { OUTFIT_UNLOCKS } from "../data/outfits";
 import { rebuildPlayerTexture } from "../textures";
+import { PhoneOverlay } from "../ui/PhoneOverlay";
+import { openActivity, type MiniSpec } from "../ui/minigames";
+import { NPCS } from "../data/npcs";
+import { ITEMS } from "../data/items";
+import * as quests from "../systems/quests";
 
 const FONT = "monospace";
 
@@ -29,6 +35,12 @@ export class UIScene extends Phaser.Scene {
   private actionBtn!: Phaser.GameObjects.Image;
   private mapBtn!: Phaser.GameObjects.Image;
   private fitBtn!: Phaser.GameObjects.Image;
+  private phoneBtn!: Phaser.GameObjects.Image;
+  private phoneBadge!: Phaser.GameObjects.Text;
+  private clockText!: Phaser.GameObjects.Text;
+  private phone!: PhoneOverlay;
+  private giftMenu?: Phaser.GameObjects.Container;
+  private pendingGiftNpc?: string;
 
   // dialogue
   private dlg!: Phaser.GameObjects.Container;
@@ -87,6 +99,10 @@ export class UIScene extends Phaser.Scene {
       .text(34, 39, `${store.state.coins}`, { fontFamily: FONT, fontSize: "16px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 4, resolution: 2 })
       .setScrollFactor(0)
       .setDepth(20);
+    this.clockText = this.add
+      .text(12, 64, store.clockLabel(), { fontFamily: FONT, fontSize: "10px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(20);
 
     // ---- quest tracker ----
     this.questBox = this.add
@@ -118,6 +134,7 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setVisible(false);
 
+    this.phone = new PhoneOverlay(this);
     this.buildJoystick();
     this.buildButtons();
     this.buildDialogue();
@@ -132,12 +149,22 @@ export class UIScene extends Phaser.Scene {
     store.on("coins", (v: number) => this.coinText.setText(`${v}`));
     store.on("questUpdated", () => this.refreshQuests());
     store.on("toast", (t: string, c: string) => this.showToast(t, c));
+    store.on("time", () => this.clockText.setText(store.clockLabel()));
+    store.on("newDay", () => this.clockText.setText(store.clockLabel()));
+    store.on("message", () => this.phone.refreshBadge());
+    store.on("relGain", () => this.heartPop());
 
     uiEvents.on("prompt", (p: string | null) => this.setPrompt(p));
-    uiEvents.on("dialogue", (name: string, lines: string[]) => this.openDialogue(name, lines));
+    uiEvents.on("dialogue", (name: string, lines: string[], extra?: { npcId?: string }) => {
+      this.pendingGiftNpc = extra?.npcId;
+      this.openDialogue(name, lines);
+    });
     uiEvents.on("action", () => this.onAction());
     uiEvents.on("openShop", () => this.openShop());
+    uiEvents.on("openPhone", () => this.phone.show());
+    uiEvents.on("openLocalMap", () => this.openLocalMap());
     uiEvents.on("minigame", (spec: import("../systems/controls").MiniGameSpec) => this.openMiniGame(spec));
+    uiEvents.on("sceneReset", () => this.resetOverlays());
     uiEvents.on("locationTitle", (n: string, s: string) => {
       this.showLocationTitle(n, s);
       this.refreshQuests();
@@ -573,6 +600,20 @@ export class UIScene extends Phaser.Scene {
     this.actionBtn = this.makeButton(width - 66, height - 70, "A", 1.1, () => uiEvents.emit("action"));
     this.mapBtn = this.makeButton(width - 66, height - 150, "Map", 0.75, () => uiEvents.emit("openMap"));
     this.fitBtn = this.makeButton(width - 140, height - 66, "Fit", 0.75, () => this.openWardrobe());
+    this.phoneBtn = this.makeButton(width - 214, height - 66, "Ph", 0.75, () => this.phone.show());
+    this.phoneBadge = this.add
+      .text(width - 188, height - 92, "", {
+        fontFamily: FONT,
+        fontSize: "10px",
+        color: "#fff",
+        backgroundColor: "#e46d94",
+        padding: { x: 4, y: 1 },
+        resolution: 2,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(14);
+    this.phone.setBadge(this.phoneBadge);
   }
 
   // -------------------------------------------------------------------------
@@ -621,7 +662,8 @@ export class UIScene extends Phaser.Scene {
   private showContainer(c: Phaser.GameObjects.Container) {
     c.setVisible(true).setPosition(0, 0);
   }
-  private hideContainer(c: Phaser.GameObjects.Container) {
+  private hideContainer(c?: Phaser.GameObjects.Container) {
+    if (!c?.scene) return;
     c.setVisible(false).setPosition(100000, 100000);
   }
 
@@ -647,7 +689,13 @@ export class UIScene extends Phaser.Scene {
     if (this.dlgIndex >= this.dlgLines.length) {
       this.hideContainer(this.dlg);
       this.dialogueOpen = false;
-      controls.locked = false;
+      const npc = this.pendingGiftNpc;
+      this.pendingGiftNpc = undefined;
+      if (npc && store.giftableItems().length) {
+        this.openGiftMenu(npc);
+      } else {
+        controls.locked = false;
+      }
     } else {
       this.dlgText.setText(this.dlgLines[this.dlgIndex]);
     }
@@ -662,7 +710,7 @@ export class UIScene extends Phaser.Scene {
   private buildWardrobe() {
     const { width, height } = this.scale.gameSize;
     const panelW = Math.min(width - 40, 360);
-    const panelH = Math.min(height - 80, 380);
+    const panelH = Math.min(height - 60, 460);
     const items: Phaser.GameObjects.GameObject[] = [];
 
     const bgCatch = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
@@ -681,13 +729,19 @@ export class UIScene extends Phaser.Scene {
       const row = Math.floor(i / 2);
       const col = i % 2;
       const cx = ox + col * (panelW / 2 - 10);
-      const cy = oy + row * 60;
-      const swatch = this.add.rectangle(cx + 14, cy + 14, 26, 26, Phaser.Display.Color.HexStringToColor(o.top).color).setStrokeStyle(2, 0x3a2b3a);
-      const label = this.add.text(cx + 34, cy + 6, o.label, { fontFamily: FONT, fontSize: "13px", color: "#3a2b3a", resolution: 2 });
+      const cy = oy + row * 52;
+      const unlocked = store.isOutfitUnlocked(id);
+      const hint = OUTFIT_UNLOCKS.find((u) => u.id === id)?.hint ?? "";
+      const swatch = this.add.rectangle(cx + 14, cy + 14, 26, 26, Phaser.Display.Color.HexStringToColor(o.top).color).setStrokeStyle(2, 0x3a2b3a).setAlpha(unlocked ? 1 : 0.35);
+      const label = this.add.text(cx + 34, cy + 2, unlocked ? o.label : `${o.label} 🔒`, { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 });
       const btn = this.add
-        .text(cx + 34, cy + 24, "Wear", { fontFamily: FONT, fontSize: "12px", color: "#fff", backgroundColor: "#7be0a3", padding: { x: 8, y: 3 }, resolution: 2 })
+        .text(cx + 34, cy + 20, unlocked ? "Wear" : hint.slice(0, 28), { fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: unlocked ? "#7be0a3" : "#8a7a6a", padding: { x: 6, y: 2 }, resolution: 2 })
         .setInteractive({ useHandCursor: true });
       btn.on("pointerdown", () => {
+        if (!unlocked) {
+          store.toast(hint, "#a08a70");
+          return;
+        }
         rebuildPlayerTexture(this, id);
         store.setOutfit(id);
         store.toast(`Now wearing: ${o.label}`, "#f4a6c0");
@@ -711,6 +765,8 @@ export class UIScene extends Phaser.Scene {
 
   private openWardrobe() {
     if (this.anyModal() || !this.gameplayActive()) return;
+    this.wardrobe?.destroy(true);
+    this.buildWardrobe();
     this.wardrobeOpen = true;
     controls.locked = true;
     this.showContainer(this.wardrobe);
@@ -749,7 +805,7 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
     items.push(bgCatch, panel, title, sub);
 
-    const catalog: { tex: string; name: string; price: number }[] = [
+    const catalog: { tex: string; name: string; price: number; kind?: "fit" | "treat" }[] = [
       { tex: "f_sofa", name: "Sofa", price: 30 },
       { tex: "f_tv", name: "TV", price: 35 },
       { tex: "f_table", name: "Table", price: 20 },
@@ -758,6 +814,8 @@ export class UIScene extends Phaser.Scene {
       { tex: "f_lamp", name: "Lamp", price: 8 },
       { tex: "f_fridge", name: "Fridge", price: 30 },
       { tex: "f_chair", name: "Chair", price: 8 },
+      { tex: "ui_star", name: "Sneakers", price: 18, kind: "fit" },
+      { tex: "ui_heart", name: "Chocolate", price: 6, kind: "treat" },
     ];
 
     const ox = (width - panelW) / 2 + 20;
@@ -772,7 +830,11 @@ export class UIScene extends Phaser.Scene {
       const buy = this.add
         .text(cx + 34, cy + 22, `Buy ${c.price}`, { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#f4c95d", padding: { x: 6, y: 3 }, resolution: 2 })
         .setInteractive({ useHandCursor: true });
-      buy.on("pointerdown", () => this.buyFurniture(c.tex, c.price));
+      buy.on("pointerdown", () => {
+        if (c.kind === "fit") this.buySneakers(c.price);
+        else if (c.kind === "treat") this.buyTreat("chocolate", c.price);
+        else this.buyFurniture(c.tex, c.price);
+      });
       items.push(icon, name, buy);
     });
 
@@ -793,6 +855,18 @@ export class UIScene extends Phaser.Scene {
     this.closeMiniGame(false);
     this.miniGameOpen = true;
     controls.locked = true;
+
+    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo") {
+      const wrap: MiniSpec = {
+        ...spec,
+        onDone: (ok) => {
+          this.closeMiniGame(true);
+          spec.onDone(ok);
+        },
+      };
+      this.miniGame = openActivity(this, wrap);
+      return;
+    }
 
     const { width, height } = this.scale.gameSize;
     const panelW = Math.min(width - 40, 340);
@@ -930,6 +1004,88 @@ export class UIScene extends Phaser.Scene {
     if (unlock) controls.locked = false;
   }
 
+  private buyTreat(id: string, price: number) {
+    if (!store.spendCoins(price)) {
+      store.toast("Not enough coins", "#e46d94");
+      return;
+    }
+    store.addItem(id);
+  }
+
+  private buySneakers(price: number) {
+    if (!store.spendCoins(price)) {
+      store.toast("Not enough coins", "#e46d94");
+      return;
+    }
+    store.setFlag("bought_sneakers");
+    store.unlockOutfit("sneakers");
+    store.toast("Mall sneakers — unlocked", "#f4a6c0");
+  }
+
+  private heartPop() {
+    const { width } = this.scale.gameSize;
+    const h = this.add.image(width / 2, 90, "ui_heart").setScale(2.4).setScrollFactor(0).setDepth(85);
+    this.tweens.add({ targets: h, y: 60, alpha: 0, scale: 3.2, duration: 700, onComplete: () => h.destroy() });
+  }
+
+  private openGiftMenu(npcId: string) {
+    this.closeGiftMenu();
+    const { width, height } = this.scale.gameSize;
+    const items = store.giftableItems();
+    if (!items.length) {
+      controls.locked = false;
+      return;
+    }
+    controls.locked = true;
+    const name = NPCS.find((n) => n.id === npcId)?.name ?? npcId;
+    const kids: Phaser.GameObjects.GameObject[] = [];
+    const catcher = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.4).setInteractive();
+    const panel = this.add.graphics();
+    const h = 80 + items.length * 28;
+    panel.fillStyle(0xfff9f0, 1).fillRoundedRect(width / 2 - 150, height / 2 - h / 2, 300, h, 12);
+    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect(width / 2 - 150, height / 2 - h / 2, 300, h, 12);
+    kids.push(catcher, panel);
+    kids.push(this.add.text(width / 2, height / 2 - h / 2 + 12, `Give ${name} something`, { fontFamily: FONT, fontSize: "14px", color: "#e46d94", resolution: 2 }).setOrigin(0.5, 0));
+    items.forEach((id, i) => {
+      const def = ITEMS[id];
+      const t = this.add
+        .text(width / 2, height / 2 - h / 2 + 40 + i * 28, `${def?.name ?? id} ×${store.getItemQuantity(id)}`, {
+          fontFamily: FONT,
+          fontSize: "13px",
+          color: "#fff",
+          backgroundColor: "#e46d94",
+          padding: { x: 10, y: 4 },
+          resolution: 2,
+        })
+        .setOrigin(0.5, 0)
+        .setInteractive({ useHandCursor: true });
+      t.on("pointerdown", () => {
+        const res = store.giveGift(npcId, id);
+        this.closeGiftMenu();
+        if (res) {
+          const done = quests.onGive(npcId, id);
+          uiEvents.emit("dialogue", name, [res.line, done ? done.complete : `${name} ♡ +${res.gain}`]);
+        }
+      });
+      kids.push(t);
+    });
+    const skip = this.add
+      .text(width / 2, height / 2 + h / 2 - 22, "Not now", { fontFamily: FONT, fontSize: "12px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 10, y: 4 }, resolution: 2 })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    skip.on("pointerdown", () => this.closeGiftMenu());
+    catcher.on("pointerdown", () => this.closeGiftMenu());
+    kids.push(skip);
+    this.giftMenu = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(75);
+  }
+
+  private closeGiftMenu() {
+    this.giftMenu?.destroy(true);
+    this.giftMenu = undefined;
+    if (!this.dialogueOpen && !this.wardrobeOpen && !this.shopOpen && !this.miniGameOpen && !this.phone.open)
+      controls.locked = false;
+  }
+
   private buyFurniture(tex: string, price: number) {
     if (!store.spendCoins(price)) {
       store.toast("Not enough coins", "#e46d94");
@@ -1006,8 +1162,27 @@ export class UIScene extends Phaser.Scene {
     const m = this.scene.manager;
     return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House);
   }
+  private resetOverlays() {
+    try {
+      this.hideContainer(this.dlg);
+      this.dialogueOpen = false;
+      this.pendingGiftNpc = undefined;
+      if (this.wardrobeOpen) this.closeWardrobe();
+      if (this.shopOpen) this.closeShop();
+      if (this.localMapOpen) this.closeLocalMap();
+      if (this.miniGameOpen) this.closeMiniGame(true);
+      this.closeGiftMenu();
+      if (this.phone.open) this.phone.close();
+    } catch {
+      /* stale overlay after a scene hop */
+    }
+    controls.locked = false;
+    controls.moveX = 0;
+    controls.moveY = 0;
+  }
+
   private anyModal() {
-    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen;
+    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu;
   }
 
   private layout() {
@@ -1025,12 +1200,16 @@ export class UIScene extends Phaser.Scene {
     place(this.actionBtn, width - 66, height - 70);
     place(this.mapBtn, width - 66, height - 150);
     place(this.fitBtn, width - 140, height - 66);
+    place(this.phoneBtn, width - 214, height - 66);
+    this.phoneBadge?.setPosition(width - 188, height - 92);
   }
 
   update() {
     // keyboard advance / interact for dialogue
     if (this.localMapOpen && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.closeLocalMap();
     if (this.miniGameOpen && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.closeMiniGame(true);
+    if (this.phone.open && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.phone.close();
+    this.clockText?.setText(store.clockLabel());
 
     if (this.dialogueOpen) {
       if (
@@ -1054,6 +1233,8 @@ export class UIScene extends Phaser.Scene {
     const showNav = this.walkableScene() && !modal && !driving;
     this.setButtonVisible(this.mapBtn, showNav);
     this.setButtonVisible(this.fitBtn, showNav);
+    this.setButtonVisible(this.phoneBtn, showNav);
+    this.phoneBadge?.setVisible(showNav && store.unreadCount() > 0);
     this.drawMinimap();
   }
 }

@@ -7,9 +7,26 @@
 //   collect  -> collect N tagged items in the world (target = item tag)
 //   visit    -> travel to a location or city (target = location/city id)
 //   interact -> interact with a tagged object, e.g. the cafe (target = tag)
+//   giveItem -> give an item to someone (target = "npcId:itemId")
+//   takePhoto / playMinigame / receiveMessage / driveWithPassenger
 // ---------------------------------------------------------------------------
 
-export type StepType = "talk" | "collect" | "visit" | "interact";
+export type StepType =
+  | "talk"
+  | "collect"
+  | "visit"
+  | "interact"
+  | "giveItem"
+  | "takePhoto"
+  | "playMinigame"
+  | "reachRelationship"
+  | "buyItem"
+  | "equipOutfit"
+  | "decorate"
+  | "discoverMemory"
+  | "waitUntilDay"
+  | "receiveMessage"
+  | "driveWithPassenger";
 
 export interface QuestStep {
   type: StepType;
@@ -27,6 +44,10 @@ export interface QuestDef {
   complete: string;
   rewardHearts: number;
   rewardCoins: number;
+  rewardNpc?: string;
+  rewardRel?: number;
+  rewardMemory?: string;
+  rewardItem?: string;
 }
 
 export const QUESTS: QuestDef[] = [
@@ -43,6 +64,9 @@ export const QUESTS: QuestDef[] = [
     complete: "That's my girl. Drive back safe, we'll have tea on the weekend.",
     rewardHearts: 3,
     rewardCoins: 20,
+    rewardNpc: "baba",
+    rewardRel: 6,
+    rewardMemory: "mem_yas_baba",
   },
   {
     id: "q_date",
@@ -56,6 +80,10 @@ export const QUESTS: QuestDef[] = [
     complete: "Perfect. Two coffees, and a whole little world just for us.",
     rewardHearts: 3,
     rewardCoins: 25,
+    rewardNpc: "moomoo",
+    rewardRel: 8,
+    rewardMemory: "mem_oasis_coffee",
+    rewardItem: "coffee",
   },
   {
     id: "q_flowers",
@@ -69,6 +97,10 @@ export const QUESTS: QuestDef[] = [
     complete: "Oh they're beautiful! You always know how to make me smile.",
     rewardHearts: 2,
     rewardCoins: 15,
+    rewardNpc: "mama",
+    rewardRel: 8,
+    rewardMemory: "mem_mama_flowers",
+    rewardItem: "bouquet",
   },
   {
     id: "q_corniche",
@@ -83,6 +115,10 @@ export const QUESTS: QuestDef[] = [
     complete: "Ah, that's the one. Sit with me a while.",
     rewardHearts: 2,
     rewardCoins: 18,
+    rewardNpc: "baba",
+    rewardRel: 5,
+    rewardMemory: "mem_corniche",
+    rewardItem: "karak",
   },
   {
     id: "q_residences",
@@ -96,6 +132,9 @@ export const QUESTS: QuestDef[] = [
     complete: "Home is wherever you are. Even on the 17th floor.",
     rewardHearts: 2,
     rewardCoins: 20,
+    rewardNpc: "moomoo",
+    rewardRel: 4,
+    rewardMemory: "mem_downtown",
   },
   {
     id: "q_london",
@@ -109,6 +148,9 @@ export const QUESTS: QuestDef[] = [
     complete: "Sister time is the best time. London's always better with family.",
     rewardHearts: 3,
     rewardCoins: 25,
+    rewardNpc: "fadwa",
+    rewardRel: 8,
+    rewardMemory: "mem_fadwa_soho",
   },
   {
     id: "q_westminster",
@@ -117,11 +159,16 @@ export const QUESTS: QuestDef[] = [
     intro: "Walk west to Westminster with me — I want a photo in front of Big Ben.",
     steps: [
       { type: "visit", target: "london_westminster", hint: "Walk west to Westminster" },
-      { type: "talk", target: "fadwa", hint: "Meet Fadwa again in the West End" },
+      { type: "takePhoto", target: "bigben", hint: "Take a photo at Big Ben" },
+      { type: "talk", target: "fadwa", hint: "Show Fadwa the photo" },
     ],
     complete: "That's the one. Us two, London, forever.",
     rewardHearts: 2,
     rewardCoins: 20,
+    rewardNpc: "fadwa",
+    rewardRel: 10,
+    rewardMemory: "mem_bigben",
+    rewardItem: "postcard",
   },
   {
     id: "q_edinburgh",
@@ -136,6 +183,9 @@ export const QUESTS: QuestDef[] = [
     complete: "Reunited! Royal Mile stroll and cuppas, just like old times.",
     rewardHearts: 2,
     rewardCoins: 20,
+    rewardNpc: "hazel",
+    rewardRel: 6,
+    rewardMemory: "mem_edi_girls",
   },
   {
     id: "q_nour",
@@ -149,6 +199,9 @@ export const QUESTS: QuestDef[] = [
     complete: "He's so happy you came. Family, no matter the distance 🤍",
     rewardHearts: 3,
     rewardCoins: 25,
+    rewardNpc: "nour",
+    rewardRel: 8,
+    rewardMemory: "mem_nour",
   },
   {
     id: "q_chloe",
@@ -162,6 +215,9 @@ export const QUESTS: QuestDef[] = [
     complete: "She screamed. In a good way. Tea was, in fact, on her.",
     rewardHearts: 2,
     rewardCoins: 20,
+    rewardNpc: "chloe",
+    rewardRel: 8,
+    rewardMemory: "mem_chloe_tea",
   },
   {
     id: "q_saadiyat",
@@ -175,6 +231,7 @@ export const QUESTS: QuestDef[] = [
     complete: "Beautiful. That's my girl.",
     rewardHearts: 2,
     rewardCoins: 18,
+    rewardMemory: "mem_saadiyat",
   },
   {
     id: "q_hudayriyat",
@@ -188,6 +245,25 @@ export const QUESTS: QuestDef[] = [
     complete: "Best drive. Best trucks. Best you.",
     rewardHearts: 2,
     rewardCoins: 18,
+    rewardNpc: "moomoo",
+    rewardRel: 4,
+    rewardMemory: "mem_hudayriyat",
+  },
+  {
+    id: "q_coffee_run",
+    title: "His order",
+    giver: "moomoo",
+    intro: "You already know. Two coffees. Make them properly this time — I'll taste the difference.",
+    steps: [
+      { type: "playMinigame", target: "coffee", hint: "Make coffee at Saddle or any cafe" },
+      { type: "giveItem", target: "moomoo:coffee", hint: "Give Moomoo the coffee" },
+    ],
+    complete: "You remembered my order. Come sit. The rest of the world can wait.",
+    rewardHearts: 3,
+    rewardCoins: 22,
+    rewardNpc: "moomoo",
+    rewardRel: 10,
+    rewardMemory: "mem_saddle",
   },
 ];
 

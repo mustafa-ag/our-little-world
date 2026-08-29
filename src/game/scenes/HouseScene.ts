@@ -4,6 +4,9 @@ import { getLocation } from "../data/locations";
 import { Player } from "../objects/Player";
 import { store } from "../systems/store";
 import { controls, uiEvents } from "../systems/controls";
+import { tryDeliverMessages } from "../systems/phone";
+import { homeComment } from "../systems/life";
+import type { PlacedFurniture } from "../systems/save";
 
 interface Interactable {
   x: number;
@@ -24,6 +27,9 @@ export class HouseScene extends Phaser.Scene {
   private currentPrompt: Interactable | null = null;
   private lastInteract = 0;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
+  private editing = false;
+  private placed: { img: Phaser.GameObjects.Image; data: PlacedFurniture }[] = [];
+  private drag?: { img: Phaser.GameObjects.Image; data: PlacedFurniture };
 
   constructor() {
     super(SceneKeys.House);
@@ -82,14 +88,29 @@ export class HouseScene extends Phaser.Scene {
 
     // starter + owned furniture
     this.add.image(TILE * 3, TILE * 4.5, "f_bed").setOrigin(0.5, 1).setDepth(TILE * 4.5);
-    this.addFurnitureInteract(TILE * 3, TILE * 4.5 - 8, "Rest here (save & new day)", () => {
-      store.addHearts(1);
-      store.toast("A cozy new day together", "#ff8fae");
-      uiEvents.emit("dialogue", "Home", ["You rest for a while. Everything feels calmer with you here."]);
-    });
+    this.addFurnitureInteract(TILE * 3, TILE * 4.5 - 8, "Sleep (save & new day)", () => this.sleep());
+    this.addFurnitureInteract(TILE * 14, TILE * 3.2, "Edit home", () => this.toggleEdit());
 
-    for (const f of store.state.furniture) {
-      this.add.image(f.x, f.y, f.tex).setOrigin(0.5, 1).setDepth(f.y);
+    this.placed = [];
+    this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
+      if (!this.editing || !this.drag) return;
+      const gx = Math.round(p.worldX / 8) * 8;
+      const gy = Math.round(p.worldY / 8) * 8;
+      this.drag.img.setPosition(gx, gy).setDepth(gy);
+      this.drag.data.x = gx;
+      this.drag.data.y = gy;
+    });
+    this.input.on("pointerup", () => {
+      if (this.drag) {
+        store.setFurniture(this.placed.map((p) => p.data));
+        this.drag = undefined;
+      }
+    });
+    for (const f of store.state.furniture) this.spawnPlaced(f);
+
+    const note = homeComment();
+    if (note && store.getRelationship("moomoo") >= 10) {
+      this.time.delayedCall(400, () => uiEvents.emit("dialogue", "Home", [note]));
     }
 
     // exit door (bottom centre)
@@ -124,7 +145,69 @@ export class HouseScene extends Phaser.Scene {
       uiEvents.off("action", this.tryInteract, this);
       uiEvents.off("openMap", this.openMap, this);
       this.scale.off("resize", this.applyZoom, this);
+      this.input.off("pointermove");
+      this.input.off("pointerup");
     });
+  }
+
+  private spawnPlaced(f: PlacedFurniture) {
+    const img = this.add.image(f.x, f.y, f.tex).setOrigin(0.5, 1).setDepth(f.y);
+    if (f.rot) img.setFlipX(true);
+    img.setInteractive({ draggable: true, useHandCursor: true });
+    img.on("pointerdown", () => {
+      if (!this.editing) return;
+      if (this.drag?.img === img) {
+        f.rot = f.rot ? 0 : 1;
+        img.setFlipX(!!f.rot);
+        store.setFurniture(this.placed.map((p) => p.data));
+        return;
+      }
+      this.drag = { img, data: f };
+    });
+    this.placed.push({ img, data: f });
+  }
+
+  private toggleEdit() {
+    this.editing = !this.editing;
+    controls.locked = this.editing;
+    store.toast(this.editing ? "Edit home — drag things. Tap again to finish." : "Looks good.", "#f4a6c0");
+    if (!this.editing) {
+      store.setFurniture(this.placed.map((p) => p.data));
+      this.maybeStoreNearest();
+    }
+  }
+
+  private maybeStoreNearest() {
+    // tap-to-store: if a piece sits in the doorway, send it to storage
+    const doorX = (RW * TILE) / 2;
+    const doorY = RH * TILE - TILE;
+    const keep: typeof this.placed = [];
+    for (const p of this.placed) {
+      if (Phaser.Math.Distance.Between(p.img.x, p.img.y, doorX, doorY) < 20) {
+        store.storeFurniture(p.data.tex);
+        p.img.destroy();
+        store.toast("Stored", "#fff4e6");
+      } else keep.push(p);
+    }
+    this.placed = keep;
+    store.setFurniture(this.placed.map((p) => p.data));
+    const extra = store.state.storedFurniture[0];
+    if (extra && this.editing) {
+      store.takeStoredFurniture(extra);
+      this.spawnPlaced({ tex: extra, x: TILE * 10, y: TILE * 7 });
+      store.setFurniture(this.placed.map((p) => p.data));
+    }
+  }
+
+  private sleep() {
+    store.addHearts(1);
+    store.sleep();
+    tryDeliverMessages({ wake: true, limit: 2 });
+    store.toast("A cozy new day together", "#ff8fae");
+    uiEvents.emit("dialogue", "Home", [
+      "You sleep. The house keeps your things exactly where you left them.",
+      store.clockLabel(),
+    ]);
   }
 
   private addFurnitureInteract(x: number, y: number, prompt: string, trigger: () => void) {
@@ -150,6 +233,7 @@ export class HouseScene extends Phaser.Scene {
   private exitHouse() {
     const loc = getLocation(store.state.currentLocation);
     const s = loc.city?.spawn ?? { tx: 66, ty: 48 };
+    uiEvents.emit("sceneReset");
     this.scene.start(SceneKeys.World, {
       locationId: loc.id,
       spawn: { x: s.tx * TILE + TILE / 2, y: (s.ty + 2) * TILE },

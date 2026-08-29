@@ -13,12 +13,15 @@ export const controls = {
 export const uiEvents = new Phaser.Events.EventEmitter();
 
 export interface MiniGameSpec {
-  kind: "stairs" | "salon";
+  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo";
   title: string;
   hint: string;
   taps?: number;
   skipLabel?: string;
-  onDone: () => void;
+  photoLabel?: string;
+  photoTex?: string;
+  photoBuddy?: string;
+  onDone: (ok?: boolean) => void;
 }
 
 export function resetControls() {

@@ -58,8 +58,9 @@ export interface WorldData {
 }
 
 function texSize(scene: Phaser.Scene, key: string) {
-  const src = scene.textures.get(key).getSourceImage() as HTMLCanvasElement;
-  return { w: src.width, h: src.height };
+  if (!scene.textures.exists(key)) return { w: TILE, h: TILE };
+  const src = scene.textures.get(key).getSourceImage() as { width?: number; height?: number } | undefined;
+  return { w: src?.width || TILE, h: src?.height || TILE };
 }
 
 function hash(x: number, y: number, seed: number) {

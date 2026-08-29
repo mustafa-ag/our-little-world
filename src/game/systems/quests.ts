@@ -1,6 +1,7 @@
 import { QUESTS, questById, type QuestDef, type StepType } from "../data/quests";
 import type { QuestProgress } from "./save";
 import { store } from "./store";
+import { tryDeliverMessages } from "./phone";
 
 // Quest logic layered on top of the store. Scenes call the on* hooks when the
 // player does something; this returns any dialogue to show and fires store
@@ -39,10 +40,19 @@ export function activeQuests(): { def: QuestDef; hint: string }[] {
   return out;
 }
 
+function grantExtras(def: QuestDef) {
+  if (def.rewardNpc && def.rewardRel) store.addRelationship(def.rewardNpc, def.rewardRel);
+  if (def.rewardMemory) store.unlockMemory(def.rewardMemory);
+  if (def.rewardItem) store.addItem(def.rewardItem);
+  store.refreshOutfitUnlocks();
+  tryDeliverMessages({ limit: 1 });
+}
+
 function completeQuest(def: QuestDef, p: QuestProgress) {
   p.status = "done";
   store.addHearts(def.rewardHearts);
   store.addCoins(def.rewardCoins);
+  grantExtras(def);
   store.emit("questUpdated");
   store.save();
 }
@@ -59,6 +69,12 @@ function advance(def: QuestDef, p: QuestProgress) {
   return false;
 }
 
+function matchTarget(stepTarget: string, target: string) {
+  if (stepTarget === target) return true;
+  if (stepTarget.includes(":")) return stepTarget === target;
+  return false;
+}
+
 // Try to advance any active quest whose current step matches (type,target).
 function tryAdvance(type: StepType, target: string): QuestDef | undefined {
   for (const def of QUESTS) {
@@ -66,7 +82,7 @@ function tryAdvance(type: StepType, target: string): QuestDef | undefined {
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
     if (!step || step.type !== type) continue;
-    if (step.target !== target) continue;
+    if (!matchTarget(step.target, target)) continue;
 
     if (type === "collect") {
       p.progress += 1;
@@ -104,8 +120,7 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
     }
   }
 
-  // 2) offer ONE new quest from this npc if available (so repeat visits
-  //    hand out quests one at a time instead of dumping them all at once)
+  // 2) offer ONE new quest from this npc if available
   for (const def of QUESTS) {
     if (def.giver !== npcId) continue;
     const p = ensure(def.id);
@@ -123,6 +138,10 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
   }
 
   if (result.lines.length === 0) result.lines = defaultLines;
+  if (!result.acceptedQuest && !result.completedQuest && !store.hasDaily(`talk_${npcId}`)) {
+    store.setDaily(`talk_${npcId}`);
+    store.addRelationship(npcId, 1);
+  }
   return result;
 }
 
@@ -136,6 +155,39 @@ export function onCollect(tag: string): QuestDef | undefined {
 
 export function onVisit(locationId: string): QuestDef | undefined {
   return tryAdvance("visit", locationId);
+}
+
+export function onGive(npcId: string, itemId: string): QuestDef | undefined {
+  return tryAdvance("giveItem", `${npcId}:${itemId}`) ?? tryAdvance("giveItem", itemId);
+}
+
+export function onPhoto(tag: string): QuestDef | undefined {
+  return tryAdvance("takePhoto", tag);
+}
+
+export function onMinigame(kind: string): QuestDef | undefined {
+  return tryAdvance("playMinigame", kind);
+}
+
+export function onMessage(id: string): QuestDef | undefined {
+  return tryAdvance("receiveMessage", id);
+}
+
+export function onDriveWith(npcId: string): QuestDef | undefined {
+  return tryAdvance("driveWithPassenger", npcId);
+}
+
+export function activateFromMessage(questId: string) {
+  const def = questById(questId);
+  if (!def) return;
+  const p = ensure(def.id);
+  if (p.status !== "available") return;
+  p.status = "active";
+  p.step = 0;
+  p.progress = 0;
+  store.emit("questUpdated");
+  store.toast(`New quest: ${def.title}`, "#f4c95d");
+  store.save();
 }
 
 export { questById };

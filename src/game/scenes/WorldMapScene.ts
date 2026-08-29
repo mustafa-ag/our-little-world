@@ -22,12 +22,14 @@ export class WorldMapScene extends Phaser.Scene {
   private nameLayer!: Phaser.GameObjects.Container;
   private hud!: Phaser.GameObjects.Container;
   private pins: Pin[] = [];
+  private leaving = false;
 
   constructor() {
     super(SceneKeys.WorldMap);
   }
 
   create() {
+    this.leaving = false;
     uiEvents.emit("prompt", null);
     this.cameras.main.setBackgroundColor("#1e6aa3");
     this.cameras.main.setBounds(0, 0, MAP_W, MAP_H);
@@ -296,13 +298,13 @@ export class WorldMapScene extends Phaser.Scene {
   }
 
   private travel(id: string) {
-    this.cameras.main.fadeOut(220, 40, 60, 90);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      const loc = getLocation(id);
-      store.unlockLocation(loc.cityId);
-      store.unlockLocation(loc.id);
-      uiEvents.emit("prompt", null);
-      this.scene.start(SceneKeys.World, { locationId: loc.id, driving: store.state.inJeep });
-    });
+    if (this.leaving) return;
+    this.leaving = true;
+    const loc = getLocation(id);
+    store.unlockLocation(loc.cityId);
+    store.unlockLocation(loc.id);
+    uiEvents.emit("prompt", null);
+    uiEvents.emit("sceneReset");
+    this.scene.start(SceneKeys.World, { locationId: loc.id, driving: store.state.inJeep });
   }
 }

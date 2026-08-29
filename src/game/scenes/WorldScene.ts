@@ -9,6 +9,10 @@ import { store } from "../systems/store";
 import { controls, uiEvents, minimap } from "../systems/controls";
 import * as quests from "../systems/quests";
 import { fillCityMinimap } from "../systems/minimapAtlas";
+import { npcInLocation, npcWorldPos, linesFor, worldTint, skyHex, homeComment } from "../systems/life";
+import { tryDeliverMessages } from "../systems/phone";
+import { pickEncounter, applyEncounter } from "../systems/encounters";
+import { secretsFor } from "../data/secrets";
 
 interface Interactable {
   x: number;
@@ -35,20 +39,39 @@ export class WorldScene extends Phaser.Scene {
   private driveMenu?: Phaser.GameObjects.Container;
   private worldW = 0;
   private worldH = 0;
+  private timeAcc = 0;
+  private followingCat?: Phaser.GameObjects.Image;
+  private timeWash?: Phaser.GameObjects.Rectangle;
+  private jeepSpot: Interactable | null = null;
+  private jeepReadyAt = 0;
+  private arriveAt = 0;
 
   constructor() {
     super(SceneKeys.World);
   }
 
-  create(data: { locationId?: string; spawn?: { x: number; y: number }; from?: Cardinal; driving?: boolean }) {
+  create(data: { locationId?: string; spawn?: { x: number; y: number }; from?: Cardinal; driving?: boolean } = {}) {
     this.interactables = [];
     this.npcs = [];
     this.currentPrompt = null;
     this.transitioning = false;
     this.driving = false;
     this.rideJeep = undefined;
+    this.parkedJeep = undefined;
+    this.jeepSpot = null;
     this.driveMenu = undefined;
+    this.timeWash = undefined;
+    this.followingCat = undefined;
+    this.arriveAt = this.time.now + 600;
+    controls.locked = false;
+    controls.moveX = 0;
+    controls.moveY = 0;
     uiEvents.emit("prompt", null);
+    try {
+      uiEvents.emit("sceneReset");
+    } catch {
+      /* overlay teardown must not block a new map */
+    }
 
     this.locationId = data.locationId ?? store.state.currentLocation ?? "abudhabi_yas";
     const def = getLocation(this.locationId);
@@ -60,7 +83,9 @@ export class WorldScene extends Phaser.Scene {
     this.worldW = world.w * TILE;
     this.worldH = world.h * TILE;
 
-    this.cameras.main.setBackgroundColor("#7bc86c");
+    this.cameras.main.setBackgroundColor(skyHex());
+    this.cameras.main.setRoundPixels(true);
+    this.applyAtmosphere();
     this.physics.world.setBounds(0, 0, this.worldW, this.worldH);
     this.cameras.main.setBounds(0, 0, this.worldW, this.worldH);
 
@@ -74,7 +99,14 @@ export class WorldScene extends Phaser.Scene {
     let spawn = data.spawn ?? world.spawn;
     if (data.from && def.city?.entry?.[data.from]) {
       const e = def.city.entry[data.from]!;
-      spawn = { x: e.tx * TILE + TILE / 2, y: (e.ty + 1) * TILE };
+      let sx = e.tx * TILE + TILE / 2;
+      let sy = (e.ty + 1) * TILE;
+      const inset = TILE * 3;
+      if (data.from === "north") sy = Math.max(sy, inset);
+      if (data.from === "south") sy = Math.min(sy, this.worldH - inset);
+      if (data.from === "west") sx = Math.max(sx, inset);
+      if (data.from === "east") sx = Math.min(sx, this.worldW - inset);
+      spawn = { x: sx, y: sy };
     }
     this.player = new Player(this, spawn.x, spawn.y, "char_her");
     this.player.setDepth(spawn.y);
@@ -87,6 +119,7 @@ export class WorldScene extends Phaser.Scene {
       this.addZoneInteractable(z);
     }
     this.placeFollowJeep(spawn.x, spawn.y, data.driving ?? store.state.inJeep);
+    this.placeSecrets();
 
     this.setupMinimap(def);
 
@@ -94,8 +127,10 @@ export class WorldScene extends Phaser.Scene {
     this.applyZoom();
     this.scale.on("resize", this.applyZoom, this);
 
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.keys = this.input.keyboard!.addKeys("W,A,S,D,SPACE,E") as Record<string, Phaser.Input.Keyboard.Key>;
+    if (this.input.keyboard) {
+      this.cursors = this.input.keyboard.createCursorKeys();
+      this.keys = this.input.keyboard.addKeys("W,A,S,D,SPACE,E") as Record<string, Phaser.Input.Keyboard.Key>;
+    }
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("openMap", this.openMap, this);
 
@@ -103,7 +138,12 @@ export class WorldScene extends Phaser.Scene {
 
     quests.onVisit(def.id);
     quests.onVisit(def.cityId);
+    tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
     uiEvents.emit("locationTitle", def.name, def.subtitle);
+    this.time.delayedCall(700, () => {
+      if (!this.sys.isActive() || this.transitioning) return;
+      this.maybeEncounter();
+    });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
   }
@@ -114,8 +154,12 @@ export class WorldScene extends Phaser.Scene {
     const rt = this.add.renderTexture(0, 0, world.w * TILE, world.h * TILE);
     rt.setOrigin(0, 0).setDepth(Depths.ground);
     rt.beginDraw();
-    for (let y = 0; y < world.h; y++)
-      for (let x = 0; x < world.w; x++) rt.batchDraw(world.ground[y][x], x * TILE, y * TILE);
+    for (let y = 0; y < world.h; y++) {
+      for (let x = 0; x < world.w; x++) {
+        const key = world.ground[y][x];
+        if (this.textures.exists(key)) rt.batchDraw(key, x * TILE, y * TILE);
+      }
+    }
     rt.endDraw();
   }
 
@@ -131,6 +175,7 @@ export class WorldScene extends Phaser.Scene {
 
   private buildProps(world: WorldData) {
     for (const p of world.props) {
+      if (!this.textures.exists(p.tex)) continue;
       const img = this.add.image(p.x, p.y, p.tex);
       img.setOrigin(p.originX ?? 0.5, p.originY ?? 1);
       img.setDepth(p.y);
@@ -172,8 +217,13 @@ export class WorldScene extends Phaser.Scene {
           this.interactables = this.interactables.filter((i) => i !== it);
           if (this.currentPrompt === it) this.currentPrompt = null;
           store.addCoins(1);
+          store.addItem("flower");
+          this.petalBurst(c.x, c.y);
           quests.onCollect(c.tag);
-          store.toast("Picked a flower", "#ff8fae");
+          if (store.getItemQuantity("flower") >= 3 && !store.hasDaily("bouquet_offer")) {
+            store.setDaily("bouquet_offer");
+            this.offerBouquet();
+          }
         },
       };
       this.interactables.push(it);
@@ -181,23 +231,39 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private buildNpcs(world: WorldData) {
-    for (const spot of world.npcSpots) {
-      const def = NPCS.find((n) => n.id === spot.id);
-      if (!def) continue;
+    const here = npcInLocation(this.locationId);
+    const placed = new Set<string>();
+    const place = (def: (typeof NPCS)[number], x: number, y: number) => {
+      if (placed.has(def.id)) return;
+      placed.add(def.id);
       const npc = new NPC(this, def);
-      npc.place(spot.x, spot.y);
+      npc.place(x, y);
       this.npcs.push(npc);
       this.interactables.push({
-        x: spot.x,
-        y: spot.y,
+        x,
+        y,
         radius: 26,
         prompt: `Talk to ${def.name}`,
         trigger: () => {
           npc.faceTowards(this.player.x, this.player.y);
-          const res = quests.onTalk(def.id, def.dialogue);
-          uiEvents.emit("dialogue", def.name, res.lines);
+          store.state.lastPassenger = def.id;
+          store.save();
+          const lines = linesFor(def.id, def.dialogue);
+          const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
+          const res = quests.onTalk(def.id, extra ? [...lines, extra] : lines);
+          uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
         },
       });
+    };
+    for (const spot of world.npcSpots) {
+      const def = here.find((n) => n.id === spot.id) ?? NPCS.find((n) => n.id === spot.id);
+      if (!def || !here.some((n) => n.id === def.id)) continue;
+      place(def, spot.x, spot.y);
+    }
+    for (const def of here) {
+      if (placed.has(def.id)) continue;
+      const p = npcWorldPos(def);
+      place(def, p.x, p.y);
     }
   }
 
@@ -205,15 +271,30 @@ export class WorldScene extends Phaser.Scene {
     const trigger = () => {
       switch (z.action) {
         case "cafe":
-          quests.onInteract("cafe");
-          if (z.tag) quests.onInteract(z.tag);
-          if (z.tag === "saddle") {
-            uiEvents.emit("dialogue", "Saddle", ["Anytime you see it, you stop. Two coffees."]);
-          } else if (z.tag === "hudayriyat_trucks") {
+          if (z.tag === "hudayriyat_trucks") {
+            quests.onInteract("cafe");
+            if (z.tag) quests.onInteract(z.tag);
             uiEvents.emit("dialogue", "Hudayriyat", ["Food trucks by the water. You drove out for this."]);
-          } else {
-            uiEvents.emit("dialogue", "Cafe", ["You grab two warm coffees to go. One for each of us."]);
+            break;
           }
+          uiEvents.emit("minigame", {
+            kind: "coffee",
+            title: z.tag === "saddle" ? "Saddle" : "Coffee",
+            hint: "Cup, espresso, milk, lid. His order. Yours too.",
+            skipLabel: "Not now",
+            onDone: (ok?: boolean) => {
+              if (!ok) return;
+              quests.onInteract("cafe");
+              if (z.tag) quests.onInteract(z.tag);
+              quests.onMinigame("coffee");
+              store.addItem("coffee");
+              store.advanceTime();
+              if (z.tag === "saddle") store.unlockMemory("mem_saddle");
+              uiEvents.emit("dialogue", z.tag === "saddle" ? "Saddle" : "Cafe", [
+                ok ? "Warm. Two sugars. You know the order." : "Maybe later.",
+              ]);
+            },
+          });
           break;
         case "shop":
           uiEvents.emit("openShop");
@@ -233,11 +314,13 @@ export class WorldScene extends Phaser.Scene {
               : "Stairs up to the lobby. Tap to climb, or skip.",
             taps: brown ? 14 : 8,
             skipLabel: brown ? "Skip — she's tired" : "Skip",
-            onDone: () =>
+            onDone: () => {
+              if (brown) store.unlockMemory("mem_well_court");
               this.scene.start(SceneKeys.House, {
                 title: d.name ?? "Inside",
                 interior: brown ? "brown" : "cream",
-              }),
+              });
+            },
           });
           break;
         }
@@ -261,6 +344,7 @@ export class WorldScene extends Phaser.Scene {
           else this.openDriveMenu();
           break;
         case "exit": {
+          if (this.time.now < this.arriveAt) return;
           const d = z.data as { to: string; from: Cardinal };
           this.goDistrict(d.to, d.from);
           break;
@@ -268,10 +352,35 @@ export class WorldScene extends Phaser.Scene {
         case "landmark": {
           const loc = getLocation(this.locationId);
           const title = typeof z.data === "string" ? z.data : (loc.landmarkName ?? loc.name);
-          uiEvents.emit("dialogue", title, [
-            `${title} — ${loc.name}.`,
-            "Wish you were really here with me.",
-          ]);
+          const photoTag = loc.id === "london_westminster" ? "bigben" : loc.id;
+          const photoTex =
+            (typeof z.data === "string" && this.textures.exists(String(z.data)) && String(z.data)) ||
+            (z.tag && this.textures.exists(z.tag) ? z.tag : undefined) ||
+            (title.toLowerCase().includes("fountain") && this.textures.exists("o_fountain") ? "o_fountain" : undefined) ||
+            (loc.landmark && this.textures.exists(loc.landmark) ? loc.landmark : undefined) ||
+            (this.textures.exists("o_fountain") ? "o_fountain" : "ui_heart");
+          const buddyId = store.state.lastPassenger ?? "moomoo";
+          uiEvents.emit("minigame", {
+            kind: "photo",
+            title: title,
+            hint: "Wait until you're both in the frame, then capture.",
+            photoLabel: `${title} — ${loc.name}`,
+            photoTex,
+            photoBuddy: `char_${buddyId}`,
+            skipLabel: "Just look",
+            onDone: (ok?: boolean) => {
+              if (ok) {
+                quests.onPhoto(photoTag);
+                if (photoTag === "bigben") store.unlockMemory("mem_bigben");
+                if (loc.id === "dubai_downtown") store.unlockMemory("mem_downtown");
+                if (store.state.lastPassenger) store.addRelationship(store.state.lastPassenger, 2);
+              }
+              uiEvents.emit("dialogue", title, [
+                ok ? "That's the one. Keep it." : `${title} — ${loc.name}.`,
+                "Wish you were really here with me.",
+              ]);
+            },
+          });
           break;
         }
         case "info": {
@@ -288,40 +397,57 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private placeFollowJeep(x: number, y: number, stayIn: boolean) {
-    const jx = x + 18;
-    const jy = y + 6;
+    const jx = x + 22;
+    const jy = y + 8;
     this.addZoneInteractable({
       x: jx,
       y: jy,
-      radius: 28,
+      radius: 22,
       action: "drive",
       prompt: "Get in the Jeep",
     });
+    this.jeepSpot = this.interactables[this.interactables.length - 1] ?? null;
+    this.jeepReadyAt = this.time.now + (stayIn ? 450 : 200);
     if (stayIn) this.hopIn({ quiet: true });
   }
 
+  private parkJeepAt(x: number, y: number) {
+    this.parkedJeep?.setPosition(x, y).setVisible(true).setDepth(y);
+    if (this.jeepSpot) {
+      this.jeepSpot.x = x;
+      this.jeepSpot.y = y;
+    }
+  }
+
   private hopIn(opts?: { quiet?: boolean }) {
+    if (this.driving) return;
     this.closeDriveMenu();
     this.driving = true;
     store.setInJeep(true);
+    this.jeepReadyAt = this.time.now + 500;
     this.player.speed = this.baseSpeed * 2.8;
     this.player.setVisible(false);
     this.player.setAlpha(0);
     this.parkedJeep?.setVisible(false);
+    this.rideJeep?.destroy();
     this.rideJeep = this.add.image(this.player.x, this.player.y, "v_jeep_blue").setDepth(this.player.y + 1);
     if (!opts?.quiet) store.toast("Jeep time — hold a direction. A to hop out.", "#2f6fd0");
     uiEvents.emit("prompt", "A · hop out of the Jeep");
   }
 
   private hopOut() {
+    if (!this.driving) return;
     this.driving = false;
     store.setInJeep(false);
+    this.jeepReadyAt = this.time.now + 1000;
     this.player.speed = this.baseSpeed;
     this.player.setVisible(true);
     this.player.setAlpha(1);
     this.rideJeep?.destroy();
     this.rideJeep = undefined;
-    this.parkedJeep?.setPosition(this.player.x, this.player.y).setVisible(true);
+    this.parkJeepAt(this.player.x - 24, this.player.y + 6);
+    this.currentPrompt = null;
+    uiEvents.emit("prompt", null);
     store.toast("Parked the Jeep", "#2f6fd0");
   }
 
@@ -379,27 +505,44 @@ export class WorldScene extends Phaser.Scene {
 
   private driveTo(destId: string) {
     this.closeDriveMenu();
+    if (this.transitioning) return;
     this.transitioning = true;
-    this.cameras.main.fadeOut(220, 20, 30, 50);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start(SceneKeys.Driving, { destId });
-    });
+    if (store.state.lastPassenger) quests.onDriveWith(store.state.lastPassenger);
+    uiEvents.emit("sceneReset");
+    this.scene.start(SceneKeys.Driving, { destId, passenger: store.state.lastPassenger });
   }
 
   private goDistrict(to: string, from: Cardinal) {
-    if (this.transitioning) return;
-    this.transitioning = true;
+    if (this.transitioning || controls.locked || this.time.now < this.arriveAt) return;
+    if (!to || to === this.locationId) return;
     const dest = getLocation(to);
-    this.cameras.main.fadeOut(180, 40, 60, 90);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      uiEvents.emit("prompt", null);
-      this.scene.start(SceneKeys.World, { locationId: dest.id, from, driving: this.driving || store.state.inJeep });
+    if (!dest || dest.id === this.locationId) return;
+    this.transitioning = true;
+    uiEvents.emit("prompt", null);
+    this.scene.start(SceneKeys.World, {
+      locationId: dest.id,
+      from,
+      driving: this.driving || store.state.inJeep,
     });
   }
 
+  private applyAtmosphere() {
+    this.cameras.main.setBackgroundColor(skyHex());
+    const night = store.state.timeOfDay === "night";
+    const color = worldTint();
+    const live = this.timeWash?.active && this.timeWash.scene;
+    if (!live) {
+      const { width, height } = this.scale.gameSize;
+      this.timeWash = this.add.rectangle(0, 0, width, height, color, night ? 0.16 : 0.07).setOrigin(0).setScrollFactor(0).setDepth(6);
+    } else {
+      this.timeWash!.setFillStyle(color, night ? 0.22 : store.state.timeOfDay === "evening" ? 0.14 : 0.08);
+    }
+  }
+
   private applyZoom() {
-    const h = this.scale.gameSize.height;
-    this.cameras.main.setZoom(Phaser.Math.Clamp(h / (42 * TILE), 1.35, 2.15));
+    const { width, height } = this.scale.gameSize;
+    this.cameras.main.setZoom(Phaser.Math.Clamp(height / (42 * TILE), 1.35, 2.15));
+    this.timeWash?.setSize(width, height);
   }
 
   private tryInteract() {
@@ -411,6 +554,7 @@ export class WorldScene extends Phaser.Scene {
     const now = this.time.now;
     if (now - this.lastInteract < 250) return;
     if (this.driving) {
+      if (now < this.jeepReadyAt) return;
       this.lastInteract = now;
       this.hopOut();
       return;
@@ -423,6 +567,7 @@ export class WorldScene extends Phaser.Scene {
 
   private openMap() {
     this.closeDriveMenu();
+    uiEvents.emit("sceneReset");
     this.scene.start(SceneKeys.WorldMap, {});
   }
 
@@ -440,19 +585,21 @@ export class WorldScene extends Phaser.Scene {
     let vx = 0;
     let vy = 0;
     if (!controls.locked && !this.transitioning) {
-      if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
-      if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
-      if (this.cursors.up.isDown || this.keys.W.isDown) vy -= 1;
-      if (this.cursors.down.isDown || this.keys.S.isDown) vy += 1;
+      if (this.cursors && this.keys) {
+        if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
+        if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
+        if (this.cursors.up.isDown || this.keys.W.isDown) vy -= 1;
+        if (this.cursors.down.isDown || this.keys.S.isDown) vy += 1;
+        if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E)) {
+          this.tryInteract();
+        }
+      }
       vx += controls.moveX;
       vy += controls.moveY;
       const len = Math.hypot(vx, vy);
       if (len > 1) {
         vx /= len;
         vy /= len;
-      }
-      if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E)) {
-        this.tryInteract();
       }
     }
     this.player.move(vx * this.player.speed, vy * this.player.speed);
@@ -469,6 +616,7 @@ export class WorldScene extends Phaser.Scene {
       let best: Interactable | null = null;
       let bestD = Infinity;
       for (const it of this.interactables) {
+        if (it === this.jeepSpot && time < this.jeepReadyAt) continue;
         const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y);
         if (d <= it.radius && d < bestD) {
           best = it;
@@ -481,11 +629,113 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
-    if (!this.transitioning) this.checkMapEdge();
+    if (this.followingCat && this.player) {
+      this.followingCat.x += (this.player.x - 14 - this.followingCat.x) * 0.04;
+      this.followingCat.y += (this.player.y + 4 - this.followingCat.y) * 0.04;
+      this.followingCat.setDepth(this.followingCat.y);
+    }
+
+    if (!this.transitioning && !controls.locked) {
+      this.timeAcc += this.game.loop.delta;
+      if (this.timeAcc > 90000) {
+        this.timeAcc = 0;
+        store.advanceTime();
+        this.applyAtmosphere();
+      }
+      this.checkMapEdge();
+    }
     this.syncMinimap();
   }
 
+  private petalBurst(x: number, y: number) {
+    for (let i = 0; i < 6; i++) {
+      const p = this.add.image(x, y, i % 2 ? "o_flower_pink" : "o_flower_yellow").setScale(0.45).setDepth(y + 8);
+      this.tweens.add({
+        targets: p,
+        x: x + Phaser.Math.Between(-18, 18),
+        y: y - Phaser.Math.Between(8, 24),
+        alpha: 0,
+        duration: 500,
+        onComplete: () => p.destroy(),
+      });
+    }
+  }
+
+  private offerBouquet() {
+    uiEvents.emit("minigame", {
+      kind: "bouquet",
+      title: "Bouquet",
+      hint: "Pick three flowers and a ribbon.",
+      skipLabel: "Later",
+      onDone: (ok?: boolean) => {
+        if (!ok) return;
+        if (store.removeItem("flower", 3)) store.addItem("bouquet");
+        quests.onMinigame("bouquet");
+      },
+    });
+  }
+
+  private placeSecrets() {
+    for (const s of secretsFor(this.locationId)) {
+      if (store.hasSecret(s.id)) continue;
+      if (s.time && s.time !== store.state.timeOfDay) continue;
+      if (s.minRel && store.getRelationship(s.minRel.npc) < s.minRel.min) continue;
+      const x = s.tx * TILE + TILE / 2;
+      const y = (s.ty + 1) * TILE;
+      const tex =
+        s.kind === "flower"
+          ? "o_flower_pink"
+          : s.kind === "heart"
+            ? "ui_heart"
+            : s.kind === "cat"
+              ? "o_cat"
+              : s.kind === "note"
+                ? "o_note"
+                : s.kind === "postcard"
+                  ? "o_postcard"
+                  : s.kind === "coins"
+                    ? "ui_coin"
+                    : "ui_star";
+      const img = this.add.image(x, y, tex).setOrigin(0.5, 0.9).setDepth(y).setScale(s.kind === "heart" ? 1.2 : 1);
+      this.tweens.add({ targets: img, y: y - 2, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const it: Interactable = {
+        x,
+        y,
+        radius: 16,
+        prompt: "What's this?",
+        trigger: () => {
+          if (!store.discoverSecret(s.id)) return;
+          img.destroy();
+          this.interactables = this.interactables.filter((i) => i !== it);
+          if (s.item) store.addItem(s.item);
+          if (s.kind === "coins") store.addCoins(12);
+          if (s.memory) store.unlockMemory(s.memory);
+          if (s.kind === "cat") this.spawnCat(x, y);
+          store.toast(s.title, "#ffe08a");
+          uiEvents.emit("dialogue", s.title, [s.hint === "Near the water." ? "You weren't supposed to find this. You did anyway." : s.title]);
+        },
+      };
+      this.interactables.push(it);
+    }
+  }
+
+  private spawnCat(x: number, y: number) {
+    const catTex = this.textures.exists("o_cat") ? "o_cat" : "ui_heart";
+    this.followingCat = this.add.image(x, y, catTex).setOrigin(0.5, 1).setDepth(y);
+    store.toast("A cat decided to follow you", "#f4a6c0");
+  }
+
+  private maybeEncounter() {
+    const e = pickEncounter(this.locationId);
+    if (!e) return;
+    applyEncounter(e);
+    if (e.kind === "cat") this.spawnCat(this.player.x + 20, this.player.y);
+    if (e.kind === "rain") this.timeWash?.setFillStyle(0x88a0c0, 0.22);
+    uiEvents.emit("dialogue", e.title, e.lines);
+  }
+
   private checkMapEdge() {
+    if (this.time.now < this.arriveAt) return;
     const loc = getLocation(this.locationId);
     const pad = 10;
     if (this.player.y < pad && loc.exits?.north) this.goDistrict(loc.exits.north, "south");
