@@ -62,6 +62,8 @@ export const minimap = {
   facing: "down" as "down" | "up" | "left" | "right",
   ground: 0xc9b06a,
   roads: [] as MiniRect[],
+  walks: [] as MiniRect[],
+  parks: [] as MiniRect[],
   water: [] as MiniRect[],
   blocks: [] as MiniRect[],
   pois: [] as MiniPoi[],

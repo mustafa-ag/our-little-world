@@ -6,7 +6,30 @@
 // The globe groups districts into cities.
 // ---------------------------------------------------------------------------
 
-import { arcRoad, jeep, mixAlongArc, mixCol, mixRow, palms, roundabout } from "./mapkit";
+import {
+  alley,
+  arcPts,
+  arcRoad,
+  bed,
+  boulevard,
+  dotsAlong,
+  frontage,
+  jeep,
+  mixAlongArc,
+  mixCol,
+  mixRow,
+  offsetPoly,
+  palms,
+  park,
+  plaza,
+  promenade,
+  pt,
+  roundabout,
+  sidewalk,
+  street,
+  walkPath,
+  waterway,
+} from "./mapkit";
 
 export type BuildingRole = "cafe" | "shop" | "apartment" | "uni" | "plain" | "stairs" | "salon";
 export type PoiRole = BuildingRole | "home" | "landmark" | "drive" | "deco";
@@ -45,6 +68,27 @@ export interface Rect {
   h: number;
 }
 
+export interface PathPoint {
+  x: number;
+  y: number;
+}
+
+export type PathKind = "road" | "street" | "sidewalk" | "path" | "promenade" | "alley";
+
+export interface PathSpec {
+  points: PathPoint[];
+  width: number;
+  tex: string;
+  walkable?: boolean;
+  kind?: PathKind;
+}
+
+export interface SurfaceSpec extends Rect {
+  tex: string;
+  alt?: string;
+  walkable?: boolean;
+}
+
 export interface DistrictBand extends Rect {
   name: string;
   ground: string;
@@ -61,6 +105,10 @@ export interface CityDef {
   /** Authored maps skip random bush scatter so streets stay designed. */
   dense?: boolean;
   districts?: DistrictBand[];
+  /** Intentional patches (plaza, park, garden, parking) — not the whole map. */
+  surfaces?: SurfaceSpec[];
+  /** Polyline streets, sidewalks, alleys, promenades, waterways. */
+  paths?: PathSpec[];
   roads?: Rect[];
   water?: Rect[];
   pois: Poi[];
@@ -138,42 +186,60 @@ const TENEMENT = ["b_tenement", "b_townhouse_cream", "b_tenement", "b_townhouse_
 // ===========================================================================
 const RES_TEX = ["b_residence", "b_tower", "b_glass_c", "b_residence", "b_glass_b", "b_tower", "b_residence", "b_glass_a"];
 
+const DXB_TOWER = ["b_glass_a", "b_tower", "b_glass_c", "b_residence", "b_glass_b"];
+
 const DUBAI_DOWNTOWN: CityDef = {
-  w: 148,
-  h: 108,
-  base: "t_sand",
-  baseAlt: "t_cobble",
+  w: 152,
+  h: 114,
+  base: "t_paving_light",
+  baseAlt: "t_pavement",
   road: "t_road",
   border: "fence",
   dense: true,
-  water: [{ x: 32, y: 8, w: 48, h: 18 }],
-  districts: [{ name: "Downtown Dubai", x: 10, y: 14, w: 128, h: 82, ground: "t_cobble" }],
-  roads: [
-    { x: 8, y: 28, w: 132, h: 3 },
-    { x: 8, y: 78, w: 132, h: 3 },
-    { x: 24, y: 12, w: 3, h: 84 },
-    { x: 64, y: 12, w: 3, h: 28 },
-    ...arcRoad(102, 52, 22, -0.55, 2.35, 3),
-    ...arcRoad(102, 52, 34, -0.4, 2.2, 2),
+  surfaces: [
+    plaza(12, 34, 28, 30, "t_paving_dark"),
+    plaza(38, 16, 42, 42, "t_pavement"),
+    plaza(102, 66, 40, 22, "t_pavement"),
+    park(6, 92, 52, 16),
+    bed(78, 12, 8, 74, "t_grass"),
+    bed(8, 6, 140, 5, "t_grass"),
+  ],
+  water: [{ x: 44, y: 22, w: 28, h: 22 }],
+  paths: [
+    waterway([pt(44, 28), pt(52, 24), pt(66, 28), pt(68, 38), pt(56, 42), pt(44, 38), pt(44, 28)], 5),
+    promenade([pt(38, 22), pt(52, 14), pt(74, 24), pt(76, 40), pt(62, 52), pt(40, 48), pt(38, 22)], 3),
+    ...boulevard([pt(8, 12), pt(144, 12)], 4, 2, "t_road", "t_paving_light"),
+    ...boulevard([pt(8, 78), pt(144, 78)], 4, 2, "t_road", "t_paving_light"),
+    ...boulevard([pt(72, 8), pt(72, 108)], 4, 2, "t_road", "t_paving_light"),
+    ...boulevard([pt(20, 12), pt(20, 78)], 3, 2, "t_road", "t_paving_light"),
+    ...boulevard(arcPts(110, 54, 26, -0.55, 2.35, 14), 3, 2, "t_road", "t_paving_light"),
+    ...boulevard(arcPts(110, 54, 16, -0.4, 2.2, 12), 2, 2, "t_road", "t_paving_light"),
+    walkPath([pt(24, 46), pt(40, 40), pt(52, 32)], 2, "t_paving_light"),
+    walkPath([pt(52, 32), pt(40, 40), pt(40, 48), pt(56, 48), pt(54, 54)], 2, "t_paving_light"),
+    walkPath([pt(54, 56), pt(72, 62), pt(96, 66), pt(112, 64)], 2, "t_pavement"),
+    walkPath([pt(20, 58), pt(40, 58), pt(52, 54)], 2, "t_paving_dark"),
+    alley([pt(12, 64), pt(36, 64)], 2),
+    street([pt(70, 10), pt(74, 14)], 3, "t_crossing"),
   ],
   pois: [
-    { tex: "lm_burj", tx: 52, ty: 28, role: "landmark", name: "Burj Khalifa" },
+    { tex: "lm_burj", tx: 52, ty: 18, role: "landmark", name: "Burj Khalifa" },
     {
       tex: "b_mall",
-      tx: 36,
-      ty: 48,
+      tx: 20,
+      ty: 42,
       role: "cafe",
       name: "Dubai Mall",
       tag: "dubai_mall",
       desc: "The mall wrapped around the Burj. Fashion Avenue, the fountain, the aquarium.",
     },
-    { tex: "b_shop", tx: 54, ty: 54, role: "shop", name: "Souk Al Bahar" },
-    ...mixAlongArc(RES_TEX, 102, 52, 28, -0.5, 2.2, 8),
-    ...mixAlongArc(["b_glass_a", "b_residence", "b_tower", "b_glass_c", "b_residence", "b_glass_b"], 102, 52, 16, -0.35, 2.05, 6),
+    { tex: "o_fountain", tx: 56, ty: 46, role: "landmark", name: "The Fountain" },
+    { tex: "b_shop", tx: 54, ty: 56, role: "shop", name: "Souk Al Bahar" },
+    ...mixAlongArc(RES_TEX, 110, 54, 30, -0.5, 2.2, 8),
+    ...mixAlongArc(["b_glass_a", "b_residence", "b_tower", "b_glass_c", "b_residence", "b_glass_b"], 110, 54, 18, -0.35, 2.05, 6),
     {
       tex: "b_residence",
-      tx: 124,
-      ty: 48,
+      tx: 132,
+      ty: 46,
       role: "stairs",
       name: "The Residences T8 · 1701",
       tag: "residences_t8",
@@ -181,54 +247,73 @@ const DUBAI_DOWNTOWN: CityDef = {
     },
     {
       tex: "b_spinneys",
-      tx: 108,
-      ty: 62,
+      tx: 114,
+      ty: 66,
       role: "shop",
       name: "Spinneys",
-      desc: "Mid-curve on the side of the Residences road.",
+      desc: "On the Residences curve, mid-block.",
     },
-    ...mixRow(GLASS, 12, 20, 3, 18),
-    ...mixRow(["b_glass_b", "b_glass_a", "b_glass_c", "b_tower"], 12, 88, 4, 22),
-    ...palms(14, 36, 6, 16),
-    ...palms(18, 70, 5, 18),
-    jeep(70, 86),
+    ...frontage([pt(8, 12), pt(60, 12)], 1, 5, DXB_TOWER, 8),
+    ...frontage([pt(8, 78), pt(64, 78)], 1, 5, ["b_glass_b", "b_glass_a", "b_tower", "b_glass_c"], 10),
+    ...frontage([pt(20, 16), pt(20, 72)], -1, 5, GLASS, 10),
+    ...dotsAlong([pt(80, 16), pt(80, 80)], "o_palm", 10),
+    ...dotsAlong(arcPts(110, 54, 22, -0.5, 2.2, 10), "o_palm", 12),
+    ...dotsAlong(offsetPoly([pt(8, 78), pt(144, 78)], 3), "o_lamp", 16, { solid: false }),
+    { tex: "o_planter", tx: 48, ty: 50, role: "deco" },
+    { tex: "o_planter", tx: 64, ty: 50, role: "deco" },
+    { tex: "o_bench", tx: 44, ty: 50, role: "deco" },
+    jeep(74, 82),
   ],
-  spawn: { tx: 70, ty: 86 },
+  spawn: { tx: 74, ty: 82 },
   entry: {
-    south: { tx: 70, ty: 100 },
-    north: { tx: 70, ty: 18 },
+    south: { tx: 72, ty: 106 },
+    north: { tx: 72, ty: 10 },
   },
 };
 
 const DUBAI_SZR: CityDef = {
-  w: 76,
+  w: 84,
   h: 168,
   base: "t_sand",
   baseAlt: "t_sand",
   road: "t_road",
   border: "fence",
   dense: true,
-  districts: [{ name: "Sheikh Zayed Road", x: 10, y: 6, w: 56, h: 156, ground: "t_sand" }],
-  roads: [
-    { x: 30, y: 4, w: 14, h: 160 },
-    { x: 4, y: 36, w: 68, h: 2 },
-    { x: 4, y: 72, w: 68, h: 2 },
-    { x: 4, y: 108, w: 68, h: 2 },
-    { x: 4, y: 144, w: 68, h: 2 },
+  surfaces: [
+    bed(36, 4, 8, 160, "t_grass"),
+    plaza(6, 112, 16, 16, "t_paving_dark"),
+    plaza(62, 112, 16, 16, "t_paving_dark"),
+  ],
+  paths: [
+    street([pt(32, 4), pt(32, 164)], 5),
+    street([pt(48, 4), pt(48, 164)], 5),
+    sidewalk([pt(26, 4), pt(26, 164)], 2),
+    sidewalk([pt(54, 4), pt(54, 164)], 2),
+    street([pt(16, 8), pt(16, 160)], 2),
+    street([pt(68, 8), pt(68, 160)], 2),
+    sidewalk([pt(13, 8), pt(13, 160)], 2),
+    sidewalk([pt(71, 8), pt(71, 160)], 2),
+    ...boulevard([pt(6, 36), pt(78, 36)], 3, 2),
+    ...boulevard([pt(6, 72), pt(78, 72)], 3, 2),
+    ...boulevard([pt(6, 108), pt(78, 108)], 3, 2),
+    ...boulevard([pt(6, 144), pt(78, 144)], 3, 2),
+    street([pt(38, 34), pt(42, 38)], 3, "t_crossing"),
+    street([pt(38, 106), pt(42, 110)], 3, "t_crossing"),
   ],
   pois: [
-    ...mixCol(["b_glass_a", "b_tower", "b_glass_c", "b_residence", "b_glass_b", "b_glass_a", "b_tower", "b_glass_c"], 14, 14, 8, 18),
-    ...mixCol(["b_glass_b", "b_residence", "b_glass_a", "b_tower", "b_glass_c", "b_glass_b", "b_residence", "b_glass_a"], 58, 18, 8, 18),
-    ...mixCol(["o_palm"], 24, 22, 7, 20),
-    ...mixCol(["o_palm"], 50, 30, 7, 20),
-    jeep(36, 84),
+    ...mixCol(["b_glass_a", "b_tower", "b_glass_c", "b_residence", "b_glass_b", "b_glass_a", "b_tower", "b_glass_c"], 8, 14, 8, 18),
+    ...mixCol(["b_glass_b", "b_residence", "b_glass_a", "b_tower", "b_glass_c", "b_glass_b", "b_residence", "b_glass_a"], 76, 18, 8, 18),
+    ...mixCol(["o_palm"], 36, 16, 8, 18),
+    ...mixCol(["o_palm"], 44, 24, 8, 18),
+    { tex: "o_sign", tx: 40, ty: 108, role: "plain", name: "Metro", desc: "SZR flyover — the long drive south." },
+    jeep(40, 84),
   ],
-  spawn: { tx: 36, ty: 12 },
+  spawn: { tx: 40, ty: 12 },
   entry: {
-    north: { tx: 36, ty: 8 },
-    south: { tx: 36, ty: 158 },
-    west: { tx: 8, ty: 120 },
-    east: { tx: 64, ty: 120 },
+    north: { tx: 40, ty: 8 },
+    south: { tx: 40, ty: 158 },
+    west: { tx: 8, ty: 108 },
+    east: { tx: 76, ty: 108 },
   },
 };
 
@@ -246,20 +331,23 @@ const DUBAI_DAMAC: CityDef = {
     { x: 14, y: 78, w: 18, h: 12 },
     { x: 88, y: 82, w: 20, h: 12 },
   ],
-  districts: [
-    { name: "Santorini", x: 10, y: 22, w: 70, h: 72, ground: "t_grass2", alt: "t_grass" },
-    { name: "Damac Lagoons", x: 82, y: 28, w: 38, h: 50, ground: "t_grass", alt: "t_grass2" },
+  surfaces: [
+    park(40, 8, 28, 16),
+    plaza(50, 46, 16, 12, "t_pavement"),
   ],
-  roads: [
-    { x: 8, y: 52, w: 112, h: 3 },
-    ...roundabout(58, 52, 6, 2),
-    { x: 28, y: 16, w: 3, h: 40 },
-    { x: 8, y: 22, w: 22, h: 2 },
-    { x: 8, y: 34, w: 22, h: 2 },
-    { x: 8, y: 46, w: 22, h: 2 },
-    { x: 8, y: 78, w: 100, h: 2 },
-    { x: 108, y: 48, w: 16, h: 3 },
+  paths: [
+    ...boulevard([pt(8, 52), pt(120, 52)], 3, 2, "t_path", "t_pavement"),
+    ...boulevard([pt(28, 16), pt(28, 52)], 3, 2, "t_path", "t_pavement"),
+    sidewalk([pt(8, 22), pt(28, 22)], 2),
+    sidewalk([pt(8, 34), pt(28, 34)], 2),
+    sidewalk([pt(8, 46), pt(28, 46)], 2),
+    walkPath([pt(118, 52), pt(108, 52), pt(58, 52), pt(28, 52), pt(28, 22), pt(16, 22)], 2, "t_pavement"),
+    promenade([pt(10, 16), pt(26, 16), pt(28, 22)], 2),
+    promenade([pt(96, 18), pt(116, 18), pt(118, 26)], 2),
+    street([pt(8, 78), pt(108, 78)], 2, "t_path"),
+    sidewalk([pt(8, 76), pt(108, 76)], 2),
   ],
+  roads: [...roundabout(58, 52, 6, 2), { x: 108, y: 48, w: 16, h: 3 }],
   pois: [
     {
       tex: "b_adnoc",
@@ -310,13 +398,22 @@ const DUBAI_OASIS: CityDef = {
   road: "t_road",
   border: "fence",
   dense: true,
-  districts: [{ name: "Dubai Silicon Oasis", x: 10, y: 14, w: 100, h: 72, ground: "t_sand" }],
-  roads: [
-    { x: 8, y: 46, w: 104, h: 3 },
-    { x: 56, y: 8, w: 3, h: 84 },
-    { x: 8, y: 22, w: 104, h: 2 },
-    { x: 8, y: 72, w: 104, h: 2 },
-    ...arcRoad(56, 48, 18, -0.3, 3.4, 2),
+  surfaces: [
+    plaza(44, 50, 32, 18, "t_pavement"),
+    park(8, 8, 28, 12),
+    park(84, 76, 28, 16),
+    bed(48, 8, 16, 12, "t_grass"),
+  ],
+  paths: [
+    ...boulevard([pt(8, 46), pt(112, 46)], 3, 2),
+    ...boulevard([pt(56, 8), pt(56, 90)], 3, 2),
+    ...boulevard(arcPts(56, 48, 22, -0.25, 3.35, 16), 3, 2),
+    sidewalk([pt(8, 22), pt(112, 22)], 2),
+    sidewalk([pt(8, 72), pt(112, 72)], 2),
+    walkPath([pt(12, 46), pt(38, 56), pt(52, 60)], 2, "t_pavement"),
+    walkPath([pt(52, 60), pt(70, 56), pt(88, 50)], 2, "t_pavement"),
+    alley([pt(38, 50), pt(38, 70)], 2),
+    alley([pt(70, 48), pt(70, 70)], 2),
   ],
   pois: [
     {
@@ -340,7 +437,8 @@ const DUBAI_OASIS: CityDef = {
     },
     ...mixRow(["b_glass_c", "b_tower", "b_glass_a", "b_glass_b"], 14, 28, 4, 22),
     ...mixRow(["b_villa_modern", "b_glass_c", "b_villa_sand", "b_villa_modern"], 16, 80, 4, 20),
-    ...palms(14, 16, 7, 14),
+    ...dotsAlong(arcPts(56, 48, 18, -0.2, 3.3, 12), "o_palm", 10),
+    ...palms(14, 16, 5, 16),
     jeep(48, 46),
   ],
   spawn: { tx: 12, ty: 48 },
@@ -351,18 +449,27 @@ const DUBAI_OASIS: CityDef = {
 };
 
 const DUBAI_HILLS: CityDef = {
-  w: 116,
-  h: 96,
+  w: 120,
+  h: 100,
   base: "t_grass2",
   baseAlt: "t_grass",
   road: "t_road",
   border: "fence",
   dense: true,
-  districts: [{ name: "Dubai Hills", x: 12, y: 16, w: 92, h: 64, ground: "t_grass2", alt: "t_grass" }],
-  roads: [
-    { x: 8, y: 48, w: 100, h: 3 },
-    { x: 54, y: 10, w: 3, h: 76 },
-    ...arcRoad(54, 48, 20, 0.2, 2.9, 2),
+  surfaces: [
+    park(8, 8, 36, 22),
+    park(78, 70, 34, 22),
+    plaza(44, 24, 28, 20, "t_paving_light"),
+    bed(8, 70, 24, 12, "t_grass"),
+  ],
+  paths: [
+    ...boulevard([pt(8, 48), pt(112, 48)], 3, 2),
+    ...boulevard([pt(54, 8), pt(54, 90)], 3, 2),
+    ...boulevard(arcPts(54, 48, 24, 0.15, 2.95, 14), 3, 2),
+    walkPath([pt(16, 18), pt(28, 28), pt(40, 36), pt(50, 44)], 2, "t_path"),
+    walkPath([pt(58, 48), pt(72, 58), pt(90, 72), pt(100, 84)], 2, "t_path"),
+    walkPath([pt(36, 50), pt(44, 40), pt(54, 34)], 2, "t_pavement"),
+    promenade([pt(12, 72), pt(28, 76), pt(40, 72)], 2),
   ],
   pois: [
     {
@@ -383,13 +490,16 @@ const DUBAI_HILLS: CityDef = {
       tag: "saddle",
       desc: "Anytime you see it, you stop for coffee.",
     },
-    ...mixAlongArc(["b_villa_modern", "b_villa_terra2", "b_villa_modern", "b_villa_terra"], 54, 48, 28, 0.3, 2.8, 7),
-    ...mixRow(GLASS, 14, 20, 3, 20),
-    ...palms(16, 72, 6, 14),
+    ...mixAlongArc(["b_villa_modern", "b_villa_terra2", "b_villa_modern", "b_villa_terra"], 54, 48, 30, 0.25, 2.85, 8),
+    ...mixRow(GLASS, 14, 20, 2, 22),
+    ...dotsAlong(arcPts(54, 48, 20, 0.2, 2.9, 10), "o_palm", 12),
+    ...palms(16, 78, 5, 14),
+    { tex: "o_bench", tx: 22, ty: 18, role: "deco" },
+    { tex: "o_bench", tx: 92, ty: 82, role: "deco" },
     jeep(58, 54),
   ],
-  spawn: { tx: 54, ty: 80 },
-  entry: { north: { tx: 54, ty: 12 } },
+  spawn: { tx: 54, ty: 84 },
+  entry: { north: { tx: 54, ty: 10 } },
 };
 
 // ===========================================================================
@@ -687,71 +797,150 @@ const AD_CORNICHE: CityDef = {
   entry: { east: { tx: 100, ty: 44 }, north: { tx: 52, ty: 12 }, south: { tx: 52, ty: 76 } },
 };
 
-// ===========================================================================
-// LONDON
-// ===========================================================================
+const LDN = ["b_front_red", "b_front_cream", "b_townhouse_red", "b_front_cream", "b_pub", "b_front_red"];
+const LDN_SHOP = ["b_shop", "b_front_cream", "b_cafe", "b_front_red", "b_shop", "b_front_cream", "b_pub"];
+const SOHO = ["b_front_cream", "b_front_red", "b_cafe", "b_front_cream", "b_pub", "b_front_red"];
+
 const LONDON_WESTMINSTER: CityDef = {
-  w: 108,
-  h: 90,
-  base: "t_grass",
+  w: 128,
+  h: 104,
+  base: "t_pavement",
   baseAlt: "t_cobble",
-  road: "t_cobble",
+  road: "t_road",
   border: "fence",
   dense: true,
-  water: [{ x: 2, y: 62, w: 104, h: 16 }],
-  districts: [{ name: "Westminster", x: 16, y: 12, w: 76, h: 46, ground: "t_cobble" }],
-  roads: [
-    { x: 8, y: 42, w: 92, h: 3 },
-    { x: 50, y: 10, w: 3, h: 52 },
+  surfaces: [
+    plaza(32, 38, 44, 28, "t_pavement", "t_cobble"),
+    park(6, 42, 22, 22),
+    plaza(64, 60, 8, 8, "t_paving_dark"),
+  ],
+  paths: [
+    waterway([pt(0, 86), pt(22, 78), pt(48, 88), pt(72, 80), pt(100, 90), pt(128, 84)], 14),
+    ...boulevard([pt(4, 36), pt(124, 36)], 4, 2, "t_road", "t_pavement"),
+    ...boulevard([pt(50, 6), pt(50, 42)], 3, 2, "t_road", "t_pavement"),
+    street([pt(66, 54), pt(66, 100)], 4),
+    walkPath([pt(8, 72), pt(48, 70), pt(72, 68), pt(110, 74), pt(124, 72)], 3, "t_pavement"),
+    walkPath([pt(12, 48), pt(24, 54), pt(22, 62)], 2, "t_path"),
+    alley([pt(28, 8), pt(28, 34)], 2),
+    alley([pt(72, 8), pt(72, 32)], 2),
+    alley([pt(88, 20), pt(120, 20)], 2),
+    street([pt(4, 20), pt(46, 20)], 3),
+    sidewalk([pt(4, 18), pt(46, 18)], 2),
+    sidewalk([pt(4, 23), pt(46, 23)], 2),
   ],
   pois: [
-    { tex: "lm_bigben", tx: 50, ty: 22, role: "landmark", name: "Big Ben" },
-    ...mixRow(["b_townhouse_red", "b_townhouse_cream", "b_townhouse_red", "b_townhouse_cream"], 14, 38, 4, 14),
-    ...mixRow(["b_townhouse_cream", "b_townhouse_red", "b_townhouse_cream", "b_tenement"], 18, 52, 4, 16),
-    { tex: "o_phonebox", tx: 40, ty: 46, role: "deco" },
-    { tex: "o_bus_red", tx: 66, ty: 48, role: "deco" },
-    { tex: "o_lamp", tx: 34, ty: 50, role: "deco" },
-    jeep(54, 54),
+    { tex: "lm_bigben", tx: 48, ty: 46, role: "landmark", name: "Big Ben" },
+    ...frontage([pt(32, 38), pt(72, 38)], -1, 4, LDN, 5),
+    ...frontage([pt(4, 36), pt(46, 36)], 1, 5, LDN, 5),
+    ...frontage([pt(54, 36), pt(120, 36)], 1, 5, LDN, 5),
+    ...frontage([pt(50, 8), pt(50, 34)], 1, 4, LDN, 5),
+    ...frontage([pt(50, 8), pt(50, 34)], -1, 4, ["b_townhouse_cream", "b_front_cream", "b_townhouse_red"], 5),
+    ...frontage([pt(4, 20), pt(44, 20)], -1, 4, LDN, 5),
+    ...mixRow(["b_front_cream", "b_front_red", "b_townhouse_cream"], 78, 26, 4, 10),
+    { tex: "o_bus_red", tx: 80, ty: 36, role: "deco" },
+    { tex: "o_phonebox", tx: 40, ty: 52, role: "deco" },
+    ...dotsAlong([pt(8, 72), pt(110, 74)], "o_railing", 10, { solid: false }),
+    ...dotsAlong([pt(12, 50), pt(24, 60)], "o_tree", 6),
+    { tex: "o_bench", tx: 16, ty: 56, role: "deco" },
+    { tex: "o_lamp_ldn", tx: 58, ty: 40, role: "deco" },
+    { tex: "o_lamp_ldn", tx: 42, ty: 40, role: "deco" },
+    jeep(58, 32),
   ],
-  spawn: { tx: 96, ty: 44 },
-  entry: { east: { tx: 100, ty: 44 }, west: { tx: 10, ty: 44 } },
+  spawn: { tx: 120, ty: 38 },
+  entry: { east: { tx: 122, ty: 38 }, west: { tx: 8, ty: 38 } },
 };
 
 const LONDON_WESTEND: CityDef = {
-  w: 112,
-  h: 92,
-  base: "t_grass",
+  w: 136,
+  h: 112,
+  base: "t_pavement",
   baseAlt: "t_cobble",
-  road: "t_cobble",
+  road: "t_road",
   border: "fence",
   dense: true,
-  districts: [{ name: "West End", x: 12, y: 12, w: 88, h: 68, ground: "t_cobble" }],
-  roads: [
-    { x: 8, y: 42, w: 96, h: 3 },
-    { x: 8, y: 22, w: 96, h: 2 },
-    { x: 52, y: 10, w: 3, h: 72 },
-    { x: 8, y: 62, w: 96, h: 2 },
+  surfaces: [
+    plaza(64, 32, 16, 14, "t_cobble"),
+    plaza(98, 50, 10, 8, "t_brick_path"),
+    park(8, 90, 54, 18),
+  ],
+  paths: [
+    ...boulevard([pt(4, 38), pt(132, 38)], 4, 2),
+    ...boulevard([pt(70, 6), pt(88, 16), pt(92, 28), pt(78, 38), pt(68, 54), pt(64, 70), pt(76, 90)], 4, 2),
+    ...boulevard([pt(6, 76), pt(40, 74), pt(80, 78), pt(130, 74)], 3, 2),
+    street([pt(74, 36), pt(82, 36)], 2, "t_crossing"),
+    street([pt(38, 74), pt(44, 74)], 2, "t_crossing"),
+    alley([pt(96, 44), pt(96, 70)], 2),
+    alley([pt(108, 44), pt(108, 70)], 2),
+    alley([pt(120, 44), pt(120, 68)], 2),
+    alley([pt(88, 48), pt(128, 48)], 2),
+    alley([pt(88, 58), pt(128, 58)], 2),
+    alley([pt(88, 66), pt(124, 66)], 2),
+    alley([pt(16, 44), pt(16, 72)], 2),
+    alley([pt(32, 44), pt(32, 72)], 2),
+    alley([pt(48, 44), pt(48, 72)], 2),
+    walkPath([pt(14, 94), pt(36, 100), pt(54, 94)], 2, "t_path"),
+    walkPath([pt(20, 90), pt(20, 106)], 2, "t_path"),
+    street([pt(4, 18), pt(132, 18)], 3),
+    sidewalk([pt(4, 16), pt(132, 16)], 2),
+    sidewalk([pt(4, 21), pt(132, 21)], 2),
   ],
   pois: [
+    ...frontage([pt(8, 38), pt(128, 38)], -1, 5, LDN_SHOP, 4),
+    ...frontage([pt(8, 38), pt(60, 38)], 1, 5, LDN, 5),
+    ...frontage([pt(86, 38), pt(128, 38)], 1, 5, SOHO, 4),
+    ...frontage([pt(70, 8), pt(90, 26), pt(78, 38)], -1, 5, LDN, 5),
+    ...frontage([pt(70, 8), pt(90, 26), pt(78, 38)], 1, 5, LDN, 5),
+    ...frontage([pt(78, 38), pt(64, 70), pt(76, 88)], 1, 5, LDN, 5),
+    ...frontage([pt(6, 76), pt(50, 74)], -1, 5, ["b_townhouse_cream", "b_front_cream", "b_townhouse_red"], 5),
+    ...frontage([pt(90, 76), pt(128, 74)], 1, 5, LDN, 5),
+    ...frontage([pt(8, 18), pt(128, 18)], -1, 4, LDN, 5),
+    ...frontage([pt(8, 18), pt(60, 18)], 1, 4, ["b_front_cream", "b_front_red", "b_townhouse_cream"], 5),
+    ...mixRow(SOHO, 90, 46, 5, 7),
+    ...mixCol(SOHO, 114, 50, 3, 7),
+    {
+      tex: "b_shop",
+      tx: 44,
+      ty: 32,
+      role: "shop",
+      name: "Oxford Street",
+      desc: "The whole street is shops. This is just the one you duck into.",
+    },
     {
       tex: "b_townhouse_red",
-      tx: 52,
-      ty: 30,
+      tx: 108,
+      ty: 52,
       role: "plain",
       name: "Fadwa's flat",
-      desc: "Central London. Your sister's place.",
+      desc: "Central London. Your sister's place, a Soho walk-up.",
       npc: "fadwa",
     },
-    { tex: "b_cafe", tx: 28, ty: 38, role: "cafe", name: "Soho Cafe" },
-    { tex: "b_shop", tx: 76, ty: 38, role: "shop", name: "Oxford Street" },
-    { tex: "b_townhouse_cream", tx: 30, ty: 58, role: "plain", name: "The Ritz", desc: "Very fancy. Maybe one day." },
-    ...mixRow(["b_townhouse_red", "b_townhouse_cream", "b_tenement", "b_townhouse_red"], 16, 72, 4, 18),
-    { tex: "o_phonebox", tx: 42, ty: 46, role: "deco" },
-    { tex: "o_lamp", tx: 62, ty: 46, role: "deco" },
-    jeep(56, 50),
+    { tex: "b_cafe", tx: 96, ty: 56, role: "cafe", name: "Soho Cafe" },
+    {
+      tex: "b_townhouse_cream",
+      tx: 28,
+      ty: 70,
+      role: "plain",
+      name: "The Ritz",
+      desc: "On Piccadilly, not floating in a field. Very fancy. Maybe one day.",
+    },
+    { tex: "o_bus_red", tx: 56, ty: 38, role: "deco" },
+    { tex: "o_cab", tx: 100, ty: 76, role: "deco" },
+    { tex: "o_phonebox", tx: 72, ty: 44, role: "deco" },
+    ...dotsAlong(offsetPoly([pt(10, 38), pt(128, 38)], 3), "o_lamp_ldn", 14, { solid: false }),
+    ...dotsAlong([pt(96, 48), pt(96, 68)], "o_lamp_ldn", 10, { solid: false }),
+    { tex: "o_bin", tx: 102, ty: 50, role: "deco" },
+    { tex: "o_planter", tx: 36, ty: 74, role: "deco" },
+    { tex: "o_bollard", tx: 70, ty: 42, role: "deco" },
+    { tex: "o_bollard", tx: 76, ty: 42, role: "deco" },
+    { tex: "o_bench", tx: 102, ty: 54, role: "deco" },
+    { tex: "o_tree", tx: 18, ty: 96, role: "deco" },
+    { tex: "o_tree", tx: 32, ty: 100, role: "deco" },
+    { tex: "o_tree", tx: 46, ty: 96, role: "deco" },
+    { tex: "o_bench", tx: 28, ty: 98, role: "deco" },
+    jeep(84, 82),
   ],
-  spawn: { tx: 12, ty: 44 },
-  entry: { west: { tx: 8, ty: 44 }, east: { tx: 102, ty: 44 } },
+  spawn: { tx: 12, ty: 40 },
+  entry: { west: { tx: 8, ty: 40 }, east: { tx: 128, ty: 40 } },
 };
 
 const EDI_OLDTOWN: CityDef = {
@@ -1096,8 +1285,8 @@ export const LOCATIONS: Record<string, LocationDef> = {
     cityId: "london",
     name: "Westminster",
     subtitle: "Big Ben & the Thames",
-    ground: "t_grass",
-    path: "t_cobble",
+    ground: "t_pavement",
+    path: "t_road",
     landmark: "lm_bigben",
     landmarkName: "Big Ben",
     city: LONDON_WESTMINSTER,
@@ -1110,8 +1299,8 @@ export const LOCATIONS: Record<string, LocationDef> = {
     cityId: "london",
     name: "West End",
     subtitle: "Fadwa's flat, Soho & Oxford Street",
-    ground: "t_grass",
-    path: "t_cobble",
+    ground: "t_pavement",
+    path: "t_road",
     city: LONDON_WESTEND,
     geo: { lat: 51.51, lng: -0.13 },
     exits: { west: "london_westminster" },

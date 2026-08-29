@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 import { TILE } from "./constants";
-import type { Cardinal, CityDef, LocationDef, Poi } from "./data/locations";
+import type { Cardinal, CityDef, LocationDef, PathSpec, Poi } from "./data/locations";
 import { opposite, getLocation } from "./data/locations";
+import { stroke } from "./data/mapkit";
 import { NPCS } from "./data/npcs";
 
 export interface PropSpec {
@@ -142,6 +143,7 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   const seed = seedOf(def.id);
   const ground: string[][] = [];
   const blocked: boolean[][] = [];
+  const walk: boolean[][] = [];
   const props: PropSpec[] = [];
   const zones: ZoneSpec[] = [];
   const collectibles: CollectibleSpec[] = [];
@@ -154,9 +156,11 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   for (let y = 0; y < h; y++) {
     ground[y] = [];
     blocked[y] = [];
+    walk[y] = [];
     for (let x = 0; x < w; x++) {
       ground[y][x] = hash(x, y, seed) > 0.85 ? city.baseAlt : city.base;
       blocked[y][x] = false;
+      walk[y][x] = false;
     }
   }
 
@@ -173,43 +177,73 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
       labels.push({ x: centerPx(d.x + Math.floor(d.w / 2)), y: (d.y + 1) * TILE, text: d.name, big: true });
   }
 
-  // ---- water ----
-  for (const r of city.water ?? []) {
+  const paintRect = (r: { x: number; y: number; w: number; h: number }, tex: string, alt: string | undefined, block: boolean, street = false) => {
     for (let y = r.y; y < r.y + r.h; y++)
       for (let x = r.x; x < r.x + r.w; x++) {
         if (!inB(x, y)) continue;
-        ground[y][x] = "t_water";
-        blocked[y][x] = true;
+        ground[y][x] = alt && hash(x, y, seed + 11) > 0.84 ? alt : tex;
+        blocked[y][x] = block;
+        if (street) walk[y][x] = true;
+        if (block) walk[y][x] = false;
       }
+  };
+
+  const paintPath = (p: PathSpec) => {
+    const water = p.tex === "t_water" || p.walkable === false;
+    for (const c of stroke(p.points, p.width)) {
+      if (!inB(c.x, c.y)) continue;
+      ground[c.y][c.x] = p.tex;
+      blocked[c.y][c.x] = water;
+      walk[c.y][c.x] = !water;
+    }
+  };
+
+  // ---- authored surfaces (plazas, parks, gardens, parking) ----
+  for (const s of city.surfaces ?? []) {
+    paintRect(s, s.tex, s.alt, s.walkable === false || s.tex === "t_water");
   }
+
+  // ---- water ----
+  for (const r of city.water ?? []) paintRect(r, "t_water", undefined, true);
+
+  const paths = city.paths ?? [];
+  const waterPaths = paths.filter((p) => p.tex === "t_water" || p.walkable === false);
+  const walkPaths = paths.filter((p) => p.tex !== "t_water" && p.walkable !== false && p.kind !== "road" && p.kind !== "street");
+  const streetPaths = paths.filter((p) => p.kind === "road" || p.kind === "street");
+
+  for (const p of waterPaths) paintPath(p);
+  for (const p of walkPaths) paintPath(p);
 
   // ---- roads (drawn on top of everything; never blocked) ----
-  for (const r of city.roads ?? []) {
-    for (let y = r.y; y < r.y + r.h; y++)
-      for (let x = r.x; x < r.x + r.w; x++) {
-        if (!inB(x, y)) continue;
-        ground[y][x] = city.road;
-        blocked[y][x] = false;
-      }
-  }
+  for (const r of city.roads ?? []) paintRect(r, city.road, undefined, false, true);
+  for (const p of streetPaths) paintPath(p);
 
-  // road through exit gaps
+  const gapAxis = (dir: Cardinal) => {
+    const e = city.entry?.[dir];
+    if (dir === "north" || dir === "south") return e?.tx ?? Math.floor(w / 2);
+    return e?.ty ?? Math.floor(h / 2);
+  };
+
+  // road through exit gaps (aligned to the authored entry, not the map centre)
   (Object.keys(def.exits ?? {}) as Cardinal[]).forEach((dir) => {
+    const axis = gapAxis(dir);
     if (dir === "north" || dir === "south") {
       const y0 = dir === "north" ? 0 : h - 4;
       for (let y = y0; y < y0 + 4; y++)
-        for (let x = Math.floor(w / 2) - 3; x <= Math.floor(w / 2) + 3; x++) {
+        for (let x = axis - 7; x <= axis + 7; x++) {
           if (!inB(x, y)) continue;
           ground[y][x] = city.road;
           blocked[y][x] = false;
+          walk[y][x] = true;
         }
     } else {
       const x0 = dir === "west" ? 0 : w - 4;
       for (let x = x0; x < x0 + 4; x++)
-        for (let y = Math.floor(h / 2) - 3; y <= Math.floor(h / 2) + 3; y++) {
+        for (let y = axis - 7; y <= axis + 7; y++) {
           if (!inB(x, y)) continue;
           ground[y][x] = city.road;
           blocked[y][x] = false;
+          walk[y][x] = true;
         }
     }
   });
@@ -219,8 +253,9 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     city.border === "tree" ? "o_tree" : city.border === "pine" ? "o_pine" : city.border === "rock" ? "o_rock" : "o_fence_h";
   const gap = (dir: Cardinal, x: number, y: number) => {
     if (!def.exits?.[dir]) return false;
-    if (dir === "north" || dir === "south") return Math.abs(x - Math.floor(w / 2)) <= 3;
-    return Math.abs(y - Math.floor(h / 2)) <= 3;
+    const axis = gapAxis(dir);
+    if (dir === "north" || dir === "south") return Math.abs(x - axis) <= 7;
+    return Math.abs(y - axis) <= 7;
   };
   for (let x = 0; x < w; x++) {
     for (const y of [0, h - 1]) {
@@ -261,12 +296,14 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     if (solid) {
       for (let x = leftTx; x < leftTx + wTiles; x++) {
         if (x <= 0 || x >= w - 1) continue;
-        if (inB(x, p.ty)) blocked[p.ty][x] = true;
-        if (isBuilding && inB(x, p.ty - 1)) blocked[p.ty - 1][x] = true;
+        if (inB(x, p.ty) && !walk[p.ty][x]) blocked[p.ty][x] = true;
+        if (isBuilding && inB(x, p.ty - 1) && !walk[p.ty - 1][x]) blocked[p.ty - 1][x] = true;
       }
     }
 
     if (p.name) labels.push({ x: cx, y: baseY - ph - 4, text: p.name });
+
+    if (role !== "deco" && inB(p.tx, p.ty + 1)) blocked[p.ty + 1][p.tx] = false;
 
     const doorY = baseY + 4;
     switch (role) {
@@ -346,6 +383,25 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     npcSpots.push({ id: n.id, x: centerPx(tx), y: (ty + 1) * TILE });
   });
 
+  // streets/paths stay walkable even if a building footprint overlaps them
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) if (walk[y][x]) blocked[y][x] = false;
+
+  for (let x = 0; x < w; x++) {
+    for (const y of [0, h - 1]) {
+      const dir: Cardinal = y === 0 ? "north" : "south";
+      if (gap(dir, x, y) || walk[y][x]) continue;
+      blocked[y][x] = true;
+    }
+  }
+  for (let y = 1; y < h - 1; y++) {
+    for (const x of [0, w - 1]) {
+      const dir: Cardinal = x === 0 ? "west" : "east";
+      if (gap(dir, x, y) || walk[y][x]) continue;
+      blocked[y][x] = true;
+    }
+  }
+
   // ---- walk-off edges to neighbouring districts ----
   const edgePrompt: Record<Cardinal, string> = {
     north: "Keep walking north",
@@ -357,8 +413,9 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   (Object.keys(def.exits ?? {}) as Cardinal[]).forEach((dir) => {
     const dest = def.exits![dir];
     if (!dest) return;
-    const midX = centerPx(Math.floor(w / 2));
-    const midY = (Math.floor(h / 2) + 1) * TILE;
+    const axis = gapAxis(dir);
+    const midX = centerPx(axis);
+    const midY = (axis + 1) * TILE;
     const spots =
       dir === "north"
         ? [{ x: midX, y: TILE * 2 }]
@@ -398,7 +455,7 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     const scatterTex = city.border === "rock" ? "o_rock" : city.border === "pine" ? "o_pine" : "o_bush";
     for (let y = 2; y < h - 2; y++) {
       for (let x = 2; x < w - 2; x++) {
-        if (blocked[y][x] || ground[y][x] === city.road || ground[y][x] === "t_water") continue;
+        if (blocked[y][x] || walk[y][x] || ground[y][x] === city.road || ground[y][x] === "t_water") continue;
         const r = hash(x, y, seed + 99);
         if (r > 0.955) {
           props.push({ tex: r > 0.98 ? "o_tree" : scatterTex, x: centerPx(x), y: (y + 1) * TILE });

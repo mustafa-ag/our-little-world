@@ -94,6 +94,34 @@ function buildTiles(scene: Phaser.Scene) {
         px(ctx, x, y, 3, 3, ((x + y) / 4) % 2 ? "#8a909b" : "#a7adb8");
       }
   });
+  createTex(scene, "t_pavement", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#c9c2b4");
+    speckle(ctx, TILE, TILE, "#b9b2a4", 8, 17);
+    px(ctx, 0, 0, TILE, 1, "#d4cec0");
+  });
+  createTex(scene, "t_paving_light", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#e4dcc8");
+    speckle(ctx, TILE, TILE, "#d4ccb8", 7, 23);
+    px(ctx, 8, 0, 1, TILE, "#efe8d6");
+  });
+  createTex(scene, "t_paving_dark", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#8a8680");
+    speckle(ctx, TILE, TILE, "#7a7670", 8, 29);
+  });
+  createTex(scene, "t_brick_path", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, "#b07a62");
+    for (let y = 0; y < TILE; y += 4) {
+      px(ctx, 0, y, TILE, 1, "#9a684e");
+      const ox = (y / 4) % 2 ? 4 : 0;
+      px(ctx, ox, y, 1, 4, "#9a684e");
+      px(ctx, ox + 8, y, 1, 4, "#9a684e");
+    }
+  });
+  createTex(scene, "t_crossing", TILE, TILE, (ctx) => {
+    px(ctx, 0, 0, TILE, TILE, Palette.road);
+    px(ctx, 0, 2, TILE, 3, "#efe8d6");
+    px(ctx, 0, 10, TILE, 3, "#efe8d6");
+  });
   // interiors
   createTex(scene, "t_wood", TILE, TILE, (ctx) => {
     px(ctx, 0, 0, TILE, TILE, Palette.wood);
@@ -260,6 +288,41 @@ function buildProps(scene: Phaser.Scene) {
     px(ctx, 19, 8, 2, 6, "#2a2230");
     px(ctx, 1, 32, 2, 6, "#2a2230");
     px(ctx, 19, 32, 2, 6, "#2a2230");
+  });
+
+  createTex(scene, "o_cab", 18, 28, (ctx) => {
+    px(ctx, 2, 2, 14, 24, "#2a2a2a");
+    px(ctx, 3, 4, 12, 5, "#cfeaff");
+    px(ctx, 3, 18, 12, 5, "#cfeaff");
+    px(ctx, 6, 1, 6, 2, "#f4c95d");
+  });
+  createTex(scene, "o_bollard", 6, 10, (ctx) => {
+    px(ctx, 2, 2, 2, 8, "#c9c2b4");
+    px(ctx, 1, 1, 4, 3, "#3a3a3a");
+  });
+  createTex(scene, "o_planter", 16, 14, (ctx) => {
+    px(ctx, 1, 6, 14, 8, "#8a6a4a");
+    px(ctx, 2, 2, 12, 6, "#4b9e4f");
+    px(ctx, 6, 0, 4, 4, "#5cb85f");
+  });
+  createTex(scene, "o_bin", 10, 12, (ctx) => {
+    px(ctx, 2, 2, 6, 10, "#3a4a3a");
+    px(ctx, 3, 1, 4, 2, "#2a3a2a");
+  });
+  createTex(scene, "o_railing", 16, 10, (ctx) => {
+    px(ctx, 0, 6, 16, 2, "#6a7078");
+    for (let x = 1; x < 16; x += 4) px(ctx, x, 2, 1, 6, "#8a9098");
+  });
+  createTex(scene, "o_lamp_ldn", 10, 26, (ctx) => {
+    px(ctx, 4, 6, 2, 20, "#2a2230");
+    circle(ctx, 5, 5, 4, "#3a3238");
+    circle(ctx, 5, 5, 3, "#ffe08a");
+  });
+  createTex(scene, "o_fountain", 28, 20, (ctx) => {
+    circle(ctx, 14, 12, 12, "#9aa8b0");
+    circle(ctx, 14, 12, 9, Palette.water);
+    px(ctx, 13, 2, 2, 8, "#cfeaff");
+    circle(ctx, 14, 12, 3, "#8fdcf3");
   });
 }
 
@@ -572,6 +635,9 @@ function buildCityBuildings(scene: Phaser.Scene) {
   // London — Georgian brick townhouses
   pitchedHouse(scene, "b_townhouse_red", 46, 64, "#a5462f", "#8a3a26", "#4a2c1e", "#382116", { brick: true, chimney: true });
   pitchedHouse(scene, "b_townhouse_cream", 46, 64, "#e4d3b0", "#cdb98f", "#5a5560", "#454049", { brick: false, chimney: true });
+  pitchedHouse(scene, "b_front_red", 32, 52, "#a5462f", "#8a3a26", "#4a2c1e", "#382116", { brick: true, chimney: false });
+  pitchedHouse(scene, "b_front_cream", 32, 52, "#e4d3b0", "#cdb98f", "#5a5560", "#454049", { brick: false, chimney: false });
+  pitchedHouse(scene, "b_pub", 40, 56, "#6b3a2a", "#542c20", "#3a2b3a", "#2a1b1a", { brick: true, chimney: true });
 
   // Edinburgh — tall grey stone tenement
   createTex(scene, "b_tenement", 42, 98, (ctx) => {

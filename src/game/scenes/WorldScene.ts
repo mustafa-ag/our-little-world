@@ -380,7 +380,7 @@ export class WorldScene extends Phaser.Scene {
 
   private applyZoom() {
     const h = this.scale.gameSize.height;
-    this.cameras.main.setZoom(Phaser.Math.Clamp(h / (30 * TILE), 1.75, 2.4));
+    this.cameras.main.setZoom(Phaser.Math.Clamp(h / (42 * TILE), 1.35, 2.15));
   }
 
   private tryInteract() {

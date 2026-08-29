@@ -233,8 +233,17 @@ export class UIScene extends Phaser.Scene {
     const wy = (y: number) => cy + (y - minimap.py) * scale;
 
     this.miniG.clear();
-    this.miniG.fillStyle(minimap.ground, 1);
+    this.miniG.fillStyle(0x3a3230, 1);
     this.miniG.fillCircle(cx, cy, r);
+
+    this.miniG.fillStyle(minimap.ground, 1);
+    for (const a of minimap.areas) this.miniG.fillRect(wx(a.x), wy(a.y), a.w * scale, a.h * scale);
+
+    this.miniG.fillStyle(0x5a9e5e, 1);
+    for (const p of minimap.parks) this.miniG.fillRect(wx(p.x), wy(p.y), p.w * scale, p.h * scale);
+
+    this.miniG.fillStyle(0xd4cec0, 1);
+    for (const wk of minimap.walks) this.miniG.fillRect(wx(wk.x), wy(wk.y), Math.max(1, wk.w * scale), Math.max(1, wk.h * scale));
 
     this.miniG.fillStyle(0x4bb0d6, 1);
     for (const w of minimap.water) this.miniG.fillRect(wx(w.x), wy(w.y), w.w * scale, w.h * scale);
@@ -386,6 +395,12 @@ export class UIScene extends Phaser.Scene {
         this.localG.strokeRect(wx(a.x), wy(a.y), a.w * scale, a.h * scale);
       }
     }
+
+    this.localG.fillStyle(0x5a9e5e, 1);
+    for (const p of minimap.parks) this.localG.fillRect(wx(p.x), wy(p.y), p.w * scale, p.h * scale);
+
+    this.localG.fillStyle(0xd4cec0, 1);
+    for (const wk of minimap.walks) this.localG.fillRect(wx(wk.x), wy(wk.y), Math.max(1, wk.w * scale), Math.max(1, wk.h * scale));
 
     this.localG.fillStyle(0x4bb0d6, 1);
     for (const w of minimap.water) this.localG.fillRect(wx(w.x), wy(w.y), w.w * scale, w.h * scale);

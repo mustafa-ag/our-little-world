@@ -1,5 +1,6 @@
 import { TILE } from "../constants";
 import { cityMeta, districtsOf, getLocation } from "../data/locations";
+import { mergeCells, stroke } from "../data/mapkit";
 import { NPCS } from "../data/npcs";
 import { minimap, type MiniKind, type MiniPoi, type MiniRect } from "./controls";
 
@@ -94,6 +95,8 @@ export function fillCityMinimap(
   const origin = placed.get(districtId) ?? { ox: 0, oy: 0 };
 
   const roads: MiniRect[] = [];
+  const walks: MiniRect[] = [];
+  const parks: MiniRect[] = [];
   const water: MiniRect[] = [];
   const blocks: MiniRect[] = [];
   const pois: MiniPoi[] = [];
@@ -103,6 +106,10 @@ export function fillCityMinimap(
     const dh = (d.city?.h ?? 30) * TILE;
     return { x: p.ox, y: p.oy, w: dw, h: dh, name: d.name, here: id === districtId };
   });
+
+  const pushMerged = (cells: MiniRect[], ox: number, oy: number, rects: { x: number; y: number; w: number; h: number }[]) => {
+    for (const r of rects) cells.push({ x: ox + r.x * TILE, y: oy + r.y * TILE, w: r.w * TILE, h: r.h * TILE });
+  };
 
   for (const [id, p] of placed) {
     const d = getLocation(id);
@@ -117,10 +124,24 @@ export function fillCityMinimap(
     for (const r of city.water ?? []) {
       water.push({ x: ox + r.x * TILE, y: oy + r.y * TILE, w: r.w * TILE, h: r.h * TILE });
     }
+    for (const s of city.surfaces ?? []) {
+      const dest = s.tex === "t_water" || s.walkable === false ? water : s.tex.includes("grass") ? parks : walks;
+      dest.push({ x: ox + s.x * TILE, y: oy + s.y * TILE, w: s.w * TILE, h: s.h * TILE });
+    }
+    for (const path of city.paths ?? []) {
+      const merged = mergeCells(stroke(path.points, path.width));
+      const dest = path.tex === "t_water" || path.walkable === false ? water : path.kind === "road" || path.kind === "street" ? roads : walks;
+      pushMerged(dest, ox, oy, merged);
+    }
     for (const poi of city.pois) {
       const x = ox + poi.tx * TILE;
       const y = oy + poi.ty * TILE;
-      blocks.push({ x: x - 8, y: y - 8, w: 24, h: 24 });
+      const prop = poi.tex.startsWith("o_") || poi.tex.startsWith("v_");
+      if (!prop) {
+        const deco = !poi.name && (poi.role === "deco" || !poi.role);
+        const s = deco ? 12 : 24;
+        blocks.push({ x: x - s / 2, y: y - s / 2, w: s, h: s });
+      }
       const kind = poiKind(poi.role, Boolean(poi.name));
       if (kind) pois.push({ x, y, kind, label: kind === "jeep" ? (id === districtId ? "Jeep" : undefined) : poi.name });
     }
@@ -132,6 +153,7 @@ export function fillCityMinimap(
     }
   }
 
+  const base = here.city?.base ?? here.ground;
   minimap.on = true;
   minimap.name = here.name;
   minimap.city = here.cityId;
@@ -140,8 +162,16 @@ export function fillCityMinimap(
   minimap.h = Math.max(1, h);
   minimap.ox = origin.ox;
   minimap.oy = origin.oy;
-  minimap.ground = here.ground.includes("sand") ? 0xe6cf9f : here.groundAlt === "t_snow" ? 0xeef3f7 : 0x7bc86c;
+  minimap.ground = base.includes("sand")
+    ? 0xe6cf9f
+    : base.includes("snow")
+      ? 0xeef3f7
+      : base.includes("pave") || base.includes("cobble")
+        ? 0xb8b0a4
+        : 0x7bc86c;
   minimap.roads = roads;
+  minimap.walks = walks;
+  minimap.parks = parks;
   minimap.water = water;
   minimap.blocks = blocks;
   minimap.pois = pois;
