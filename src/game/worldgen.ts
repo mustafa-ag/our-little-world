@@ -4,6 +4,7 @@ import type { Cardinal, CityDef, LocationDef, PathSpec, Poi } from "./data/locat
 import { opposite, getLocation } from "./data/locations";
 import { stroke } from "./data/mapkit";
 import { NPCS } from "./data/npcs";
+import { logicalSize } from "./visual/assets";
 
 export interface PropSpec {
   tex: string;
@@ -57,10 +58,8 @@ export interface WorldData {
   spawn: { x: number; y: number };
 }
 
-function texSize(scene: Phaser.Scene, key: string) {
-  if (!scene.textures.exists(key)) return { w: TILE, h: TILE };
-  const src = scene.textures.get(key).getSourceImage() as { width?: number; height?: number } | undefined;
-  return { w: src?.width || TILE, h: src?.height || TILE };
+function texSize(_scene: Phaser.Scene, key: string) {
+  return logicalSize(key);
 }
 
 function hash(x: number, y: number, seed: number) {

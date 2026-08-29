@@ -7,6 +7,7 @@ import { controls, uiEvents } from "../systems/controls";
 import { tryDeliverMessages } from "../systems/phone";
 import { homeComment } from "../systems/life";
 import type { PlacedFurniture } from "../systems/save";
+import { applyVisual, getVisualTexture } from "../visual/assets";
 
 interface Interactable {
   x: number;
@@ -58,7 +59,8 @@ export class HouseScene extends Phaser.Scene {
     }
 
     // rug
-    this.add.image(worldW / 2, worldH / 2 + 8, "f_rug").setDepth(1);
+    const rug = this.add.image(worldW / 2, worldH / 2 + 8, getVisualTexture(this, "f_rug")).setDepth(1);
+    applyVisual(rug, "f_rug");
 
     // walls (top band) + border collision
     const wall = this.add.graphics().setDepth(Depths.overlay - 1);
@@ -87,7 +89,8 @@ export class HouseScene extends Phaser.Scene {
     this.buildCollision();
 
     // starter + owned furniture
-    this.add.image(TILE * 3, TILE * 4.5, "f_bed").setOrigin(0.5, 1).setDepth(TILE * 4.5);
+    const bed = this.add.image(TILE * 3, TILE * 4.5, getVisualTexture(this, "f_bed")).setDepth(TILE * 4.5);
+    applyVisual(bed, "f_bed");
     this.addFurnitureInteract(TILE * 3, TILE * 4.5 - 8, "Sleep (save & new day)", () => this.sleep());
     this.addFurnitureInteract(TILE * 14, TILE * 3.2, "Edit home", () => this.toggleEdit());
 
@@ -151,7 +154,8 @@ export class HouseScene extends Phaser.Scene {
   }
 
   private spawnPlaced(f: PlacedFurniture) {
-    const img = this.add.image(f.x, f.y, f.tex).setOrigin(0.5, 1).setDepth(f.y);
+    const img = this.add.image(f.x, f.y, getVisualTexture(this, f.tex)).setDepth(f.y);
+    applyVisual(img, f.tex);
     if (f.rot) img.setFlipX(true);
     img.setInteractive({ draggable: true, useHandCursor: true });
     img.on("pointerdown", () => {

@@ -9,7 +9,10 @@ import { markRead } from "../systems/phone";
 import { activateFromMessage as startQuest } from "../systems/quests";
 import { controls, uiEvents } from "../systems/controls";
 
-const FONT = "monospace";
+import { FONT_UI } from "../visual/theme";
+import { resolvePortrait } from "../visual/portraits";
+
+const FONT = FONT_UI;
 type Tab = "messages" | "memories" | "map" | "contacts" | "bag";
 
 export class PhoneOverlay {
@@ -187,14 +190,21 @@ export class PhoneOverlay {
       for (const mem of group) {
         if (yy > y + maxH - 20) return;
         const on = store.hasMemory(mem.id);
-        const title = on ? mem.title : mem.hidden ? "???" : "???";
+        const title = on ? mem.title : "???";
         const desc = on ? mem.description : "Not yet.";
-        this.add(this.scene.add.text(x + 6, yy, `${on ? "♡" : "·"} ${title}`, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", wordWrap: { width: w - 12 }, resolution: 2 }));
-        yy += on ? 16 : 16;
-        if (on) {
-          this.add(this.scene.add.text(x + 16, yy, desc, { fontFamily: FONT, fontSize: "10px", color: "#a08a70", wordWrap: { width: w - 20 }, resolution: 2 }));
-          yy += 22;
+        const card = this.scene.add.graphics();
+        card.fillStyle(0xfffaf3, 1).fillRoundedRect(x, yy, w - 8, on ? 52 : 28, 6);
+        card.lineStyle(1, 0xe8d8c0).strokeRoundedRect(x, yy, w - 8, on ? 52 : 28, 6);
+        this.add(card);
+        const port = resolvePortrait(this.scene, mem.npcs[0]);
+        if (on && port) {
+          this.add(this.scene.add.image(x + 22, yy + 26, port).setDisplaySize(28, 36));
         }
+        this.add(this.scene.add.text(x + (on && port ? 44 : 8), yy + 6, title, { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 }));
+        if (on) {
+          this.add(this.scene.add.text(x + (port ? 44 : 8), yy + 24, `Day ${store.state.memories[mem.id]?.day ?? "—"}  ·  ${desc}`, { fontFamily: FONT, fontSize: "10px", color: "#a08a70", wordWrap: { width: w - 56 }, resolution: 2 }));
+          yy += 58;
+        } else yy += 34;
       }
       yy += 8;
     }

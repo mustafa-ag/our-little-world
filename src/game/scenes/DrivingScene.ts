@@ -5,6 +5,11 @@ import { store } from "../systems/store";
 import { controls, uiEvents } from "../systems/controls";
 import { NPCS } from "../data/npcs";
 import { worldTint } from "../systems/life";
+import { applyVisual, getVisualTexture } from "../visual/assets";
+import { HD_HEADLIGHT } from "../visual/hdGenerate";
+import { FONT_UI } from "../visual/theme";
+import { resolvePortrait } from "../visual/portraits";
+import { isHd } from "../visual/mode";
 
 // A gentle top-down highway drive. Steer with the joystick / arrow keys,
 // dodge the other cars, scoop up hearts, and cruise to your destination.
@@ -80,11 +85,16 @@ export class DrivingScene extends Phaser.Scene {
       const rain = this.add.graphics().setDepth(20).setScrollFactor(0);
       for (let i = 0; i < 40; i++) rain.fillStyle(0xffffff, 0.18).fillRect(Phaser.Math.Between(0, width), Phaser.Math.Between(0, height), 1, 8);
     }
-    this.car = this.add.image(this.roadX, height - 90, "v_jeep_blue").setScale(2).setDepth(10);
+    this.car = this.add.image(this.roadX, height - 90, getVisualTexture(this, "v_jeep_blue")).setDepth(10);
+    applyVisual(this.car, "v_jeep_blue");
+    this.car.setDisplaySize(48, 72);
+    if (isHd() && store.state.timeOfDay === "night" && this.textures.exists(HD_HEADLIGHT)) {
+      this.add.image(this.roadX, height - 150, HD_HEADLIGHT).setDepth(8).setAlpha(0.55).setBlendMode(Phaser.BlendModes.ADD);
+    }
     this.chatText = this.add
       .text(width / 2, height - 36, "", {
-        fontFamily: "monospace",
-        fontSize: "12px",
+        fontFamily: FONT_UI,
+        fontSize: "13px",
         color: "#fff",
         backgroundColor: "rgba(58,43,58,0.7)",
         padding: { x: 8, y: 4 },
@@ -281,6 +291,10 @@ export class DrivingScene extends Phaser.Scene {
     const line = lines[this.chatI % lines.length];
     this.chatI += 1;
     this.chatText.setText(`${name}: ${line}`).setVisible(true);
+    const pk = resolvePortrait(this, this.passenger);
+    if (pk && !this.children.getByName("drivePort")) {
+      this.add.image(28, this.scale.gameSize.height - 48, pk).setName("drivePort").setDisplaySize(36, 44).setDepth(50).setScrollFactor(0);
+    }
     this.time.delayedCall(3200, () => this.chatText?.setVisible(false));
   }
 

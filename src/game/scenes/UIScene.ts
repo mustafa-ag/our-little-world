@@ -11,8 +11,10 @@ import { openActivity, type MiniSpec } from "../ui/minigames";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
 import * as quests from "../systems/quests";
+import { FONT_UI } from "../visual/theme";
+import { resolvePortrait } from "../visual/portraits";
 
-const FONT = "monospace";
+const FONT = FONT_UI;
 
 type ButtonImage = Phaser.GameObjects.Image & { label: Phaser.GameObjects.Text };
 
@@ -50,6 +52,8 @@ export class UIScene extends Phaser.Scene {
   private dlgIndex = 0;
   private dlgOpenAt = 0;
   private dialogueOpen = false;
+  private dlgPortrait?: Phaser.GameObjects.Image;
+  private dlgNpc?: string;
 
   // overlays
   private wardrobe!: Phaser.GameObjects.Container;
@@ -157,7 +161,7 @@ export class UIScene extends Phaser.Scene {
     uiEvents.on("prompt", (p: string | null) => this.setPrompt(p));
     uiEvents.on("dialogue", (name: string, lines: string[], extra?: { npcId?: string }) => {
       this.pendingGiftNpc = extra?.npcId;
-      this.openDialogue(name, lines);
+      this.openDialogue(name, lines, extra?.npcId);
     });
     uiEvents.on("action", () => this.onAction());
     uiEvents.on("openShop", () => this.openShop());
@@ -620,40 +624,42 @@ export class UIScene extends Phaser.Scene {
   private buildDialogue() {
     const { width, height } = this.scale.gameSize;
     const bg = this.add.graphics();
-    const boxW = Math.min(width - 24, 520);
-    const boxH = 96;
+    const boxW = Math.min(width - 20, 540);
+    const boxH = 118;
     const bx = (width - boxW) / 2;
-    const by = height - boxH - 16;
-    bg.fillStyle(0xfff9f0, 0.98).fillRoundedRect(bx, by, boxW, boxH, 12);
-    bg.lineStyle(3, 0xcaa27a).strokeRoundedRect(bx, by, boxW, boxH, 12);
+    const by = height - boxH - 14;
+    bg.fillStyle(0x1a1420, 0.18).fillRoundedRect(bx + 3, by + 5, boxW, boxH, 16);
+    bg.fillStyle(0xfff9f4, 0.97).fillRoundedRect(bx, by, boxW, boxH, 16);
+    bg.lineStyle(2, 0xf4a6c0).strokeRoundedRect(bx, by, boxW, boxH, 16);
 
-    this.dlgName = this.add.text(bx + 14, by - 12, "", {
-      fontFamily: FONT,
-      fontSize: "13px",
-      color: "#fff",
-      backgroundColor: "#e46d94",
-      padding: { x: 8, y: 3 },
-      resolution: 2,
-    });
-    this.dlgText = this.add.text(bx + 16, by + 16, "", {
+    this.dlgPortrait = this.add.image(bx + 44, by + 58, "ui_heart").setDisplaySize(64, 80).setVisible(false);
+
+    this.dlgName = this.add.text(bx + 90, by + 10, "", {
       fontFamily: FONT,
       fontSize: "14px",
+      color: "#fff",
+      backgroundColor: "#e46d94",
+      padding: { x: 10, y: 4 },
+      resolution: 2,
+    });
+    this.dlgText = this.add.text(bx + 90, by + 40, "", {
+      fontFamily: FONT,
+      fontSize: "15px",
       color: "#3a2b3a",
-      wordWrap: { width: boxW - 32 },
-      lineSpacing: 4,
+      wordWrap: { width: boxW - 110 },
+      lineSpacing: 5,
       resolution: 2,
     });
     const hint = this.add
-      .text(bx + boxW - 12, by + boxH - 8, "tap to continue", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", resolution: 2 })
+      .text(bx + boxW - 14, by + boxH - 10, "▶", { fontFamily: FONT, fontSize: "14px", color: "#e46d94", resolution: 2 })
       .setOrigin(1, 1);
 
-    // full-screen catcher so a tap anywhere advances the dialogue
     const catcher = this.add
       .rectangle(width / 2, height / 2, width, height, 0x000000, 0.001)
       .setInteractive();
     catcher.on("pointerdown", () => this.advanceDialogue());
 
-    this.dlg = this.add.container(0, 0, [catcher, bg, this.dlgName, this.dlgText, hint]).setScrollFactor(0).setDepth(50);
+    this.dlg = this.add.container(0, 0, [catcher, bg, this.dlgPortrait, this.dlgName, this.dlgText, hint]).setScrollFactor(0).setDepth(50);
     this.hideContainer(this.dlg);
   }
 
@@ -667,16 +673,23 @@ export class UIScene extends Phaser.Scene {
     c.setVisible(false).setPosition(100000, 100000);
   }
 
-  private openDialogue(name: string, lines: string[]) {
+  private openDialogue(name: string, lines: string[], npcId?: string) {
     this.dlgLines = lines.length ? lines : ["..."];
     this.dlgIndex = 0;
     this.dialogueOpen = true;
     this.dlgOpenAt = this.time.now;
+    this.dlgNpc = npcId;
     controls.locked = true;
     controls.moveX = 0;
     controls.moveY = 0;
     this.dlgName.setText(name);
     this.dlgText.setText(this.dlgLines[0]);
+    const key = resolvePortrait(this, npcId ?? name);
+    if (key && this.dlgPortrait) {
+      this.dlgPortrait.setTexture(key).setVisible(true).setDisplaySize(64, 80);
+    } else {
+      this.dlgPortrait?.setVisible(false);
+    }
     this.showContainer(this.dlg);
     this.setPrompt(null);
   }

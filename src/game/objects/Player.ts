@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { Depths } from "../constants";
 import type { Facing } from "../data/npcs";
+import { applyFeetBody, applyVisual, getVisualTexture } from "../visual/assets";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   facing: Facing = "down";
@@ -8,22 +9,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private shadow: Phaser.GameObjects.Image;
 
   constructor(scene: Phaser.Scene, x: number, y: number, texture = "char_her") {
-    super(scene, x, y, texture, 0);
+    const key = getVisualTexture(scene, texture);
+    super(scene, x, y, key, 0);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.shadow = scene.add.image(x, y + 6, "o_shadow");
+    this.shadow = scene.add.image(x, y + 4, getVisualTexture(scene, "o_shadow"));
     this.shadow.setDepth(Depths.ground + 1);
+    applyVisual(this.shadow, "o_shadow");
+    this.shadow.setDisplaySize(18, 8);
 
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(8, 6);
-    body.setOffset(4, 10);
-    this.setOrigin(0.5, 0.85);
-    this.play(`${texture}-idle-down`);
+    applyVisual(this, key);
+    applyFeetBody(this, key);
+    this.play(`${key}-idle-down`);
   }
 
   setTexturePreserveAnim(texture: string) {
     this.setTexture(texture, 0);
+    applyVisual(this, texture);
+    applyFeetBody(this, texture);
   }
 
   move(vx: number, vy: number) {
@@ -32,13 +36,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setVelocity(vx, vy);
 
     if (vx === 0 && vy === 0) {
-      this.anims.play(`${key}-idle-${this.facing === "left" || this.facing === "right" ? "side" : this.facing}`, true);
-      if (this.facing === "left") this.setFlipX(true);
-      else if (this.facing === "right") this.setFlipX(false);
+      const idle =
+        this.facing === "left" || this.facing === "right" ? "idle-side" : `idle-${this.facing}`;
+      this.anims.play(`${key}-${idle}`, true);
+      this.setFlipX(this.facing === "left");
       return;
     }
 
-    // pick dominant axis for facing
     if (Math.abs(vx) > Math.abs(vy)) {
       this.facing = vx < 0 ? "left" : "right";
       this.setFlipX(vx < 0);
@@ -53,10 +57,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
     this.setDepth(this.y);
-    this.shadow.setPosition(this.x, this.y + 4);
+    this.shadow.setPosition(this.x, this.y + 3);
+    this.shadow.setDepth(this.y - 2);
   }
 
-  /** The tile / point directly in front of the player (for interaction range). */
   facingPoint(dist = 14): { x: number; y: number } {
     const d: Record<Facing, [number, number]> = {
       up: [0, -dist],

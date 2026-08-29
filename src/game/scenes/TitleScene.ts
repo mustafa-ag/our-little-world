@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { store } from "../systems/store";
 import { resetControls } from "../systems/controls";
+import { FONT_UI } from "../visual/theme";
+import { resolvePortrait } from "../visual/portraits";
 
 export class TitleScene extends Phaser.Scene {
   constructor() {
@@ -28,10 +30,12 @@ export class TitleScene extends Phaser.Scene {
       this.tweens.add({ targets: h, y: h.y - Phaser.Math.Between(20, 50), duration: Phaser.Math.Between(1800, 3200), yoyo: true, repeat: -1, ease: "Sine.inOut" });
     }
 
-    this.add.image(width / 2, height * 0.32, "ui_heart").setScale(6);
+    const port = resolvePortrait(this, "juju");
+    if (port) this.add.image(width / 2, height * 0.28, port).setDisplaySize(88, 110);
+    else this.add.image(width / 2, height * 0.32, "ui_heart").setScale(6);
     this.add
       .text(width / 2, height * 0.46, "Juju's World", {
-        fontFamily: "monospace",
+        fontFamily: FONT_UI,
         fontSize: "34px",
         color: "#fff",
         stroke: "#e46d94",

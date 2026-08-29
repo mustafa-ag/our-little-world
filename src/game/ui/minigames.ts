@@ -1,7 +1,10 @@
 import Phaser from "phaser";
 import { controls } from "../systems/controls";
 
-const FONT = "monospace";
+import { FONT_UI } from "../visual/theme";
+import { applyVisual } from "../visual/assets";
+
+const FONT = FONT_UI;
 
 export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo";
 
@@ -194,10 +197,15 @@ function photoGame(scene: Phaser.Scene, spec: MiniSpec) {
 
   const mark = spec.photoTex && scene.textures.exists(spec.photoTex) ? spec.photoTex : scene.textures.exists("o_fountain") ? "o_fountain" : "ui_heart";
   const landmark = scene.add.image(vx, vy - 6, mark);
-  const src = scene.textures.get(mark).getSourceImage() as HTMLCanvasElement;
-  const ls = Math.min(2.2, 52 / Math.max(src.width, 8));
-  landmark.setScale(ls);
+  applyVisual(landmark, mark);
+  landmark.setDisplaySize(Math.min(64, landmark.displayWidth), Math.min(72, landmark.displayHeight));
   items.push(landmark);
+  const viewfinder = scene.add.rectangle(vx, vy, vw, vh, 0x000000, 0).setStrokeStyle(4, 0xf4f0e6);
+  items.push(viewfinder);
+  items.push(scene.add.rectangle(vx - vw / 2 + 8, vy - vh / 2 + 8, 14, 2, 0xf4f0e6));
+  items.push(scene.add.rectangle(vx - vw / 2 + 8, vy - vh / 2 + 8, 2, 14, 0xf4f0e6));
+  items.push(scene.add.rectangle(vx + vw / 2 - 8, vy - vh / 2 + 8, 14, 2, 0xf4f0e6));
+  items.push(scene.add.rectangle(vx + vw / 2 - 8, vy - vh / 2 + 8, 2, 14, 0xf4f0e6));
 
   const her = scene.textures.exists("char_her")
     ? scene.add.sprite(vx - 18, vy + 28, "char_her", 0).setScale(2)

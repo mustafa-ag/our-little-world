@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { buildAllTextures, rebuildPlayerTexture } from "../textures";
 import { store } from "../systems/store";
+import { applyHdPipeline } from "../visual/preloadHd";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -23,7 +24,8 @@ export class PreloadScene extends Phaser.Scene {
     // all art is generated procedurally, so "loading" is instant
     store.init();
     buildAllTextures(this);
-    rebuildPlayerTexture(this, store.state.outfit); // apply saved outfit
+    rebuildPlayerTexture(this, store.state.outfit);
+    applyHdPipeline(this);
 
     this.time.delayedCall(120, () => this.scene.start(SceneKeys.Title));
   }
