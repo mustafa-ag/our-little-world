@@ -22,7 +22,9 @@ export interface VisualAssetDef {
   normalMap?: string;
   fallbackTexture?: string;
   kind?: "terrain" | "prop" | "building" | "character" | "vehicle" | "furniture" | "ui" | "fx";
+  /** True only when a committed external file is the preferred source. */
   hdReady?: boolean;
+  artStatus?: "fallback" | "temporary" | "external";
 }
 
 const REG = new Map<string, VisualAssetDef>();
@@ -62,7 +64,7 @@ function seedKnownSizes() {
 
   const prop = (k: string, w: number, h: number, extra: Partial<VisualAssetDef> = {}) =>
     add(box(k, w, h, { kind: "prop", ...extra }));
-  prop("o_tree", 20, 24);
+  prop("o_tree", 52, 78, { footprintWidth: 1, footprintHeight: 1 });
   prop("o_pine", 18, 26);
   prop("o_bush", 18, 14);
   prop("o_rock", 16, 12);
@@ -76,7 +78,7 @@ function seedKnownSizes() {
   prop("o_well", 20, 20);
   prop("o_portal", 24, 28);
   prop("o_shadow", 16, 8, { originY: 0.5, kind: "fx" });
-  prop("o_palm", 26, 44);
+  prop("o_palm", 56, 96, { footprintWidth: 2, footprintHeight: 2 });
   prop("o_phonebox", 14, 30);
   prop("o_bus_red", 22, 46);
   prop("o_cab", 18, 28);
@@ -104,7 +106,7 @@ function seedKnownSizes() {
   b("b_spinneys", 52, 44);
   b("b_waitrose", 64, 48);
   b("b_adnoc", 60, 42);
-  b("b_mosque_acres", 72, 58, { hdReady: true });
+  b("b_mosque_acres", 124, 108, { footprintWidth: 5, footprintHeight: 3, artStatus: "temporary" });
   b("b_uni", 60, 52);
   b("b_cafe", 56, 52);
   b("b_mansion", 52, 72);
@@ -114,7 +116,7 @@ function seedKnownSizes() {
   b("b_villa_sand", 56, 54);
   b("b_villa_modern", 54, 48);
   b("b_villa_terra", 52, 50);
-  b("b_villa_terra2", 60, 54, { hdReady: true });
+  b("b_villa_terra2", 118, 108, { footprintWidth: 4, footprintHeight: 2, artStatus: "temporary" });
   b("b_villa_terra3", 56, 52);
   b("b_town_blue", 44, 58);
   b("b_town_blue2", 40, 52);
@@ -153,7 +155,7 @@ function seedKnownSizes() {
     add(box(k, w, h, { kind: "vehicle", originY: 0.7, ...extra }));
   v("v_car_red", 20, 34);
   v("v_car_blue", 20, 34);
-  v("v_jeep_blue", 24, 38, { hdReady: true, originY: 0.85 });
+  v("v_jeep_blue", 48, 66, { footprintWidth: 2, footprintHeight: 1, artStatus: "temporary", originY: 0.85 });
 
   const f = (k: string, w: number, h: number) => add(box(k, w, h, { kind: "furniture" }));
   f("f_bed", 30, 40);
@@ -174,13 +176,14 @@ function seedKnownSizes() {
     add({
       key,
       kind: "character",
-      displayWidth: hd && isHd() ? 32 : 16,
-      displayHeight: hd && isHd() ? 42 : 16,
-      collisionWidth: 8,
-      collisionHeight: 6,
+      displayWidth: hd && isHd() ? 46 : 16,
+      displayHeight: hd && isHd() ? 66 : 16,
+      collisionWidth: hd && isHd() ? 10 : 8,
+      collisionHeight: hd && isHd() ? 8 : 6,
       originX: 0.5,
       originY: 0.88,
-      hdReady: hd,
+      artStatus: hd ? "temporary" : "fallback",
+      hdReady: false,
     });
   ch("char_her", true);
   ch("char_baba", true);
@@ -243,8 +246,10 @@ export function applyFeetBody(sprite: Phaser.Physics.Arcade.Sprite, key: string)
   const dh = a.displayHeight;
   const ox = a.originX ?? 0.5;
   const oy = a.originY ?? 0.88;
-  body.setSize(cw, ch);
-  body.setOffset(dw * ox - cw / 2, dh * oy - ch * 0.35);
+  const sx = sprite.scaleX || 1;
+  const sy = sprite.scaleY || 1;
+  body.setSize(cw / sx, ch / sy);
+  body.setOffset((dw * ox - cw / 2) / sx, (dh * oy - ch * 0.35) / sy);
 }
 
 export function allAssets() {
@@ -253,7 +258,13 @@ export function allAssets() {
 }
 
 export function markHdReady(key: string) {
+  markArtStatus(key, "temporary");
+}
+
+export function markArtStatus(key: string, status: VisualAssetDef["artStatus"]) {
   seedKnownSizes();
   const a = REG.get(key);
-  if (a) a.hdReady = true;
+  if (!a) return;
+  a.artStatus = status;
+  a.hdReady = status === "external";
 }

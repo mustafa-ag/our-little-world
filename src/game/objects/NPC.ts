@@ -16,26 +16,28 @@ export class NPC extends Phaser.Physics.Arcade.Image {
     this.def = def;
     this.bob = Math.random() * Math.PI * 2;
 
-    const key = getVisualTexture(scene, `char_${def.id}`);
+    const gameplayKey = `char_${def.id}`;
+    const key = getVisualTexture(scene, gameplayKey);
     this.sprite = scene.add.sprite(0, 0, key, 0);
-    applyVisual(this.sprite, key);
+    applyVisual(this.sprite, gameplayKey);
     const idle =
       def.facing === "left" || def.facing === "right" ? "idle-side" : `idle-${def.facing ?? "down"}`;
     if (scene.anims.exists(`${key}-${idle}`)) this.sprite.play(`${key}-${idle}`);
     if (def.facing === "left") this.sprite.setFlipX(true);
 
-    this.shadow = scene.add.image(0, 4, getVisualTexture(scene, "o_shadow"));
-    applyVisual(this.shadow, "o_shadow");
-    this.shadow.setDisplaySize(16, 7);
+    const shadowKey = scene.textures.exists("hd_shadow_char") ? "hd_shadow_char" : getVisualTexture(scene, "o_shadow");
+    this.shadow = scene.add.image(0, 4, shadowKey);
+    this.shadow.setDisplaySize(20, 7);
+    this.shadow.setAlpha(0.5);
     this.shadow.setDepth(Depths.ground + 1);
 
     this.label = scene.add
       .text(0, -20, def.name, {
         fontFamily: FONT_UI,
         fontSize: "11px",
-        color: "#fff",
-        backgroundColor: "rgba(58,43,58,0.72)",
-        padding: { x: 5, y: 2 },
+        color: "#3a2b3a",
+        backgroundColor: "rgba(255,249,244,0.9)",
+        padding: { x: 6, y: 3 },
         resolution: 2,
       })
       .setOrigin(0.5, 1);
@@ -44,7 +46,7 @@ export class NPC extends Phaser.Physics.Arcade.Image {
   place(x: number, y: number) {
     this.setPosition(x, y);
     this.sprite.setPosition(x, y).setDepth(y);
-    this.label.setPosition(x, y - 22).setDepth(y + 1);
+    this.label.setPosition(x, y - 34).setDepth(y + 1);
     this.shadow.setPosition(x, y + 3).setDepth(y - 2);
     return this;
   }

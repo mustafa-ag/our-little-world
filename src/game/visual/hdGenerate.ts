@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { HD_TILE_SRC } from "./mode";
-import { markHdReady } from "./assets";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -334,7 +333,6 @@ function buildTree(scene: Phaser.Scene) {
     ctx.ellipse(66, 62, 14, 8, -0.4, 0, Math.PI * 2);
     ctx.fill();
   });
-  markHdReady("o_tree");
 }
 
 function buildPalm(scene: Phaser.Scene) {
@@ -372,7 +370,6 @@ function buildPalm(scene: Phaser.Scene) {
     };
     for (let i = 0; i < 7; i++) frond(-1.2 + i * 0.4, 70 + (i % 2) * 8);
   });
-  markHdReady("o_palm");
 }
 
 function buildFlower(scene: Phaser.Scene, key: string, petal: string) {
@@ -389,7 +386,6 @@ function buildFlower(scene: Phaser.Scene, key: string, petal: string) {
     }
     ellipse(ctx, 24, 18, 4, 4, "#ffe08a");
   });
-  markHdReady(key);
 }
 
 function buildLamp(scene: Phaser.Scene) {
@@ -409,7 +405,6 @@ function buildLamp(scene: Phaser.Scene) {
     ctx.arc(32, 38, 10, 0, Math.PI * 2);
     ctx.fill();
   });
-  markHdReady("o_lamp");
 }
 
 function buildFence(scene: Phaser.Scene) {
@@ -431,8 +426,6 @@ function buildFence(scene: Phaser.Scene) {
     ctx.fillRect(16, 20, 32, 5);
     ctx.fillRect(16, 36, 32, 5);
   });
-  markHdReady("o_fence_h");
-  markHdReady("o_fence_v");
 }
 
 function buildJeep(scene: Phaser.Scene) {
@@ -476,7 +469,6 @@ function buildJeep(scene: Phaser.Scene) {
     rr(ctx, 110, 208, 14, 6, 2);
     ctx.fill();
   });
-  markHdReady("v_jeep_blue");
 }
 
 function buildVilla(scene: Phaser.Scene) {
@@ -533,7 +525,6 @@ function buildVilla(scene: Phaser.Scene) {
     ctx.ellipse(48, 292, 16, 10, 0, 0, Math.PI * 2);
     ctx.fill();
   });
-  markHdReady("b_villa_terra2");
 }
 
 function buildMosque(scene: Phaser.Scene) {
@@ -570,7 +561,6 @@ function buildMosque(scene: Phaser.Scene) {
     rr(ctx, 176, 250, 48, 50, 4);
     ctx.fill();
   });
-  markHdReady("b_mosque_acres");
 }
 
 export function buildHdEnvironment(scene: Phaser.Scene) {

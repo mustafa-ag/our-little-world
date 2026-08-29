@@ -1,54 +1,56 @@
 # HD conversion checklist
 
+Status keys:
+- `[ARCH]` pipeline ready, no finished art claimed
+- `[TEMP]` committed source file exists, temporary illustrated art
+- `[FALLBACK]` Canvas-generated placeholder only
+- `[FINAL]` finished external production art
+
 ## Characters
-- [x] Juju HD-ready
-- [x] Baba HD-ready
-- [ ] Mama
-- [ ] Moomoo
-- [ ] Fadwa
-- [ ] Nour
-- [ ] Hazel
-- [ ] Rhiannon
-- [ ] Chloe
+- [TEMP] Juju (SVG frames, chibi, not final HD character art)
+- [TEMP] Baba (SVG frames, chibi, not final HD character art)
+- [FALLBACK] Mama
+- [FALLBACK] Moomoo
+- [FALLBACK] Fadwa
+- [FALLBACK] Nour
+- [FALLBACK] Hazel
+- [FALLBACK] Rhiannon
+- [FALLBACK] Chloe
 
 ## Portraits
-- [x] Juju
-- [x] Baba
-- [x] Mama
-- [x] Moomoo
-- [x] Fadwa
-- [ ] Extra expressions (laugh / surprised / concerned / emotional)
+- [TEMP] Juju
+- [TEMP] Baba
+- [FALLBACK] Mama
+- [FALLBACK] Moomoo
+- [FALLBACK] Fadwa
+- [ARCH] Extra expressions
 
 ## Terrain (Yas slice)
-- [x] grass + variation
-- [x] lawn / golf
-- [x] pavement / paving light
-- [x] path
-- [x] road + lane
-- [x] water (animated overlay)
-- [ ] cobble / snow / brick (keys exist, not authored for Yas)
+- [TEMP] grass + variation / decals
+- [TEMP] pavement
+- [TEMP] road
+- [TEMP] sand
+- [TEMP] water layers
+- [FALLBACK] cobble / snow / brick (not authored for Yas)
 
 ## Props
-- [x] tree
-- [x] palm
-- [x] flower pink / yellow
-- [x] lamp
-- [x] fence
-- [x] soft shadow
-- [ ] bush / rock / bench / fountain (procedural fallback)
+- [TEMP] tree 01 / 02 / 03
+- [TEMP] palm 01 / 02
+- [TEMP] flower bed, lamp, fence, bench
+- [TEMP] character / tree shadows, lamp glow
+- [FALLBACK] bush / rock / fountain
 
 ## Buildings
-- [x] Yas Magnolias 2 (home)
-- [x] Yas Acres mosque
-- [ ] Other Yas villas
-- [ ] Dubai / London / Edinburgh / etc.
+- [TEMP] Yas Magnolias 2 (home)
+- [TEMP] Yas Acres mosque
+- [FALLBACK] Other Yas villas
+- [FALLBACK] Dubai / London / Edinburgh / etc.
 
 ## Vehicles
-- [x] Blue Jeep
-- [ ] Other cars (procedural fallback)
+- [TEMP] Blue Jeep
+- [FALLBACK] Other cars
 
 ## UI
-- [x] Dialogue portraits
-- [x] Phone type / memory cards
-- [x] Photo viewfinder
-- [ ] Final icon set
+- [TEMP] Dialogue portraits (Juju / Baba files)
+- [ARCH] HUD / prompt / location title polish
+- [FALLBACK] Final icon set

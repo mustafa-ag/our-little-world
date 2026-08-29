@@ -14,13 +14,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.shadow = scene.add.image(x, y + 4, getVisualTexture(scene, "o_shadow"));
+    const shadowKey = scene.textures.exists("hd_shadow_char") ? "hd_shadow_char" : getVisualTexture(scene, "o_shadow");
+    this.shadow = scene.add.image(x, y + 4, shadowKey);
     this.shadow.setDepth(Depths.ground + 1);
-    applyVisual(this.shadow, "o_shadow");
-    this.shadow.setDisplaySize(18, 8);
+    this.shadow.setDisplaySize(22, 8);
+    this.shadow.setAlpha(0.55);
 
-    applyVisual(this, key);
-    applyFeetBody(this, key);
+    applyVisual(this, texture);
+    applyFeetBody(this, texture);
     this.play(`${key}-idle-down`);
   }
 

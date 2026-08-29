@@ -104,7 +104,7 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(20);
     this.clockText = this.add
-      .text(12, 64, store.clockLabel(), { fontFamily: FONT, fontSize: "10px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 })
+      .text(12, 64, store.clockLabel(), { fontFamily: FONT, fontSize: "12px", color: "#fffaf4", stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 })
       .setScrollFactor(0)
       .setDepth(20);
 
@@ -128,10 +128,10 @@ export class UIScene extends Phaser.Scene {
     this.promptText = this.add
       .text(width / 2, height - 150, "", {
         fontFamily: FONT,
-        fontSize: "12px",
-        color: "#fff",
-        backgroundColor: "rgba(58,43,58,0.85)",
-        padding: { x: 8, y: 5 },
+        fontSize: "13px",
+        color: "#3a2b3a",
+        backgroundColor: "rgba(255,249,244,0.94)",
+        padding: { x: 12, y: 7 },
         resolution: 2,
       })
       .setOrigin(0.5)
@@ -628,17 +628,17 @@ export class UIScene extends Phaser.Scene {
     const boxH = 118;
     const bx = (width - boxW) / 2;
     const by = height - boxH - 14;
-    bg.fillStyle(0x1a1420, 0.18).fillRoundedRect(bx + 3, by + 5, boxW, boxH, 16);
-    bg.fillStyle(0xfff9f4, 0.97).fillRoundedRect(bx, by, boxW, boxH, 16);
-    bg.lineStyle(2, 0xf4a6c0).strokeRoundedRect(bx, by, boxW, boxH, 16);
+    bg.fillStyle(0x1a1420, 0.12).fillRoundedRect(bx + 2, by + 4, boxW, boxH, 18);
+    bg.fillStyle(0xfff9f4, 0.96).fillRoundedRect(bx, by, boxW, boxH, 18);
+    bg.lineStyle(1.5, 0xf0c4d4, 0.85).strokeRoundedRect(bx, by, boxW, boxH, 18);
 
     this.dlgPortrait = this.add.image(bx + 44, by + 58, "ui_heart").setDisplaySize(64, 80).setVisible(false);
 
     this.dlgName = this.add.text(bx + 90, by + 10, "", {
       fontFamily: FONT,
       fontSize: "14px",
-      color: "#fff",
-      backgroundColor: "#e46d94",
+      color: "#fffaf4",
+      backgroundColor: "#d96b8c",
       padding: { x: 10, y: 4 },
       resolution: 2,
     });
@@ -1161,9 +1161,11 @@ export class UIScene extends Phaser.Scene {
   private showLocationTitle(name: string, sub: string) {
     const { width, height } = this.scale.gameSize;
     const c = this.add.container(width / 2, height * 0.4).setScrollFactor(0).setDepth(70).setAlpha(0);
-    const n = this.add.text(0, 0, name, { fontFamily: FONT, fontSize: "30px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 6, resolution: 2 }).setOrigin(0.5);
-    const s = this.add.text(0, 30, sub, { fontFamily: FONT, fontSize: "13px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 }).setOrigin(0.5);
-    c.add([n, s]);
+    const card = this.add.graphics();
+    card.fillStyle(0xfff9f4, 0.88).fillRoundedRect(-170, -28, 340, 78, 16);
+    const n = this.add.text(0, -6, name, { fontFamily: FONT, fontSize: "26px", color: "#3a2b3a", resolution: 2 }).setOrigin(0.5);
+    const s = this.add.text(0, 24, sub, { fontFamily: FONT, fontSize: "13px", color: "#7a6570", resolution: 2 }).setOrigin(0.5);
+    c.add([card, n, s]);
     this.tweens.add({ targets: c, alpha: 1, duration: 350, hold: 1200, yoyo: true, onComplete: () => c.destroy() });
   }
 
