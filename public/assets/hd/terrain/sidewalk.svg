@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-<rect width="256" height="256" fill="#d5ccbe"/>
-<g opacity=".12" fill="#c0b4a4">
-  <ellipse cx="70" cy="80" rx="50" ry="18"/><ellipse cx="190" cy="190" rx="44" ry="16"/>
-</g>
-</svg>

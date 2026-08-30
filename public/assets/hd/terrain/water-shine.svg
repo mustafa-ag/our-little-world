@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-<g fill="#fff">
-  <ellipse cx="70" cy="60" rx="10" ry="3" opacity=".35"/>
-  <ellipse cx="180" cy="110" rx="16" ry="3.5" opacity=".28"/>
-  <ellipse cx="40" cy="170" rx="8" ry="2.4" opacity=".3"/>
-  <ellipse cx="210" cy="200" rx="12" ry="2.8" opacity=".22"/>
-</g>
-</svg>
