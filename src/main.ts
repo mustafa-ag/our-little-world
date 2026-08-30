@@ -8,18 +8,13 @@ import { HouseScene } from "./game/scenes/HouseScene";
 import { WorldMapScene } from "./game/scenes/WorldMapScene";
 import { DrivingScene } from "./game/scenes/DrivingScene";
 import { UIScene } from "./game/scenes/UIScene";
-import { isHd } from "./game/visual/mode";
-
-const hd = isHd();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: "game",
   backgroundColor: "#8ecae6",
-  pixelArt: !hd,
-  roundPixels: !hd,
-  antialias: hd,
-  antialiasGL: hd,
+  pixelArt: true,
+  roundPixels: true,
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,

@@ -3,8 +3,6 @@ import { Palette, Outfits } from "./palette";
 import { TILE } from "./constants";
 import { makeCharacterTexture, makeCharacterAnims } from "./characters";
 import { CHARACTERS } from "./data/npcs";
-import { isHd } from "./visual/mode";
-import { rebuildHdPlayer } from "./visual/preloadHd";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -1637,7 +1635,6 @@ export function buildAllTextures(scene: Phaser.Scene) {
 
   // characters (player + everyone in npcs.ts). Player uses the saved outfit.
   for (const ch of CHARACTERS) {
-    if (isHd() && (ch.id === "her" || ch.id === "baba")) continue;
     makeCharacterTexture(scene, `char_${ch.id}`, ch.colors);
     makeCharacterAnims(scene, `char_${ch.id}`);
   }
@@ -1645,7 +1642,6 @@ export function buildAllTextures(scene: Phaser.Scene) {
 
 /** Rebuild the player's texture after an outfit change. */
 export function rebuildPlayerTexture(scene: Phaser.Scene, outfitId: string) {
-  if (isHd() && rebuildHdPlayer(scene, outfitId)) return;
   const player = CHARACTERS.find((c) => c.id === "her");
   if (!player) return;
   const o = Outfits[outfitId] ?? Outfits.casual;

@@ -9,15 +9,10 @@ import { store } from "../systems/store";
 import { controls, uiEvents, minimap } from "../systems/controls";
 import * as quests from "../systems/quests";
 import { fillCityMinimap } from "../systems/minimapAtlas";
-import { npcInLocation, npcWorldPos, linesFor, skyHex, homeComment } from "../systems/life";
+import { npcInLocation, npcWorldPos, linesFor, worldTint, skyHex, homeComment } from "../systems/life";
 import { tryDeliverMessages } from "../systems/phone";
 import { pickEncounter, applyEncounter } from "../systems/encounters";
 import { secretsFor } from "../data/secrets";
-import { applyVisual, getVisualTexture } from "../visual/assets";
-import { CameraRig } from "../visual/cameraRig";
-import { HD_GLOW, HD_WATER } from "../visual/hdManifest";
-import { isHd, isHdSlice } from "../visual/mode";
-import { FONT_UI, LIGHT } from "../visual/theme";
 
 interface Interactable {
   x: number;
@@ -50,11 +45,6 @@ export class WorldScene extends Phaser.Scene {
   private jeepSpot: Interactable | null = null;
   private jeepReadyAt = 0;
   private arriveAt = 0;
-  private camRig?: CameraRig;
-  private waterFx: Phaser.GameObjects.TileSprite[] = [];
-  private nightLights: Phaser.GameObjects.Image[] = [];
-  private pollen?: Phaser.GameObjects.Particles.ParticleEmitter;
-  private landmarkSpot?: { id: string; x: number; y: number };
 
   constructor() {
     super(SceneKeys.World);
@@ -72,11 +62,6 @@ export class WorldScene extends Phaser.Scene {
     this.driveMenu = undefined;
     this.timeWash = undefined;
     this.followingCat = undefined;
-    this.camRig = undefined;
-    this.waterFx = [];
-    this.nightLights = [];
-    this.pollen = undefined;
-    this.landmarkSpot = undefined;
     this.arriveAt = this.time.now + 600;
     controls.locked = false;
     controls.moveX = 0;
@@ -99,7 +84,7 @@ export class WorldScene extends Phaser.Scene {
     this.worldH = world.h * TILE;
 
     this.cameras.main.setBackgroundColor(skyHex());
-    this.cameras.main.setRoundPixels(!isHd());
+    this.cameras.main.setRoundPixels(true);
     this.applyAtmosphere();
     this.physics.world.setBounds(0, 0, this.worldW, this.worldH);
     this.cameras.main.setBounds(0, 0, this.worldW, this.worldH);
@@ -138,8 +123,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.setupMinimap(def);
 
-    this.camRig = new CameraRig(this, this.cameras.main, this.player.x, this.player.y);
-    this.spawnAmbient();
+    this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
     this.applyZoom();
     this.scale.on("resize", this.applyZoom, this);
 
@@ -150,8 +134,6 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("openMap", this.openMap, this);
 
-    if (this.scene.isActive(SceneKeys.Title)) this.scene.stop(SceneKeys.Title);
-    if (this.scene.isActive(SceneKeys.Preload)) this.scene.stop(SceneKeys.Preload);
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
 
     quests.onVisit(def.id);
@@ -169,10 +151,6 @@ export class WorldScene extends Phaser.Scene {
   private solids!: Phaser.Physics.Arcade.StaticGroup;
 
   private drawGround(world: WorldData) {
-    if (isHdSlice(this.locationId)) {
-      this.drawYasGround(world);
-      return;
-    }
     const rt = this.add.renderTexture(0, 0, world.w * TILE, world.h * TILE);
     rt.setOrigin(0, 0).setDepth(Depths.ground);
     rt.beginDraw();
@@ -183,122 +161,6 @@ export class WorldScene extends Phaser.Scene {
       }
     }
     rt.endDraw();
-    this.layWater(world, []);
-  }
-
-  private drawYasGround(world: WorldData) {
-    const ww = world.w * TILE;
-    const wh = world.h * TILE;
-    if (this.textures.exists("hd_grass_big")) {
-      this.add
-        .tileSprite(0, 0, ww, wh, "hd_grass_big")
-        .setOrigin(0, 0)
-        .setDepth(Depths.ground)
-        .setTileScale(1.85, 1.85);
-    }
-
-    const water: { x: number; y: number }[] = [];
-    const rt = this.add.renderTexture(0, 0, ww, wh);
-    rt.setOrigin(0, 0).setDepth(Depths.ground + 1);
-    const stamp = this.add.image(0, 0, "hd_road").setVisible(false).setOrigin(0);
-
-    const grass = new Set(["t_grass", "t_grass2", "t_lawn", "t_golf"]);
-    const road = new Set(["t_road", "t_asphalt", "t_road_lane", "t_crossing", "t_parking"]);
-    const pave = new Set(["t_paving_light", "t_pavement", "t_paving_dark", "t_path", "t_brick_path", "t_plaza_stone", "t_cobble"]);
-
-    rt.beginDraw();
-    for (let y = 0; y < world.h; y++) {
-      for (let x = 0; x < world.w; x++) {
-        const key = world.ground[y][x];
-        if (key.startsWith("t_water")) {
-          water.push({ x, y });
-          continue;
-        }
-        if (grass.has(key)) continue;
-        const src = road.has(key) ? "hd_road" : pave.has(key) ? "hd_pavement" : key === "t_sand" ? "hd_sand" : "";
-        const wx = x * TILE;
-        const wy = y * TILE;
-        if (src && this.textures.exists(src)) {
-          this.stampSlice(rt, stamp, src, wx, wy);
-        } else if (this.textures.exists(key)) {
-          rt.batchDraw(key, wx, wy);
-        }
-      }
-    }
-    rt.endDraw();
-    stamp.destroy();
-
-    this.layWater(world, water);
-    this.scatterYasDecals(world);
-  }
-
-  private stampSlice(
-    rt: Phaser.GameObjects.RenderTexture,
-    stamp: Phaser.GameObjects.Image,
-    key: string,
-    wx: number,
-    wy: number,
-  ) {
-    const img = this.textures.get(key).getSourceImage() as { width?: number; height?: number };
-    const sw = Math.max(TILE + 1, img.width ?? 256);
-    const sh = Math.max(TILE + 1, img.height ?? 256);
-    const sx = ((wx % (sw - TILE)) + (sw - TILE)) % (sw - TILE);
-    const sy = ((wy % (sh - TILE)) + (sh - TILE)) % (sh - TILE);
-    stamp.setTexture(key);
-    stamp.setCrop(sx, sy, TILE, TILE);
-    stamp.setDisplaySize(TILE, TILE);
-    rt.batchDraw(stamp, wx, wy);
-  }
-
-  private scatterYasDecals(world: WorldData) {
-    const grass = new Set(["t_grass", "t_grass2", "t_lawn", "t_golf"]);
-    let n = 0;
-    for (let y = 4; y < world.h - 4; y += 3) {
-      for (let x = 4; x < world.w - 4; x += 5) {
-        if (!grass.has(world.ground[y][x])) continue;
-        const h = (x * 17 + y * 31) & 15;
-        if (h > 4) continue;
-        const px = x * TILE + 8;
-        const py = y * TILE + 10;
-        if (h === 0 && this.textures.exists("hd_flower_bed")) {
-          this.add.image(px, py, "hd_flower_bed").setDisplaySize(28, 16).setOrigin(0.5, 1).setDepth(py - 4).setAlpha(0.95);
-        } else if (h === 1 && this.textures.exists("hd_grass_tuft")) {
-          this.add.image(px, py, "hd_grass_tuft").setDisplaySize(18, 12).setOrigin(0.5, 1).setDepth(py - 3).setAlpha(0.85);
-        } else if (this.textures.exists("hd_grass_detail")) {
-          this.add.image(px, py, "hd_grass_detail").setDisplaySize(22, 16).setOrigin(0.5, 0.7).setDepth(Depths.ground + 2).setAlpha(0.45);
-        }
-        n++;
-        if (n > 80) return;
-      }
-    }
-  }
-
-  private layWater(world: WorldData, cells: { x: number; y: number }[]) {
-    const loc = getLocation(this.locationId);
-    const rects = loc.city?.water ?? [];
-    const night = store.state.timeOfDay === "night";
-    const layers = [
-      { key: this.textures.exists(HD_WATER) ? HD_WATER : "t_water", a: night ? 0.82 : 0.9 },
-      { key: this.textures.exists("hd_water_wave") ? "hd_water_wave" : "", a: 0.45 },
-      { key: this.textures.exists("hd_water_shine") ? "hd_water_shine" : "", a: night ? 0.2 : 0.35 },
-    ];
-    const place = (x: number, y: number, w: number, h: number) => {
-      for (const layer of layers) {
-        if (!layer.key || !this.textures.exists(layer.key)) continue;
-        const spr = this.add.tileSprite(x, y, w, h, layer.key).setOrigin(0, 0).setDepth(Depths.ground + 2).setAlpha(layer.a);
-        if (night) spr.setTint(0x7aa0c8);
-        this.waterFx.push(spr);
-      }
-      const shore = this.add.graphics().setDepth(Depths.ground + 3);
-      shore.lineStyle(3, 0x2a6a50, 0.28);
-      shore.strokeRoundedRect(x + 1, y + 1, w - 2, h - 2, 8);
-    };
-    for (const r of rects) place(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE);
-    if (!rects.length && cells.length && isHd()) {
-      const spr = this.add.tileSprite(0, 0, 1, 1, layers[0].key).setVisible(false);
-      this.waterFx.push(spr);
-    }
-    void world;
   }
 
   private buildCollision(world: WorldData) {
@@ -311,98 +173,21 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private pickPropTex(tex: string, x: number, y: number) {
-    const pick = (keys: string[]) => {
-      const ready = keys.filter((k) => this.textures.exists(k));
-      if (!ready.length) return getVisualTexture(this, tex);
-      return ready[Math.abs((x * 13 + y * 7) | 0) % ready.length];
-    };
-    if (tex === "o_tree" || tex.startsWith("o_tree")) return pick(["hd__o_tree", "hd_tree_02", "hd_tree_03"]);
-    if (tex === "o_palm") return pick(["hd__o_palm", "hd_palm_02"]);
-    return getVisualTexture(this, tex);
-  }
-
   private buildProps(world: WorldData) {
-    const tod = store.state.timeOfDay;
-    const night = tod === "night" || tod === "evening";
-    const evening = tod === "evening";
     for (const p of world.props) {
-      if (isHdSlice(this.locationId) && (p.tex === "o_flower_pink" || p.tex === "o_flower_yellow")) continue;
-      const tex = this.pickPropTex(p.tex, p.x, p.y);
-      if (!this.textures.exists(tex)) continue;
-      const img = this.add.image(p.x, p.y, tex);
-      applyVisual(img, p.tex);
-      if (p.originX != null) img.setOrigin(p.originX, p.originY ?? img.originY);
+      if (!this.textures.exists(p.tex)) continue;
+      const img = this.add.image(p.x, p.y, p.tex);
+      img.setOrigin(p.originX ?? 0.5, p.originY ?? 1);
       img.setDepth(p.y);
-
-      if (isHd() && (p.tex.startsWith("b_") || p.tex.startsWith("o_tree") || p.tex === "o_palm" || p.tex.startsWith("v_"))) {
-        const tree = p.tex.startsWith("o_tree") || p.tex === "o_palm";
-        const building = p.tex.startsWith("b_");
-        const shKey = tree && this.textures.exists("hd_shadow_tree") ? "hd_shadow_tree" : getVisualTexture(this, "o_shadow");
-        const sh = this.add.image(p.x + (tree ? 6 : 0), p.y + 3, shKey);
-        if (tree) sh.setDisplaySize(img.displayWidth * 0.85, 14);
-        else if (building) sh.setDisplaySize(img.displayWidth * 0.7, 12);
-        else sh.setDisplaySize(Math.max(18, img.displayWidth * 0.5), 8);
-        sh.setAlpha(evening ? 0.42 : tod === "night" ? 0.18 : 0.26);
-        sh.setDepth(p.y - 1);
-      }
-      if (night && (p.tex === "o_lamp" || p.tex === "o_lamp_ldn") && this.textures.exists(HD_GLOW)) {
-        const glow = this.add.image(p.x, p.y - 20, HD_GLOW).setDepth(p.y + 2).setBlendMode(Phaser.BlendModes.ADD);
-        glow.setDisplaySize(72, 72).setAlpha(tod === "night" ? 0.72 : 0.4);
-        this.nightLights.push(glow);
-      }
-      if (night && p.tex.startsWith("b_") && this.textures.exists(HD_GLOW)) {
-        const glow = this.add.image(p.x, p.y - img.displayHeight * 0.35, HD_GLOW).setDepth(p.y + 1).setBlendMode(Phaser.BlendModes.ADD);
-        glow.setDisplaySize(56, 40).setAlpha(tod === "night" ? 0.38 : 0.18);
-        this.nightLights.push(glow);
-      }
-      if (night && p.tex.startsWith("v_jeep") && this.textures.exists(HD_GLOW)) {
-        const glow = this.add.image(p.x, p.y - 16, HD_GLOW).setDepth(p.y + 2).setBlendMode(Phaser.BlendModes.ADD);
-        glow.setDisplaySize(28, 16).setAlpha(0.55);
-        this.nightLights.push(glow);
-      }
-      if (p.tex === "b_mosque_acres") this.landmarkSpot = { id: "yas-mosque", x: p.x, y: p.y };
     }
-    if (isHdSlice(this.locationId)) this.dressYas(world);
-  }
-
-  private dressYas(world: WorldData) {
-    const home = world.props.find((p) => p.tex === "b_villa_terra2");
-    if (home && this.textures.exists("hd_flower_bed")) {
-      for (const [dx, dy] of [[-28, 8], [30, 6], [-8, 14]]) {
-        this.add
-          .image(home.x + dx, home.y + dy, "hd_flower_bed")
-          .setDisplaySize(26, 15)
-          .setOrigin(0.5, 1)
-          .setDepth(home.y + dy - 2);
-      }
-    }
-    if (home && this.textures.exists("hd__o_bench")) {
-      this.add.image(home.x + 36, home.y + 10, "hd__o_bench").setDisplaySize(22, 12).setOrigin(0.5, 1).setDepth(home.y + 8);
-    }
-    const grove = [
-      { x: world.spawn.x - 70, y: world.spawn.y - 20, k: "hd__o_palm" },
-      { x: world.spawn.x + 86, y: world.spawn.y + 18, k: "hd_palm_02" },
-      { x: world.spawn.x - 40, y: world.spawn.y + 46, k: "hd_tree_02" },
-      { x: world.spawn.x + 54, y: world.spawn.y - 36, k: "hd_tree_03" },
-    ];
-    for (const g of grove) {
-      if (!this.textures.exists(g.k)) continue;
-      const img = this.add.image(g.x, g.y, g.k).setOrigin(0.5, 1).setDepth(g.y);
-      img.setDisplaySize(g.k.includes("palm") ? 58 : 54, g.k.includes("palm") ? 100 : 80);
-      if (this.textures.exists("hd_shadow_tree")) {
-        this.add.image(g.x + 6, g.y + 2, "hd_shadow_tree").setDisplaySize(28, 12).setAlpha(0.28).setDepth(g.y - 1);
-      }
-    }
-    void world;
   }
 
   private buildLabels(world: WorldData) {
     for (const l of world.labels) {
       this.add
         .text(l.x, l.y, l.text, {
-          fontFamily: FONT_UI,
-          fontSize: l.big ? "13px" : "10px",
+          fontFamily: "monospace",
+          fontSize: l.big ? "13px" : "9px",
           color: l.big ? "#fff2cf" : "#fff",
           backgroundColor: l.big ? "rgba(58,43,58,0.55)" : "rgba(58,43,58,0.72)",
           padding: { x: l.big ? 6 : 3, y: l.big ? 3 : 1 },
@@ -483,7 +268,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private addZoneInteractable(z: import("../worldgen").ZoneSpec) {
-    if (z.action === "landmark") this.landmarkSpot = { id: `${this.locationId}:lm`, x: z.x, y: z.y };
     const trigger = () => {
       switch (z.action) {
         case "cafe":
@@ -607,9 +391,7 @@ export class WorldScene extends Phaser.Scene {
       }
     };
     if (z.action === "drive") {
-      this.parkedJeep = this.add.image(z.x, z.y, getVisualTexture(this, "v_jeep_blue"));
-      applyVisual(this.parkedJeep, "v_jeep_blue");
-      this.parkedJeep.setDepth(z.y);
+      this.parkedJeep = this.add.image(z.x, z.y, "v_jeep_blue").setOrigin(0.5, 1).setDepth(z.y);
     }
     this.interactables.push({ x: z.x, y: z.y, radius: z.radius, prompt: z.prompt, trigger });
   }
@@ -648,9 +430,7 @@ export class WorldScene extends Phaser.Scene {
     this.player.setAlpha(0);
     this.parkedJeep?.setVisible(false);
     this.rideJeep?.destroy();
-    this.rideJeep = this.add.image(this.player.x, this.player.y, getVisualTexture(this, "v_jeep_blue"));
-    applyVisual(this.rideJeep, "v_jeep_blue");
-    this.rideJeep.setDepth(this.player.y + 1);
+    this.rideJeep = this.add.image(this.player.x, this.player.y, "v_jeep_blue").setDepth(this.player.y + 1);
     if (!opts?.quiet) store.toast("Jeep time — hold a direction. A to hop out.", "#2f6fd0");
     uiEvents.emit("prompt", "A · hop out of the Jeep");
   }
@@ -748,44 +528,21 @@ export class WorldScene extends Phaser.Scene {
 
   private applyAtmosphere() {
     this.cameras.main.setBackgroundColor(skyHex());
-    const tod = store.state.timeOfDay;
-    const pack = LIGHT[tod as keyof typeof LIGHT] ?? LIGHT.afternoon;
+    const night = store.state.timeOfDay === "night";
+    const color = worldTint();
     const live = this.timeWash?.active && this.timeWash.scene;
     if (!live) {
       const { width, height } = this.scale.gameSize;
-      this.timeWash = this.add.rectangle(0, 0, width, height, pack.wash, pack.washA).setOrigin(0).setScrollFactor(0).setDepth(48000);
+      this.timeWash = this.add.rectangle(0, 0, width, height, color, night ? 0.16 : 0.07).setOrigin(0).setScrollFactor(0).setDepth(6);
     } else {
-      this.timeWash!.setFillStyle(pack.wash, pack.washA);
+      this.timeWash!.setFillStyle(color, night ? 0.22 : store.state.timeOfDay === "evening" ? 0.14 : 0.08);
     }
-    for (const g of this.nightLights) g.setVisible(tod === "night" || tod === "evening");
   }
 
   private applyZoom() {
     const { width, height } = this.scale.gameSize;
-    if (isHd()) {
-      this.cameras.main.setZoom(Phaser.Math.Clamp(height / (36 * TILE), 1.55, 2.2));
-    } else {
-      this.cameras.main.setZoom(Phaser.Math.Clamp(height / (42 * TILE), 1.35, 2.15));
-    }
+    this.cameras.main.setZoom(Phaser.Math.Clamp(height / (42 * TILE), 1.35, 2.15));
     this.timeWash?.setSize(width, height);
-    void width;
-  }
-
-  private spawnAmbient() {
-    if (!isHd() || isHdSlice(this.locationId) || !this.textures.exists("o_flower_yellow")) return;
-    this.pollen = this.add.particles(0, 0, "o_flower_yellow", {
-      x: { min: 0, max: this.worldW },
-      y: { min: 0, max: this.worldH },
-      lifespan: 6000,
-      speedY: { min: -8, max: -2 },
-      speedX: { min: -6, max: 6 },
-      scale: { start: 0.35, end: 0.1 },
-      alpha: { start: 0.35, end: 0 },
-      frequency: 420,
-      quantity: 1,
-      blendMode: "NORMAL",
-    });
-    this.pollen.setDepth(8);
   }
 
   private tryInteract() {
@@ -820,8 +577,6 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.off("action", this.tryInteract, this);
     uiEvents.off("openMap", this.openMap, this);
     this.scale.off("resize", this.applyZoom, this);
-    this.pollen?.stop();
-    this.pollen?.destroy();
   }
 
   update(time: number) {
@@ -848,15 +603,6 @@ export class WorldScene extends Phaser.Scene {
       }
     }
     this.player.move(vx * this.player.speed, vy * this.player.speed);
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    this.camRig?.update(this.player.x, this.player.y, body.velocity.x, body.velocity.y);
-    if (this.landmarkSpot) this.camRig?.maybeReveal(this.landmarkSpot.id, this.landmarkSpot.x, this.landmarkSpot.y, this.player.x, this.player.y);
-    for (let i = 0; i < this.waterFx.length; i++) {
-      const w = this.waterFx[i];
-      const layer = i % 3;
-      w.tilePositionX += layer === 0 ? 0.012 : layer === 1 ? 0.022 : 0.008;
-      w.tilePositionY += layer === 0 ? 0.006 : layer === 1 ? 0.01 : 0.004;
-    }
 
     if (this.rideJeep) {
       this.rideJeep.setPosition(this.player.x, this.player.y);

@@ -1,19 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
 <defs>
-  <linearGradient id="r" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0" stop-color="#4e535b"/><stop offset=".5" stop-color="#5c626b"/><stop offset="1" stop-color="#4a4f57"/>
+  <linearGradient id="r" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#545960"/><stop offset="1" stop-color="#4a4f56"/>
   </linearGradient>
 </defs>
 <rect width="256" height="256" fill="url(#r)"/>
-<g opacity=".12" fill="#2a2d32">
+<g opacity=".1" fill="#2a2d32">
   <ellipse cx="40" cy="60" rx="30" ry="12"/><ellipse cx="180" cy="140" rx="40" ry="16"/><ellipse cx="90" cy="210" rx="28" ry="10"/>
 </g>
-<rect x="0" y="0" width="256" height="10" fill="#c9c0b0"/>
-<rect x="0" y="246" width="256" height="10" fill="#b7ad9c"/>
-<rect x="0" y="8" width="256" height="4" fill="#8a8274" opacity=".45"/>
-<g stroke="#e8d98a" stroke-width="5" stroke-dasharray="22 18" fill="none" opacity=".75">
-  <path d="M0 128h256"/>
-</g>
-<rect x="200" y="30" width="18" height="10" rx="2" fill="#3d4248" opacity=".5"/>
 </svg>

@@ -11,10 +11,8 @@ import { openActivity, type MiniSpec } from "../ui/minigames";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
 import * as quests from "../systems/quests";
-import { FONT_UI } from "../visual/theme";
-import { resolvePortrait } from "../visual/portraits";
 
-const FONT = FONT_UI;
+const FONT = "monospace";
 
 type ButtonImage = Phaser.GameObjects.Image & { label: Phaser.GameObjects.Text };
 
@@ -52,8 +50,6 @@ export class UIScene extends Phaser.Scene {
   private dlgIndex = 0;
   private dlgOpenAt = 0;
   private dialogueOpen = false;
-  private dlgPortrait?: Phaser.GameObjects.Image;
-  private dlgNpc?: string;
 
   // overlays
   private wardrobe!: Phaser.GameObjects.Container;
@@ -104,7 +100,7 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(20);
     this.clockText = this.add
-      .text(12, 64, store.clockLabel(), { fontFamily: FONT, fontSize: "12px", color: "#fffaf4", stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 })
+      .text(12, 64, store.clockLabel(), { fontFamily: FONT, fontSize: "10px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 })
       .setScrollFactor(0)
       .setDepth(20);
 
@@ -128,10 +124,10 @@ export class UIScene extends Phaser.Scene {
     this.promptText = this.add
       .text(width / 2, height - 150, "", {
         fontFamily: FONT,
-        fontSize: "13px",
-        color: "#3a2b3a",
-        backgroundColor: "rgba(255,249,244,0.94)",
-        padding: { x: 12, y: 7 },
+        fontSize: "12px",
+        color: "#fff",
+        backgroundColor: "rgba(58,43,58,0.85)",
+        padding: { x: 8, y: 5 },
         resolution: 2,
       })
       .setOrigin(0.5)
@@ -161,7 +157,7 @@ export class UIScene extends Phaser.Scene {
     uiEvents.on("prompt", (p: string | null) => this.setPrompt(p));
     uiEvents.on("dialogue", (name: string, lines: string[], extra?: { npcId?: string }) => {
       this.pendingGiftNpc = extra?.npcId;
-      this.openDialogue(name, lines, extra?.npcId);
+      this.openDialogue(name, lines);
     });
     uiEvents.on("action", () => this.onAction());
     uiEvents.on("openShop", () => this.openShop());
@@ -624,42 +620,40 @@ export class UIScene extends Phaser.Scene {
   private buildDialogue() {
     const { width, height } = this.scale.gameSize;
     const bg = this.add.graphics();
-    const boxW = Math.min(width - 20, 540);
-    const boxH = 118;
+    const boxW = Math.min(width - 24, 520);
+    const boxH = 96;
     const bx = (width - boxW) / 2;
-    const by = height - boxH - 14;
-    bg.fillStyle(0x1a1420, 0.12).fillRoundedRect(bx + 2, by + 4, boxW, boxH, 18);
-    bg.fillStyle(0xfff9f4, 0.96).fillRoundedRect(bx, by, boxW, boxH, 18);
-    bg.lineStyle(1.5, 0xf0c4d4, 0.85).strokeRoundedRect(bx, by, boxW, boxH, 18);
+    const by = height - boxH - 16;
+    bg.fillStyle(0xfff9f0, 0.98).fillRoundedRect(bx, by, boxW, boxH, 12);
+    bg.lineStyle(3, 0xcaa27a).strokeRoundedRect(bx, by, boxW, boxH, 12);
 
-    this.dlgPortrait = this.add.image(bx + 44, by + 58, "ui_heart").setDisplaySize(64, 80).setVisible(false);
-
-    this.dlgName = this.add.text(bx + 90, by + 10, "", {
+    this.dlgName = this.add.text(bx + 14, by - 12, "", {
       fontFamily: FONT,
-      fontSize: "14px",
-      color: "#fffaf4",
-      backgroundColor: "#d96b8c",
-      padding: { x: 10, y: 4 },
+      fontSize: "13px",
+      color: "#fff",
+      backgroundColor: "#e46d94",
+      padding: { x: 8, y: 3 },
       resolution: 2,
     });
-    this.dlgText = this.add.text(bx + 90, by + 40, "", {
+    this.dlgText = this.add.text(bx + 16, by + 16, "", {
       fontFamily: FONT,
-      fontSize: "15px",
+      fontSize: "14px",
       color: "#3a2b3a",
-      wordWrap: { width: boxW - 110 },
-      lineSpacing: 5,
+      wordWrap: { width: boxW - 32 },
+      lineSpacing: 4,
       resolution: 2,
     });
     const hint = this.add
-      .text(bx + boxW - 14, by + boxH - 10, "▶", { fontFamily: FONT, fontSize: "14px", color: "#e46d94", resolution: 2 })
+      .text(bx + boxW - 12, by + boxH - 8, "tap to continue", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", resolution: 2 })
       .setOrigin(1, 1);
 
+    // full-screen catcher so a tap anywhere advances the dialogue
     const catcher = this.add
       .rectangle(width / 2, height / 2, width, height, 0x000000, 0.001)
       .setInteractive();
     catcher.on("pointerdown", () => this.advanceDialogue());
 
-    this.dlg = this.add.container(0, 0, [catcher, bg, this.dlgPortrait, this.dlgName, this.dlgText, hint]).setScrollFactor(0).setDepth(50);
+    this.dlg = this.add.container(0, 0, [catcher, bg, this.dlgName, this.dlgText, hint]).setScrollFactor(0).setDepth(50);
     this.hideContainer(this.dlg);
   }
 
@@ -673,23 +667,16 @@ export class UIScene extends Phaser.Scene {
     c.setVisible(false).setPosition(100000, 100000);
   }
 
-  private openDialogue(name: string, lines: string[], npcId?: string) {
+  private openDialogue(name: string, lines: string[]) {
     this.dlgLines = lines.length ? lines : ["..."];
     this.dlgIndex = 0;
     this.dialogueOpen = true;
     this.dlgOpenAt = this.time.now;
-    this.dlgNpc = npcId;
     controls.locked = true;
     controls.moveX = 0;
     controls.moveY = 0;
     this.dlgName.setText(name);
     this.dlgText.setText(this.dlgLines[0]);
-    const key = resolvePortrait(this, npcId ?? name);
-    if (key && this.dlgPortrait) {
-      this.dlgPortrait.setTexture(key).setVisible(true).setDisplaySize(64, 80);
-    } else {
-      this.dlgPortrait?.setVisible(false);
-    }
     this.showContainer(this.dlg);
     this.setPrompt(null);
   }
@@ -1161,11 +1148,9 @@ export class UIScene extends Phaser.Scene {
   private showLocationTitle(name: string, sub: string) {
     const { width, height } = this.scale.gameSize;
     const c = this.add.container(width / 2, height * 0.4).setScrollFactor(0).setDepth(70).setAlpha(0);
-    const card = this.add.graphics();
-    card.fillStyle(0xfff9f4, 0.88).fillRoundedRect(-170, -28, 340, 78, 16);
-    const n = this.add.text(0, -6, name, { fontFamily: FONT, fontSize: "26px", color: "#3a2b3a", resolution: 2 }).setOrigin(0.5);
-    const s = this.add.text(0, 24, sub, { fontFamily: FONT, fontSize: "13px", color: "#7a6570", resolution: 2 }).setOrigin(0.5);
-    c.add([card, n, s]);
+    const n = this.add.text(0, 0, name, { fontFamily: FONT, fontSize: "30px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 6, resolution: 2 }).setOrigin(0.5);
+    const s = this.add.text(0, 30, sub, { fontFamily: FONT, fontSize: "13px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 }).setOrigin(0.5);
+    c.add([n, s]);
     this.tweens.add({ targets: c, alpha: 1, duration: 350, hold: 1200, yoyo: true, onComplete: () => c.destroy() });
   }
 

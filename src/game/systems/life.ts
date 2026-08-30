@@ -4,7 +4,6 @@ import { VOICES, bandFor, pickLine } from "../data/relationships";
 import { HOME_COMMENTS } from "../data/relationships";
 import { TILE } from "../constants";
 import { store } from "./store";
-import { LIGHT } from "../visual/theme";
 
 export function npcWhere(npc: NpcDef) {
   const day = store.state.currentDay;
@@ -60,10 +59,10 @@ export function homeComment(): string | null {
 }
 
 const TINT: Record<string, number> = {
-  morning: LIGHT.morning.wash,
-  afternoon: LIGHT.afternoon.wash,
-  evening: LIGHT.evening.wash,
-  night: LIGHT.night.wash,
+  morning: 0xfff4e0,
+  afternoon: 0xffffff,
+  evening: 0xffc9a0,
+  night: 0x6a7cb8,
 };
 
 export function worldTint() {
@@ -71,9 +70,8 @@ export function worldTint() {
 }
 
 export function skyHex() {
-  const tod = store.state.timeOfDay;
-  if (tod === "night") return LIGHT.night.sky;
-  if (tod === "evening") return LIGHT.evening.sky;
-  if (tod === "morning") return LIGHT.morning.sky;
-  return LIGHT.afternoon.sky;
+  if (store.state.timeOfDay === "night") return "#1b2238";
+  if (store.state.timeOfDay === "evening") return "#e89b6a";
+  if (store.state.timeOfDay === "morning") return "#f2d7a6";
+  return "#7bc86c";
 }
