@@ -56,6 +56,7 @@ export class UIScene extends Phaser.Scene {
   private shop!: Phaser.GameObjects.Container;
   private wardrobeOpen = false;
   private shopOpen = false;
+  private shopMode: "home" | "adnoc" = "home";
   private localMapOpen = false;
   private miniGameOpen = false;
   private miniGame?: Phaser.GameObjects.Container;
@@ -160,7 +161,7 @@ export class UIScene extends Phaser.Scene {
       this.openDialogue(name, lines);
     });
     uiEvents.on("action", () => this.onAction());
-    uiEvents.on("openShop", () => this.openShop());
+    uiEvents.on("openShop", (mode?: "home" | "adnoc") => this.openShop(mode));
     uiEvents.on("openPhone", () => this.phone.show());
     uiEvents.on("openLocalMap", () => this.openLocalMap());
     uiEvents.on("minigame", (spec: import("../systems/controls").MiniGameSpec) => this.openMiniGame(spec));
@@ -704,13 +705,14 @@ export class UIScene extends Phaser.Scene {
   private onAction() {
     // action while a dialogue is open advances it; otherwise gameplay handles it
     if (this.dialogueOpen) this.advanceDialogue();
+    else if (this.miniGameOpen) uiEvents.emit("minigameAction");
   }
 
   // -------------------------------------------------------------------------
   private buildWardrobe() {
     const { width, height } = this.scale.gameSize;
     const panelW = Math.min(width - 40, 360);
-    const panelH = Math.min(height - 60, 460);
+    const panelH = Math.min(height - 36, 560);
     const items: Phaser.GameObjects.GameObject[] = [];
 
     const bgCatch = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
@@ -751,8 +753,30 @@ export class UIScene extends Phaser.Scene {
       i++;
     }
 
+    const accessoryY = (height - panelH) / 2 + panelH - 72;
+    const unlockedAccessories = store.state.unlockedAccessories;
+    const accessoryLabel = this.add
+      .text(width / 2 - 36, accessoryY, `Accessory: ${store.state.equippedAccessory?.replace(/_/g, " ") ?? "none"}`, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", resolution: 2 })
+      .setOrigin(0.5);
+    const cycle = this.add
+      .text(width / 2 + 100, accessoryY, "Next", { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#f4c95d", padding: { x: 7, y: 3 }, resolution: 2 })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    cycle.on("pointerdown", () => {
+      if (!unlockedAccessories.length) {
+        store.toast("Accessories unlock in Baba's shopping spree.", "#a08a70");
+        return;
+      }
+      const current = store.state.equippedAccessory;
+      const currentIndex = current ? unlockedAccessories.indexOf(current) : -1;
+      const next = unlockedAccessories[(currentIndex + 1 + unlockedAccessories.length) % unlockedAccessories.length];
+      store.setAccessory(next);
+      accessoryLabel.setText(`Accessory: ${next.replace(/_/g, " ")}`);
+    });
+    items.push(accessoryLabel, cycle);
+
     const close = this.add
-      .text(width / 2, (height + panelH) / 2 - 26, "Close", { fontFamily: FONT, fontSize: "15px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 14, y: 6 }, resolution: 2 })
+      .text(width / 2, (height + panelH) / 2 - 22, "Close", { fontFamily: FONT, fontSize: "15px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 14, y: 6 }, resolution: 2 })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
     close.on("pointerdown", () => this.closeWardrobe());
@@ -790,7 +814,28 @@ export class UIScene extends Phaser.Scene {
   private buildShop() {
     const { width, height } = this.scale.gameSize;
     const panelW = Math.min(width - 40, 380);
-    const panelH = Math.min(height - 80, 400);
+    const catalog: { tex: string; name: string; price: number; kind?: "fit" | "treat" }[] = this.shopMode === "adnoc"
+      ? [
+          { tex: "ui_coin", name: "Karak", price: 4, kind: "treat" },
+          { tex: "ui_coin", name: "Coffee", price: 5, kind: "treat" },
+          { tex: "ui_heart", name: "Chocolate", price: 6, kind: "treat" },
+          { tex: "f_lamp", name: "Road-trip lamp", price: 10 },
+        ]
+      : [
+          { tex: "f_sofa", name: "Sofa", price: 30 },
+          { tex: "f_tv", name: "TV", price: 35 },
+          { tex: "f_table", name: "Table", price: 20 },
+          { tex: "f_plant", name: "Plant", price: 10 },
+          { tex: "f_bookshelf", name: "Bookshelf", price: 25 },
+          { tex: "f_lamp", name: "Lamp", price: 8 },
+          { tex: "f_fridge", name: "Fridge", price: 30 },
+          { tex: "f_chair", name: "Chair", price: 8 },
+          { tex: "f_vanity", name: "Vanity", price: 28 },
+          { tex: "f_desk", name: "Study desk", price: 24 },
+          { tex: "ui_star", name: "Sneakers", price: 18, kind: "fit" },
+          { tex: "ui_heart", name: "Chocolate", price: 6, kind: "treat" },
+        ];
+    const panelH = Math.min(height - 32, Math.max(280, 110 + Math.ceil(catalog.length / 2) * 58));
     const items: Phaser.GameObjects.GameObject[] = [];
 
     const bgCatch = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
@@ -798,25 +843,12 @@ export class UIScene extends Phaser.Scene {
     panel.fillStyle(0xfff9f0, 1).fillRoundedRect((width - panelW) / 2, (height - panelH) / 2, panelW, panelH, 14);
     panel.lineStyle(3, 0xcaa27a).strokeRoundedRect((width - panelW) / 2, (height - panelH) / 2, panelW, panelH, 14);
     const title = this.add
-      .text(width / 2, (height - panelH) / 2 + 14, "Home Shop", { fontFamily: FONT, fontSize: "20px", color: "#e46d94", fontStyle: "bold", resolution: 2 })
+      .text(width / 2, (height - panelH) / 2 + 14, this.shopMode === "adnoc" ? "ADNOC Oasis Shop" : "Home Shop", { fontFamily: FONT, fontSize: "20px", color: this.shopMode === "adnoc" ? "#2f6fd0" : "#e46d94", fontStyle: "bold", resolution: 2 })
       .setOrigin(0.5, 0);
     const sub = this.add
-      .text(width / 2, (height - panelH) / 2 + 40, "Buy things for your home", { fontFamily: FONT, fontSize: "11px", color: "#a08a70", resolution: 2 })
+      .text(width / 2, (height - panelH) / 2 + 40, this.shopMode === "adnoc" ? "Karak, snacks, and road-trip comforts" : "Buy things for your home", { fontFamily: FONT, fontSize: "11px", color: "#a08a70", resolution: 2 })
       .setOrigin(0.5, 0);
     items.push(bgCatch, panel, title, sub);
-
-    const catalog: { tex: string; name: string; price: number; kind?: "fit" | "treat" }[] = [
-      { tex: "f_sofa", name: "Sofa", price: 30 },
-      { tex: "f_tv", name: "TV", price: 35 },
-      { tex: "f_table", name: "Table", price: 20 },
-      { tex: "f_plant", name: "Plant", price: 10 },
-      { tex: "f_bookshelf", name: "Bookshelf", price: 25 },
-      { tex: "f_lamp", name: "Lamp", price: 8 },
-      { tex: "f_fridge", name: "Fridge", price: 30 },
-      { tex: "f_chair", name: "Chair", price: 8 },
-      { tex: "ui_star", name: "Sneakers", price: 18, kind: "fit" },
-      { tex: "ui_heart", name: "Chocolate", price: 6, kind: "treat" },
-    ];
 
     const ox = (width - panelW) / 2 + 20;
     const oy = (height - panelH) / 2 + 66;
@@ -824,7 +856,7 @@ export class UIScene extends Phaser.Scene {
       const row = Math.floor(i / 2);
       const col = i % 2;
       const cx = ox + col * (panelW / 2 - 6);
-      const cy = oy + row * 62;
+      const cy = oy + row * 58;
       const icon = this.add.image(cx + 14, cy + 16, c.tex).setScale(0.85);
       const name = this.add.text(cx + 34, cy + 4, c.name, { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 });
       const buy = this.add
@@ -832,7 +864,7 @@ export class UIScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
       buy.on("pointerdown", () => {
         if (c.kind === "fit") this.buySneakers(c.price);
-        else if (c.kind === "treat") this.buyTreat("chocolate", c.price);
+        else if (c.kind === "treat") this.buyTreat(c.name.toLowerCase(), c.price);
         else this.buyFurniture(c.tex, c.price);
       });
       items.push(icon, name, buy);
@@ -856,7 +888,7 @@ export class UIScene extends Phaser.Scene {
     this.miniGameOpen = true;
     controls.locked = true;
 
-    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo") {
+    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo" || spec.kind === "stairs" || spec.kind === "shopping" || spec.kind === "safe") {
       const wrap: MiniSpec = {
         ...spec,
         onDone: (ok) => {
@@ -967,7 +999,7 @@ export class UIScene extends Phaser.Scene {
     }
 
     const tapBtn = this.add
-      .text(width / 2, py + panelH - 78, spec.kind === "stairs" ? "Tap to climb" : "Tap", {
+      .text(width / 2, py + panelH - 78, "Tap", {
         fontFamily: FONT,
         fontSize: "16px",
         color: "#fff",
@@ -995,6 +1027,9 @@ export class UIScene extends Phaser.Scene {
     items.push(skip);
 
     this.miniGame = this.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+    // The shared action button and keyboard should advance simple activities too.
+    uiEvents.on("minigameAction", tap);
+    this.miniGame.once(Phaser.GameObjects.Events.DESTROY, () => uiEvents.off("minigameAction", tap));
   }
 
   private closeMiniGame(unlock: boolean) {
@@ -1093,11 +1128,17 @@ export class UIScene extends Phaser.Scene {
     }
     const slot = this.shopSlots[store.state.furniture.length % this.shopSlots.length];
     store.placeFurniture({ tex, x: slot.x, y: slot.y });
+    quests.onBuy(tex);
     store.toast("Added to your home!", "#7be0a3");
   }
 
-  private openShop() {
+  private openShop(mode: "home" | "adnoc" = "home") {
     if (this.anyModal()) return;
+    if (this.shopMode !== mode) {
+      this.shop.destroy(true);
+      this.shopMode = mode;
+      this.buildShop();
+    }
     this.shopOpen = true;
     controls.locked = true;
     this.showContainer(this.shop);

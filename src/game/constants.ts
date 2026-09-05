@@ -9,6 +9,9 @@ export const SceneKeys = {
   House: "House",
   WorldMap: "WorldMap",
   Driving: "Driving",
+  Mall: "Mall",
+  PirateVoyage: "PirateVoyage",
+  SisterHeist: "SisterHeist",
   UI: "UI",
   Title: "Title",
 } as const;

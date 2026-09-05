@@ -26,6 +26,20 @@ export function statusOf(id: string) {
   return store.state.quests[id]?.status ?? "available";
 }
 
+export function isActive(id: string) {
+  return statusOf(id) === "active";
+}
+
+export function currentStep(id: string) {
+  const progress = store.state.quests[id];
+  const def = questById(id);
+  return progress && def ? def.steps[progress.step] : undefined;
+}
+
+function prerequisitesMet(def: QuestDef) {
+  return (def.requiresQuests ?? []).every((id) => statusOf(id) === "done");
+}
+
 export function activeQuests(): { def: QuestDef; hint: string }[] {
   const out: { def: QuestDef; hint: string }[] = [];
   for (const def of QUESTS) {
@@ -44,6 +58,7 @@ function grantExtras(def: QuestDef) {
   if (def.rewardNpc && def.rewardRel) store.addRelationship(def.rewardNpc, def.rewardRel);
   if (def.rewardMemory) store.unlockMemory(def.rewardMemory);
   if (def.rewardItem) store.addItem(def.rewardItem);
+  if (def.rewardCareer) store.setCareer(def.rewardCareer);
   store.refreshOutfitUnlocks();
   tryDeliverMessages({ limit: 1 });
 }
@@ -124,7 +139,7 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
   for (const def of QUESTS) {
     if (def.giver !== npcId) continue;
     const p = ensure(def.id);
-    if (p.status === "available") {
+    if (p.status === "available" && prerequisitesMet(def)) {
       p.status = "active";
       p.step = 0;
       p.progress = 0;
@@ -167,6 +182,14 @@ export function onPhoto(tag: string): QuestDef | undefined {
 
 export function onMinigame(kind: string): QuestDef | undefined {
   return tryAdvance("playMinigame", kind);
+}
+
+export function onBuy(itemId: string): QuestDef | undefined {
+  return tryAdvance("buyItem", itemId);
+}
+
+export function onDecorate(target = "home"): QuestDef | undefined {
+  return tryAdvance("decorate", target);
 }
 
 export function onMessage(id: string): QuestDef | undefined {

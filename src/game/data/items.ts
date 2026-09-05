@@ -19,6 +19,10 @@ export const ITEMS: Record<string, ItemDef> = {
   note: { id: "note", name: "Note", desc: "Folded twice. His handwriting.", kind: "quest", icon: "ui_star", giftable: true },
   keepsake_ring: { id: "keepsake_ring", name: "Tiny ring charm", desc: "A permanent little forever.", kind: "keepsake", icon: "ui_heart" },
   heart_fragment: { id: "heart_fragment", name: "Heart fragment", desc: "A secret tucked into the city.", kind: "keepsake", icon: "ui_heart" },
+  baba_card: { id: "baba_card", name: "Baba's card", desc: "For something sensible. Obviously.", kind: "quest", icon: "i_baba_card" },
+  grandmas_jewelry: { id: "grandmas_jewelry", name: "Grandma's jewelry", desc: "Sparkly family treasure, acquired extremely theatrically.", kind: "keepsake", icon: "i_jewelry" },
+  mamas_bangle: { id: "mamas_bangle", name: "Mama's bangle", desc: "A bright gold circle with a very long story.", kind: "keepsake", icon: "i_bangle" },
+  home_sketch: { id: "home_sketch", name: "Home sketch", desc: "A tiny plan for a home that feels entirely yours.", kind: "keepsake", icon: "ui_star" },
 };
 
 export const itemById = (id: string) => ITEMS[id];

@@ -7,6 +7,9 @@ import { WorldScene } from "./game/scenes/WorldScene";
 import { HouseScene } from "./game/scenes/HouseScene";
 import { WorldMapScene } from "./game/scenes/WorldMapScene";
 import { DrivingScene } from "./game/scenes/DrivingScene";
+import { MallScene } from "./game/scenes/MallScene";
+import { PirateVoyageScene } from "./game/scenes/PirateVoyageScene";
+import { SisterHeistScene } from "./game/scenes/SisterHeistScene";
 import { UIScene } from "./game/scenes/UIScene";
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -29,7 +32,7 @@ const config: Phaser.Types.Core.GameConfig = {
     },
   },
   // UI is last so it always renders on top of gameplay scenes.
-  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, UIScene],
+  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, UIScene],
 };
 
 const game = new Phaser.Game(config);

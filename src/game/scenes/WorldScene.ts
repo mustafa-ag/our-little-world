@@ -95,6 +95,7 @@ export class WorldScene extends Phaser.Scene {
     this.buildLabels(world);
     this.buildCollectibles(world);
     this.buildNpcs(world);
+    this.placeQuestObjects();
 
     let spawn = data.spawn ?? world.spawn;
     if (data.from && def.city?.entry?.[data.from]) {
@@ -140,6 +141,10 @@ export class WorldScene extends Phaser.Scene {
     quests.onVisit(def.cityId);
     tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
     uiEvents.emit("locationTitle", def.name, def.subtitle);
+    if (store.hasFlag("heist_victory_pending")) {
+      store.setFlag("heist_victory_pending", false);
+      this.time.delayedCall(350, () => uiEvents.emit("dialogue", "Juju", ["THE GREAT FAMILY JEWEL HEIST · Complete", "Absolutely no crimes occurred."]));
+    }
     this.time.delayedCall(700, () => {
       if (!this.sys.isActive() || this.transitioning) return;
       this.maybeEncounter();
@@ -252,6 +257,7 @@ export class WorldScene extends Phaser.Scene {
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
           const res = quests.onTalk(def.id, extra ? [...lines, extra] : lines);
           uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
+          if (res.acceptedQuest?.id === "q_family_jewel_heist") this.startPirateIdea();
         },
       });
     };
@@ -265,12 +271,68 @@ export class WorldScene extends Phaser.Scene {
       const p = npcWorldPos(def);
       place(def, p.x, p.y);
     }
+    if (this.locationId === "edinburgh_oldtown" && quests.currentStep("q_family_jewel_heist")?.target === "sister_room") {
+      const fadwa = NPCS.find((n) => n.id === "fadwa");
+      if (fadwa && !placed.has(fadwa.id)) {
+        const npc = new NPC(this, fadwa).place(52 * TILE + TILE / 2, 54 * TILE);
+        this.npcs.push(npc);
+        this.interactables.push({
+          x: npc.x,
+          y: npc.y,
+          radius: 28,
+          prompt: "Talk to Fadwa (very normally)",
+          trigger: () => {
+            quests.onInteract("sister_room");
+            uiEvents.emit("sceneReset");
+            this.scene.start(SceneKeys.SisterHeist);
+          },
+        });
+      }
+    }
+  }
+
+  private placeQuestObjects() {
+    if (this.locationId !== "abudhabi_yas" || quests.currentStep("q_baba_card")?.target !== "take_baba_card") return;
+    const baba = NPCS.find((npc) => npc.id === "baba");
+    if (!baba) return;
+    const pos = npcWorldPos(baba);
+    const card = this.add.image(pos.x + 24, pos.y + 2, "i_baba_card").setDepth(pos.y + 3);
+    this.tweens.add({ targets: card, y: card.y - 4, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.interactables.push({
+      x: card.x,
+      y: card.y,
+      radius: 22,
+      prompt: "Take Baba's card",
+      trigger: () => {
+        card.destroy();
+        store.addItem("baba_card");
+        quests.onInteract("take_baba_card");
+        uiEvents.emit("dialogue", "Juju", ["No reason. Completely normal mall errand incoming."]);
+      },
+    });
+  }
+
+  private startPirateIdea() {
+    controls.locked = true;
+    const mark = this.add.text(this.player.x, this.player.y - 34, "!", { fontFamily: "monospace", fontSize: "28px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 4, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 10);
+    const sparkle = this.add.image(this.player.x + 14, this.player.y - 24, "ui_star").setScale(0.7).setDepth(this.player.y + 10);
+    this.tweens.add({ targets: [mark, sparkle], y: "-=12", alpha: 0, duration: 720, ease: "Quad.out", onComplete: () => { mark.destroy(); sparkle.destroy(); } });
+    this.time.delayedCall(260, () => uiEvents.emit("dialogue", "Juju", ["Operation: definitely mine now."]));
+    this.time.delayedCall(740, () => {
+      store.setFlag("pirate_disguise");
+      quests.onInteract("pirate_idea");
+      controls.locked = false;
+    });
   }
 
   private addZoneInteractable(z: import("../worldgen").ZoneSpec) {
     const trigger = () => {
       switch (z.action) {
         case "cafe":
+          if (z.tag === "dubai_mall" || z.tag === "dubai_hills_mall") {
+            this.enterMall(z.tag);
+            break;
+          }
           if (z.tag === "hudayriyat_trucks") {
             quests.onInteract("cafe");
             if (z.tag) quests.onInteract(z.tag);
@@ -297,7 +359,20 @@ export class WorldScene extends Phaser.Scene {
           });
           break;
         case "shop":
-          uiEvents.emit("openShop");
+          if (z.tag === "yas_mall") {
+            this.enterMall(z.tag);
+            break;
+          }
+          uiEvents.emit("openShop", z.tag === "adnoc_oasis" ? "adnoc" : "home");
+          break;
+        case "fuel":
+          if (store.refuel()) {
+            store.advanceTime();
+            uiEvents.emit("dialogue", "ADNOC Oasis", ["Blue pumps, full tank. The road is yours again."]);
+          }
+          break;
+        case "office":
+          this.useOffice(z.tag);
           break;
         case "home":
           this.scene.start(SceneKeys.House, { title: getLocation(this.locationId).homeName ?? "Home", interior: "cream" });
@@ -305,16 +380,15 @@ export class WorldScene extends Phaser.Scene {
         case "stairs": {
           const d = (z.data as { name?: string; tag?: string }) ?? {};
           const brown = d.tag === "well_court";
-          if (z.tag) quests.onInteract(z.tag);
           uiEvents.emit("minigame", {
             kind: "stairs",
             title: d.name ?? "Stairs",
             hint: brown
-              ? "Top floor. The stairs are so much. Tap to climb — or skip, she always gets tired."
-              : "Stairs up to the lobby. Tap to climb, or skip.",
-            taps: brown ? 14 : 8,
-            skipLabel: brown ? "Skip — she's tired" : "Skip",
+              ? "20 steps. 13 seconds. There is no skip button in this building."
+              : "Climb quickly to the lobby.",
+            taps: brown ? 20 : 10,
             onDone: () => {
+              if (z.tag) quests.onInteract(z.tag);
               if (brown) store.unlockMemory("mem_well_court");
               this.scene.start(SceneKeys.House, {
                 title: d.name ?? "Inside",
@@ -394,6 +468,53 @@ export class WorldScene extends Phaser.Scene {
       this.parkedJeep = this.add.image(z.x, z.y, "v_jeep_blue").setOrigin(0.5, 1).setDepth(z.y);
     }
     this.interactables.push({ x: z.x, y: z.y, radius: z.radius, prompt: z.prompt, trigger });
+  }
+
+  private useOffice(tag?: string) {
+    if (tag !== "adnoc_hq") return;
+    const engineerStep = quests.currentStep("q_adnoc_engineer")?.target;
+    if (engineerStep === "adnoc_lab") {
+      uiEvents.emit("minigame", {
+        kind: "lab",
+        title: "ADNOC HQ · SAMPLE CHECK",
+        hint: "Balance the tiny blue samples. Calm hands, clear notes, chemical-engineer energy.",
+        taps: 12,
+        skipLabel: "Submit notes",
+        onDone: () => {
+          quests.onInteract("adnoc_lab");
+          store.advanceTime();
+          uiEvents.emit("dialogue", "Alya", ["Clean results. Take these to the recruiter."]);
+        },
+      });
+      return;
+    }
+    const ceoStep = quests.currentStep("q_adnoc_ceo")?.target;
+    if (ceoStep === "adnoc_boardroom") {
+      uiEvents.emit("minigame", {
+        kind: "pitch",
+        title: "BLUE BOARDROOM PITCH",
+        hint: "Tap through the slides: safer systems, smarter labs, and a very compelling snack budget.",
+        taps: 14,
+        skipLabel: "Present",
+        onDone: () => {
+          quests.onInteract("adnoc_boardroom");
+          uiEvents.emit("dialogue", "Boardroom", ["The board has never seen a slide about snacks this persuasive."]);
+        },
+      });
+      return;
+    }
+    if (ceoStep === "adnoc_rooftop") {
+      const done = quests.onInteract("adnoc_rooftop");
+      uiEvents.emit("dialogue", "ADNOC HQ rooftop", ["The city looks very blue from up here.", done?.complete ?? "One more big step."]);
+      return;
+    }
+    const title = store.state.career === "ceo" ? "CEO Juju" : store.state.career === "chemical_engineer" ? "Chemical Engineer Juju" : "Future Chemical Engineer Juju";
+    uiEvents.emit("dialogue", "ADNOC HQ", [`${title}. The petrol station is for refuelling; this is where the big ideas happen.`]);
+  }
+
+  private enterMall(mallId: "dubai_mall" | "dubai_hills_mall" | "yas_mall") {
+    uiEvents.emit("sceneReset");
+    this.scene.start(SceneKeys.Mall, { mallId });
   }
 
   private placeFollowJeep(x: number, y: number, stayIn: boolean) {

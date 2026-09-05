@@ -7,6 +7,7 @@ import {
   type GameState,
   type PlacedFurniture,
   type TimeOfDay,
+  type Career,
 } from "./save";
 import { ITEMS, giftRelGain, giftTier, itemById } from "../data/items";
 import { NPCS } from "../data/npcs";
@@ -66,6 +67,37 @@ class Store extends Phaser.Events.EventEmitter {
     return true;
   }
 
+  // ---- career and Jeep fuel ----
+  setCareer(career: Career) {
+    if (this.state.career === career) return;
+    this.state.career = career;
+    this.emit("career", career);
+    this.emit("toast", career === "ceo" ? "Career update: CEO!" : "Career update: Chemical Engineer", "#2f6fd0");
+    this.save();
+  }
+
+  refuel(price = 6) {
+    if (this.state.fuel >= 100) {
+      this.emit("toast", "The Jeep is already full.", "#8ecae6");
+      return false;
+    }
+    if (!this.spendCoins(price)) {
+      this.emit("toast", "Not enough coins for fuel", "#e46d94");
+      return false;
+    }
+    this.state.fuel = 100;
+    this.emit("fuel", this.state.fuel);
+    this.emit("toast", "Jeep refuelled: 100%", "#2f6fd0");
+    this.save();
+    return true;
+  }
+
+  useFuel(amount: number) {
+    this.state.fuel = Math.max(0, this.state.fuel - Math.max(0, Math.round(amount)));
+    this.emit("fuel", this.state.fuel);
+    this.save();
+  }
+
   // ---- outfit ----
   isOutfitUnlocked(id: string) {
     return this.state.unlockedOutfits.includes(id);
@@ -87,6 +119,27 @@ class Store extends Phaser.Events.EventEmitter {
     if (!this.isOutfitUnlocked(id)) return;
     this.state.outfit = id;
     this.emit("outfit", id);
+    this.save();
+  }
+
+  isAccessoryUnlocked(id: string) {
+    return this.state.unlockedAccessories.includes(id);
+  }
+
+  unlockAccessory(id: string) {
+    if (this.isAccessoryUnlocked(id)) return false;
+    this.state.unlockedAccessories.push(id);
+    if (!this.state.equippedAccessory) this.state.equippedAccessory = id;
+    this.emit("accessory", this.state.equippedAccessory);
+    this.emit("toast", `New accessory: ${id.replace(/_/g, " ")}`, "#f4c95d");
+    this.save();
+    return true;
+  }
+
+  setAccessory(id?: string) {
+    if (id && !this.isAccessoryUnlocked(id)) return;
+    this.state.equippedAccessory = id;
+    this.emit("accessory", id);
     this.save();
   }
 
