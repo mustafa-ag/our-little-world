@@ -244,6 +244,45 @@ export class WorldMapScene extends Phaser.Scene {
     const plus = mkBtn(width - 16, 56, "+", () => this.nudgeZoom(1.35));
     const minus = mkBtn(width - 16, 96, "−", () => this.nudgeZoom(1 / 1.35));
 
+    // Large, explicit destinations are much easier to use than hunting tiny pins.
+    const listX = 12;
+    const listY = 70;
+    const listW = Math.min(196, width - 24);
+    const rowH = 30;
+    const listH = 34 + CITIES.length * rowH + 10;
+    const placePanel = this.add.graphics().setScrollFactor(0);
+    placePanel.fillStyle(0xfff9f0, 0.94).fillRoundedRect(listX, listY, listW, listH, 10);
+    placePanel.lineStyle(2, 0xcaa27a, 1).strokeRoundedRect(listX, listY, listW, listH, 10);
+    const placeTitle = this.add
+      .text(listX + 12, listY + 8, "PLACES", { fontFamily: "monospace", fontSize: "12px", color: "#2f6fd0", fontStyle: "bold", resolution: 2 })
+      .setScrollFactor(0);
+    const placeHint = this.add
+      .text(listX + listW - 10, listY + 10, "tap to travel", { fontFamily: "monospace", fontSize: "8px", color: "#7a6a5a", resolution: 2 })
+      .setOrigin(1, 0)
+      .setScrollFactor(0);
+    const placeItems: Phaser.GameObjects.GameObject[] = [placePanel, placeTitle, placeHint];
+    const currentCity = getLocation(store.state.currentLocation).cityId;
+    CITIES.forEach((city, index) => {
+      const y = listY + 32 + index * rowH;
+      const isHere = city.id === currentCity;
+      const row = this.add
+        .text(listX + 8, y, `${isHere ? "HERE  " : "GO TO "}${city.name}`, {
+          fontFamily: "monospace",
+          fontSize: "12px",
+          color: isHere ? "#fff" : "#3a2b3a",
+          backgroundColor: isHere ? "#2f6fd0" : "#f2e6d1",
+          padding: { x: 8, y: 5 },
+          resolution: 2,
+        })
+        .setInteractive({ useHandCursor: true })
+        .setScrollFactor(0);
+      row.on("pointerdown", (p: Phaser.Input.Pointer) => {
+        p.event.stopPropagation();
+        this.travel(city.hub);
+      });
+      placeItems.push(row);
+    });
+
     const stay = this.add
       .text(width / 2, height - 28, "Stay here", {
         fontFamily: "monospace",
@@ -261,7 +300,7 @@ export class WorldMapScene extends Phaser.Scene {
       this.travel(store.state.currentLocation);
     });
 
-    this.hud = this.add.container(0, 0, [title, hint, plus, minus, stay]).setDepth(50);
+    this.hud = this.add.container(0, 0, [title, hint, plus, minus, ...placeItems, stay]).setDepth(50);
     this.hud.setScrollFactor(0);
   }
 

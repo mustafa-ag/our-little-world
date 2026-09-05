@@ -88,6 +88,10 @@ const targets = [
   ["icon-512.png", 512],
   ["apple-touch-icon.png", 180],
   ["favicon.png", 64],
+  // New filenames force installed iOS web apps to fetch the heart artwork again.
+  ["icon-heart-192.png", 192],
+  ["icon-heart-512.png", 512],
+  ["apple-touch-heart.png", 180],
 ];
 
 for (const [name, size] of targets) {

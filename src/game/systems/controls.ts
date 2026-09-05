@@ -13,7 +13,7 @@ export const controls = {
 export const uiEvents = new Phaser.Events.EventEmitter();
 
 export interface MiniGameSpec {
-  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo";
+  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown";
   title: string;
   hint: string;
   taps?: number;
@@ -22,6 +22,13 @@ export interface MiniGameSpec {
   photoTex?: string;
   photoBuddy?: string;
   onDone: (ok?: boolean) => void;
+}
+
+export interface FoodOrderSpec {
+  title: string;
+  subtitle: string;
+  items: { id: string; name: string; description: string; price: number }[];
+  onOrder: (itemId: string) => void;
 }
 
 export function resetControls() {

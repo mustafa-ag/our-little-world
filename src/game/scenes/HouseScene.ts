@@ -7,6 +7,7 @@ import { controls, uiEvents } from "../systems/controls";
 import { tryDeliverMessages } from "../systems/phone";
 import { homeComment } from "../systems/life";
 import type { PlacedFurniture } from "../systems/save";
+import { createVisualShadow, getVisualAssetDef, getVisualTexture, type VisualShadowHandle } from "../visual";
 
 interface Interactable {
   x: number;
@@ -28,8 +29,8 @@ export class HouseScene extends Phaser.Scene {
   private lastInteract = 0;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private editing = false;
-  private placed: { img: Phaser.GameObjects.Image; data: PlacedFurniture }[] = [];
-  private drag?: { img: Phaser.GameObjects.Image; data: PlacedFurniture };
+  private placed: { img: Phaser.GameObjects.Image; data: PlacedFurniture; shadow?: VisualShadowHandle }[] = [];
+  private drag?: { img: Phaser.GameObjects.Image; data: PlacedFurniture; shadow?: VisualShadowHandle };
 
   constructor() {
     super(SceneKeys.House);
@@ -51,14 +52,14 @@ export class HouseScene extends Phaser.Scene {
     const rt = this.add.renderTexture(0, 0, worldW, worldH).setOrigin(0, 0).setDepth(Depths.ground);
     rt.beginDraw();
     for (let y = 0; y < RH; y++)
-      for (let x = 0; x < RW; x++) rt.batchDraw("t_wood", x * TILE, y * TILE);
+      for (let x = 0; x < RW; x++) rt.batchDraw(getVisualTexture(this, "t_wood"), x * TILE, y * TILE);
     rt.endDraw();
     if (brown) {
       this.add.rectangle(worldW / 2, worldH / 2, worldW, worldH, 0x4a3224, 0.35).setDepth(Depths.ground + 1);
     }
 
     // rug
-    this.add.image(worldW / 2, worldH / 2 + 8, "f_rug").setDepth(1);
+    this.add.image(worldW / 2, worldH / 2 + 8, getVisualTexture(this, "f_rug")).setDepth(1);
 
     // walls (top band) + border collision
     const wall = this.add.graphics().setDepth(Depths.overlay - 1);
@@ -67,13 +68,13 @@ export class HouseScene extends Phaser.Scene {
     wall.fillStyle(brown ? 0x5a382c : 0xd8c6b0, 1);
     wall.fillRect(0, TILE * 2 - 3, worldW, 3);
     // a cute window + picture on the wall
-    this.add.image(TILE * 4, TILE * 1, "f_tv").setScale(0).setVisible(false); // reserved
+    this.add.image(TILE * 4, TILE * 1, getVisualTexture(this, "f_tv")).setScale(0).setVisible(false); // reserved
     const win = this.add.graphics().setDepth(Depths.overlay - 1);
     win.fillStyle(0xbfe6ff, 1).fillRect(TILE * 3, 6, 28, 20);
     win.fillStyle(0x8fbfe0, 1).fillRect(TILE * 3, 6, 28, 3);
     win.lineStyle(2, 0xa9744f).strokeRect(TILE * 3, 6, 28, 20);
     // heart picture + a little "Juju ❤ Moomoo" frame on the wall
-    this.add.image(worldW - TILE * 4, TILE * 1 + 2, "ui_heart").setScale(1.6).setDepth(Depths.overlay - 1);
+    this.add.image(worldW - TILE * 4, TILE * 1 + 2, getVisualTexture(this, "ui_heart")).setScale(1.6).setDepth(Depths.overlay - 1);
     this.add
       .text(worldW - TILE * 4, TILE * 1 + 14, "Juju + Moomoo", {
         fontFamily: "monospace",
@@ -84,12 +85,17 @@ export class HouseScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(Depths.overlay - 1);
 
+    this.drawMemoryCorner(worldW, brown);
+
     this.buildCollision();
 
     // starter + owned furniture
-    this.add.image(TILE * 3, TILE * 4.5, "f_bed").setOrigin(0.5, 1).setDepth(TILE * 4.5);
+    this.add.image(TILE * 3, TILE * 4.5, getVisualTexture(this, "f_bed")).setOrigin(0.5, 1).setDepth(TILE * 4.5);
+    createVisualShadow(this, TILE * 3, TILE * 4.5, getVisualAssetDef("f_bed")?.shadow, { directionX: 0.65, directionY: 0.4, castLength: 12, opacity: 0.18, ambient: 0.2, warmth: 0.5 });
     this.addFurnitureInteract(TILE * 3, TILE * 4.5 - 8, "Sleep (save & new day)", () => this.sleep());
     this.addFurnitureInteract(TILE * 14, TILE * 3.2, "Edit home", () => this.toggleEdit());
+    this.addFurnitureInteract(TILE * 7.4, TILE * 2.9, "Look at photo wall", () => uiEvents.emit("openPhone", "album"));
+    this.addFurnitureInteract(TILE * 11.2, TILE * 2.9, "Look at keepsakes", () => uiEvents.emit("openPhone", "notes"));
 
     this.placed = [];
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -97,6 +103,7 @@ export class HouseScene extends Phaser.Scene {
       const gx = Math.round(p.worldX / 8) * 8;
       const gy = Math.round(p.worldY / 8) * 8;
       this.drag.img.setPosition(gx, gy).setDepth(gy);
+      this.drag.shadow?.setContactPoint(gx, gy);
       this.drag.data.x = gx;
       this.drag.data.y = gy;
     });
@@ -128,7 +135,7 @@ export class HouseScene extends Phaser.Scene {
     });
 
     // player
-    this.player = new Player(this, doorX, doorY - TILE * 2, "char_her");
+    this.player = new Player(this, doorX, doorY - TILE * 2, getVisualTexture(this, "char_her"));
     this.physics.add.collider(this.player, this.solids);
     this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
     this.applyZoom();
@@ -142,6 +149,7 @@ export class HouseScene extends Phaser.Scene {
     uiEvents.emit("locationTitle", title, brown ? "Top floor · brown inside" : title);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      for (const placed of this.placed) placed.shadow?.destroy();
       uiEvents.off("action", this.tryInteract, this);
       uiEvents.off("openMap", this.openMap, this);
       this.scale.off("resize", this.applyZoom, this);
@@ -151,7 +159,9 @@ export class HouseScene extends Phaser.Scene {
   }
 
   private spawnPlaced(f: PlacedFurniture) {
-    const img = this.add.image(f.x, f.y, f.tex).setOrigin(0.5, 1).setDepth(f.y);
+    const img = this.add.image(f.x, f.y, getVisualTexture(this, f.tex)).setOrigin(0.5, 1).setDepth(f.y);
+    const shadow = createVisualShadow(this, f.x, f.y, getVisualAssetDef(f.tex)?.shadow, { directionX: 0.65, directionY: 0.4, castLength: 12, opacity: 0.18, ambient: 0.2, warmth: 0.5 });
+    img.once("destroy", () => shadow?.destroy());
     if (f.rot) img.setFlipX(true);
     img.setInteractive({ draggable: true, useHandCursor: true });
     img.on("pointerdown", () => {
@@ -162,9 +172,45 @@ export class HouseScene extends Phaser.Scene {
         store.setFurniture(this.placed.map((p) => p.data));
         return;
       }
-      this.drag = { img, data: f };
+      this.drag = { img, data: f, shadow };
     });
-    this.placed.push({ img, data: f });
+    this.placed.push({ img, data: f, shadow });
+  }
+
+  private drawMemoryCorner(worldW: number, brown: boolean) {
+    const wallY = TILE * 1.15;
+    const frameColor = brown ? 0xd6a66f : 0xa9744f;
+    const photos = Object.values(store.state.photos).slice(0, 3);
+    for (let index = 0; index < 3; index += 1) {
+      const x = TILE * (6.5 + index * 1.1);
+      const hasPhoto = photos[index];
+      const frame = this.add.rectangle(x, wallY, 15, 18, 0xfff9ef).setStrokeStyle(2, frameColor).setDepth(Depths.overlay - 1);
+      this.add.text(x, wallY - 1, hasPhoto ? "♥" : "·", {
+        fontFamily: "monospace",
+        fontSize: "8px",
+        color: hasPhoto ? "#e46d94" : "#a08a70",
+        resolution: 2,
+      }).setOrigin(0.5).setDepth(Depths.overlay);
+      frame.setData("photo", hasPhoto?.id);
+    }
+    this.add.text(TILE * 7.6, TILE * 1.72, "little moments", {
+      fontFamily: "monospace",
+      fontSize: "7px",
+      color: brown ? "#f4d7bf" : "#7a6a5a",
+      resolution: 2,
+    }).setOrigin(0.5).setDepth(Depths.overlay);
+
+    const shelfX = worldW - TILE * 6.2;
+    const shelfY = TILE * 1.7;
+    const shelf = this.add.rectangle(shelfX, shelfY, TILE * 2.4, 3, frameColor).setDepth(Depths.overlay - 1);
+    shelf.setData("keepsakes", true);
+    const count = store.state.keepsakes.length;
+    this.add.text(shelfX, shelfY - 8, count ? "✦".repeat(Math.min(count, 4)) : "...", {
+      fontFamily: "monospace",
+      fontSize: "9px",
+      color: count ? "#f4c95d" : "#a08a70",
+      resolution: 2,
+    }).setOrigin(0.5).setDepth(Depths.overlay);
   }
 
   private toggleEdit() {
@@ -280,7 +326,8 @@ export class HouseScene extends Phaser.Scene {
       if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E))
         this.tryInteract();
     }
-    this.player.move(vx * this.player.speed, vy * this.player.speed);
+    const walkingSpeed = store.state.outfit === "red_bottom_boots" ? this.player.speed * 1.65 : this.player.speed;
+    this.player.move(vx * walkingSpeed, vy * walkingSpeed);
 
     let best: Interactable | null = null;
     let bestD = Infinity;

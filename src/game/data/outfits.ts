@@ -21,6 +21,7 @@ export const OUTFIT_UNLOCKS: OutfitUnlock[] = [
   { id: "pink_dress", label: "Pink Dress", hint: "Grow close with Mama (50).", relationship: { npc: "mama", min: 50 } },
   { id: "edi_hoodie", label: "Edinburgh Hoodie", hint: "Collect every Edinburgh memory.", memoryCity: "edinburgh" },
   { id: "sneakers", label: "Mall sneakers", hint: "Buy them at a shop.", flag: "bought_sneakers" },
+  { id: "red_bottom_boots", label: "Red-bottom boots", hint: "Open Phone > Style to equip sprint boots.", starter: true },
   { id: "city_bag", label: "City bag", hint: "Finish the mall coffee run.", questDone: "q_date" },
   { id: "secret_gold", label: "Golden hour", hint: "A quiet forever with Moomoo (100).", relationship: { npc: "moomoo", min: 100 } },
 ];

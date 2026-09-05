@@ -29,6 +29,17 @@ export interface MemoryUnlock {
   day: number;
 }
 
+/** Metadata only: photos are rendered as Polaroids and never stored as image blobs. */
+export interface SavedPhoto {
+  id: string;
+  title: string;
+  locationId: string;
+  day: number;
+  timeOfDay: TimeOfDay;
+  companionId?: string;
+  caption?: string;
+}
+
 export interface GameState {
   version: number;
   started: boolean;
@@ -48,6 +59,11 @@ export interface GameState {
   inventory: Record<string, number>;
   messages: PhoneMessage[];
   memories: Record<string, MemoryUnlock>;
+  photos: Record<string, SavedPhoto>;
+  keepsakes: string[];
+  unlockedCompanions: string[];
+  activeCompanionId?: string;
+  discoveredNotes: string[];
   currentDay: number;
   timeOfDay: TimeOfDay;
   eventCooldowns: Record<string, number>;
@@ -57,10 +73,27 @@ export interface GameState {
   lastPassenger?: string;
 }
 
+/** Legacy single-save key. It remains mirrored so existing installs never lose progress. */
 const SAVE_KEY = "ourlittleworld.save.v3";
-export const VERSION = 4;
+const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
+const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
+export const SAVE_SLOT_COUNT = 3;
+export const VERSION = 5;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
+
+export interface SaveSlot {
+  id: string;
+  state: GameState;
+  /** Zero means this slot has not started a story yet. */
+  updatedAt: number;
+}
+
+export interface SaveArchive {
+  version: 1;
+  activeSlotId: string;
+  slots: Record<string, SaveSlot>;
+}
 
 export function defaultState(): GameState {
   return {
@@ -81,6 +114,10 @@ export function defaultState(): GameState {
     inventory: {},
     messages: [],
     memories: {},
+    photos: {},
+    keepsakes: [],
+    unlockedCompanions: [],
+    discoveredNotes: [],
     currentDay: 1,
     timeOfDay: "morning",
     eventCooldowns: {},
@@ -125,6 +162,31 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   const timeOfDay: TimeOfDay =
     tod === "morning" || tod === "afternoon" || tod === "evening" || tod === "night" ? tod : d.timeOfDay;
 
+  const photos: Record<string, SavedPhoto> = {};
+  if (raw.photos && typeof raw.photos === "object") {
+    for (const [id, photo] of Object.entries(raw.photos)) {
+      const p = photo as Partial<SavedPhoto>;
+      if (!p || typeof p.title !== "string" || typeof p.locationId !== "string") continue;
+      photos[id] = {
+        id,
+        title: p.title,
+        locationId: p.locationId,
+        day: Number.isFinite(p.day) ? Math.max(1, Math.floor(Number(p.day))) : d.currentDay,
+        timeOfDay: p.timeOfDay === "afternoon" || p.timeOfDay === "evening" || p.timeOfDay === "night" ? p.timeOfDay : "morning",
+        companionId: typeof p.companionId === "string" ? p.companionId : undefined,
+        caption: typeof p.caption === "string" ? p.caption : undefined,
+      };
+    }
+  }
+
+  // This removed quest may exist in saves created before the rollback.
+  const quests = raw.quests && typeof raw.quests === "object" ? { ...raw.quests } : { ...d.quests };
+  const flags = raw.flags && typeof raw.flags === "object" ? { ...raw.flags } : {};
+  const inventory = numMap(raw.inventory);
+  delete quests.q_pirate_keepsakes;
+  delete flags.pirate_juju;
+  delete inventory.family_keepsakes;
+
   return {
     ...d,
     ...raw,
@@ -136,15 +198,20 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     currentLocation: typeof raw.currentLocation === "string" ? raw.currentLocation : d.currentLocation,
     inJeep: !!raw.inJeep,
     unlockedLocations: Array.isArray(raw.unlockedLocations) ? uniq(raw.unlockedLocations) : d.unlockedLocations,
-    quests: raw.quests && typeof raw.quests === "object" ? raw.quests : d.quests,
-    flags: raw.flags && typeof raw.flags === "object" ? { ...raw.flags } : {},
+    quests,
+    flags,
     collected: raw.collected && typeof raw.collected === "object" ? { ...raw.collected } : {},
     furniture: Array.isArray(raw.furniture) ? raw.furniture : [],
     storedFurniture: Array.isArray(raw.storedFurniture) ? raw.storedFurniture.filter((s) => typeof s === "string") : [],
     relationships: numMap(raw.relationships),
-    inventory: numMap(raw.inventory),
+    inventory,
     messages,
     memories,
+    photos,
+    keepsakes: Array.isArray(raw.keepsakes) ? uniq(raw.keepsakes) : [],
+    unlockedCompanions: Array.isArray(raw.unlockedCompanions) ? uniq(raw.unlockedCompanions) : [],
+    activeCompanionId: typeof raw.activeCompanionId === "string" ? raw.activeCompanionId : undefined,
+    discoveredNotes: Array.isArray(raw.discoveredNotes) ? uniq(raw.discoveredNotes) : [],
     currentDay: Number.isFinite(raw.currentDay) && (raw.currentDay as number) > 0 ? Math.floor(raw.currentDay as number) : d.currentDay,
     timeOfDay,
     eventCooldowns: numMap(raw.eventCooldowns),
@@ -155,28 +222,156 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   };
 }
 
-export function loadState(): GameState {
+function slotId(index: number) {
+  return `story-${index + 1}`;
+}
+
+function blankSlot(index: number): SaveSlot {
+  return { id: slotId(index), state: defaultState(), updatedAt: 0 };
+}
+
+function legacyState(): GameState | undefined {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return defaultState();
+    if (!raw) return undefined;
     return normalizeState(JSON.parse(raw) as Partial<GameState>);
   } catch {
-    return defaultState();
+    return undefined;
   }
+}
+
+function createArchive(): SaveArchive {
+  const slots: Record<string, SaveSlot> = {};
+  for (let index = 0; index < SAVE_SLOT_COUNT; index++) {
+    const slot = blankSlot(index);
+    slots[slot.id] = slot;
+  }
+  const prior = legacyState();
+  if (prior) slots[slotId(0)] = { id: slotId(0), state: prior, updatedAt: prior.started ? Date.now() : 0 };
+  return { version: 1, activeSlotId: slotId(0), slots };
+}
+
+function parseArchive(raw: string | null): SaveArchive | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Partial<SaveArchive>;
+    if (!parsed || typeof parsed !== "object" || !parsed.slots || typeof parsed.slots !== "object") return undefined;
+    const slots: Record<string, SaveSlot> = {};
+    for (let index = 0; index < SAVE_SLOT_COUNT; index++) {
+      const id = slotId(index);
+      const candidate = parsed.slots?.[id];
+      if (!candidate || typeof candidate !== "object" || !candidate.state || typeof candidate.state !== "object") return undefined;
+      slots[id] = {
+        id,
+        state: normalizeState(candidate?.state),
+        updatedAt: candidate && Number.isFinite(candidate.updatedAt) ? Number(candidate.updatedAt) : 0,
+      };
+    }
+    const activeSlotId = slots[parsed.activeSlotId ?? ""] ? parsed.activeSlotId! : slotId(0);
+    return { version: 1, activeSlotId, slots };
+  } catch {
+    return undefined;
+  }
+}
+
+function readArchive(): SaveArchive {
+  let primary: SaveArchive | undefined;
+  let backup: SaveArchive | undefined;
+  try {
+    primary = parseArchive(localStorage.getItem(SAVE_SLOTS_KEY));
+    backup = parseArchive(localStorage.getItem(SAVE_SLOTS_BACKUP_KEY));
+  } catch {
+    // Storage can be unavailable in private browsing; start a session safely.
+  }
+  if (primary) {
+    if (!backup) writeArchive(primary);
+    return primary;
+  }
+  if (backup) {
+    writeArchive(backup);
+    return backup;
+  }
+
+  const archive = createArchive();
+  writeArchive(archive);
+  return archive;
+}
+
+/** A serializable snapshot for the optional authenticated cloud mirror. */
+export function getSaveArchive(): SaveArchive {
+  return JSON.parse(JSON.stringify(readArchive())) as SaveArchive;
+}
+
+/**
+ * Replaces the local archive only after it passes the same validation and
+ * migration rules as an on-device save. Returns the newly active state.
+ */
+export function restoreSaveArchive(raw: unknown): GameState | undefined {
+  const archive = parseArchive(JSON.stringify(raw));
+  if (!archive) return undefined;
+  writeArchive(archive);
+  return archive.slots[archive.activeSlotId].state;
+}
+
+export function archiveUpdatedAt(archive: SaveArchive) {
+  return Math.max(...Object.values(archive.slots).map((slot) => slot.updatedAt), 0);
+}
+
+function writeArchive(archive: SaveArchive) {
+  const serialized = JSON.stringify(archive);
+  try {
+    localStorage.setItem(SAVE_SLOTS_KEY, serialized);
+    // A deployment never clears origin storage. This backup also protects all slots
+    // if a browser ever damages the primary archive record.
+    localStorage.setItem(SAVE_SLOTS_BACKUP_KEY, serialized);
+    // Keep the previous single-save key in sync with the selected story as a safe rollback path.
+    localStorage.setItem(SAVE_KEY, JSON.stringify(archive.slots[archive.activeSlotId].state));
+  } catch {
+    // Ignore private-mode or quota failures; the game remains playable for this session.
+  }
+}
+
+export function getSaveSlots(): SaveSlot[] {
+  const archive = readArchive();
+  return Array.from({ length: SAVE_SLOT_COUNT }, (_, index) => archive.slots[slotId(index)]);
+}
+
+export function getActiveSaveSlotId() {
+  return readArchive().activeSlotId;
+}
+
+export function loadState(slotIdToLoad?: string): GameState {
+  const archive = readArchive();
+  if (slotIdToLoad && archive.slots[slotIdToLoad]) {
+    archive.activeSlotId = slotIdToLoad;
+    writeArchive(archive);
+  }
+  return archive.slots[archive.activeSlotId].state;
 }
 
 export function saveState(state: GameState) {
-  try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore (private mode / quota)
-  }
+  const archive = readArchive();
+  archive.slots[archive.activeSlotId] = {
+    id: archive.activeSlotId,
+    state: normalizeState(state),
+    updatedAt: state.started ? Date.now() : archive.slots[archive.activeSlotId].updatedAt,
+  };
+  writeArchive(archive);
+}
+
+/** Starts a new story in one slot without affecting the other stories. */
+export function createNewSaveSlot(id: string): GameState {
+  const archive = readArchive();
+  if (!archive.slots[id]) return archive.slots[archive.activeSlotId].state;
+  archive.activeSlotId = id;
+  archive.slots[id] = { id, state: defaultState(), updatedAt: 0 };
+  writeArchive(archive);
+  return archive.slots[id].state;
 }
 
 export function clearSave() {
-  try {
-    localStorage.removeItem(SAVE_KEY);
-  } catch {
-    /* ignore */
-  }
+  const archive = readArchive();
+  const id = archive.activeSlotId;
+  archive.slots[id] = { id, state: defaultState(), updatedAt: 0 };
+  writeArchive(archive);
 }

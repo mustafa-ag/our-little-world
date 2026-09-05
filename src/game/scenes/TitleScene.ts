@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { store } from "../systems/store";
 import { resetControls } from "../systems/controls";
+import { QUESTS } from "../data/quests";
+import type { SaveSlot } from "../systems/save";
 
 export class TitleScene extends Phaser.Scene {
   constructor() {
@@ -28,9 +30,9 @@ export class TitleScene extends Phaser.Scene {
       this.tweens.add({ targets: h, y: h.y - Phaser.Math.Between(20, 50), duration: Phaser.Math.Between(1800, 3200), yoyo: true, repeat: -1, ease: "Sine.inOut" });
     }
 
-    this.add.image(width / 2, height * 0.32, "ui_heart").setScale(6);
+    this.add.image(width / 2, height * 0.17, "ui_heart").setScale(4.2);
     this.add
-      .text(width / 2, height * 0.46, "Juju's World", {
+      .text(width / 2, height * 0.27, "Juju's World", {
         fontFamily: "monospace",
         fontSize: "34px",
         color: "#fff",
@@ -40,7 +42,7 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.add
-      .text(width / 2, height * 0.53, "made for Jasmin, with love — Moomoo", {
+      .text(width / 2, height * 0.34, "made for Jasmin, with love — Moomoo", {
         fontFamily: "monospace",
         fontSize: "14px",
         color: "#fff",
@@ -50,40 +52,73 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const play = this.add
-      .text(width / 2, height * 0.66, store.state.started ? "Continue" : "Start our story", {
+    this.buildCloudControl(width / 2, height * 0.40);
+
+    this.add
+      .text(width / 2, height * 0.45, "CHOOSE A STORY", {
         fontFamily: "monospace",
-        fontSize: "20px",
-        color: "#fff",
-        backgroundColor: "#e46d94",
-        padding: { x: 20, y: 12 },
+        fontSize: "12px",
+        color: "#fff4e6",
+        fontStyle: "bold",
+        resolution: 2,
+      })
+      .setOrigin(0.5);
+
+    const rowHeight = 62;
+    const listTop = Math.min(height * 0.52, height - rowHeight * 3 - 26);
+    store.getSaveSlots().forEach((slot, index) => this.buildSaveCard(slot, index, width / 2, listTop + index * (rowHeight + 8), Math.min(360, width - 28), rowHeight));
+
+    this.input.keyboard?.once("keydown-SPACE", () => this.startGame());
+    this.input.keyboard?.once("keydown-ENTER", () => this.startGame());
+  }
+
+  private buildCloudControl(x: number, y: number) {
+    const label = this.add
+      .text(x, y, this.cloudLabel(), {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: "#fff4e6",
+        backgroundColor: "#3a2b3a88",
+        padding: { x: 8, y: 5 },
         resolution: 2,
       })
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
-    this.tweens.add({ targets: play, scale: 1.06, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    play.on("pointerdown", () => this.startGame());
 
-    if (store.state.started) {
-      const reset = this.add
-        .text(width / 2, height * 0.78, "New game", {
-          fontFamily: "monospace",
-          fontSize: "13px",
-          color: "#fff",
-          backgroundColor: "rgba(58,43,58,0.55)",
-          padding: { x: 10, y: 6 },
-          resolution: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      reset.on("pointerdown", () => {
-        store.reset();
-        this.scene.restart();
-      });
-    }
+    const refresh = () => label.setText(this.cloudLabel());
+    store.on("cloud", refresh);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => store.off("cloud", refresh));
 
-    this.input.keyboard?.once("keydown-SPACE", () => this.startGame());
-    this.input.keyboard?.once("keydown-ENTER", () => this.startGame());
+    label.on("pointerdown", async () => {
+      if (store.cloudStatus === "disabled") {
+        store.toast("Cloud saves will be available in the next live update.", "#fff4e6");
+        return;
+      }
+      if (store.cloudStatus === "synced") {
+        const signOut = window.confirm("Sign out of cloud saves on this device? Your local saves will remain here.");
+        if (signOut) await store.signOutOfCloud();
+        return;
+      }
+      const saveName = window.prompt("Choose a private cloud-save name. Use this same name on phone, tablet, and laptop:");
+      if (!saveName) return;
+      const password = window.prompt("Create or enter your cloud-save password (at least 8 characters). Keep it private and use the same one on every device:");
+      if (!password) return;
+      try {
+        const created = await store.connectCloudSave(saveName, password);
+        store.toast(created ? "Cloud save created and synced." : "Cloud save connected and synced.", "#8ecae6");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not connect cloud saves.";
+        store.toast(message, "#ff8fae");
+      }
+    });
+  }
+
+  private cloudLabel() {
+    if (store.cloudStatus === "disabled") return "CLOUD SAVES · SETTING UP";
+    if (store.cloudStatus === "syncing") return "CLOUD SAVES · SYNCING";
+    if (store.cloudStatus === "synced") return "CLOUD SAVES · SYNCED · TAP TO SIGN OUT";
+    if (store.cloudStatus === "error") return "CLOUD SAVES · COULDN'T CONNECT · TAP TO RETRY";
+    return "CLOUD SAVES · TAP TO CONNECT";
   }
 
   private startGame() {
@@ -93,5 +128,54 @@ export class TitleScene extends Phaser.Scene {
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.start(SceneKeys.World, { locationId: store.state.currentLocation, driving: store.state.inJeep });
     });
+  }
+
+  private buildSaveCard(slot: SaveSlot, index: number, x: number, y: number, width: number, height: number) {
+    const active = slot.id === store.activeSaveSlotId;
+    const complete = QUESTS.filter((quest) => slot.state.quests[quest.id]?.status === "done").length;
+    const percentage = QUESTS.length === 0 ? 0 : Math.round((complete / QUESTS.length) * 100);
+    const started = slot.state.started;
+    const card = this.add
+      .rectangle(x, y, width, height, active ? 0xfff4e6 : 0xffffff, active ? 0.98 : 0.88)
+      .setStrokeStyle(2, active ? 0xe46d94 : 0x3a2b3a, 0.9)
+      .setInteractive({ useHandCursor: true });
+    const label = this.add
+      .text(x - width / 2 + 14, y - 18, `STORY ${index + 1}${active ? " · SELECTED" : ""}`, {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#3a2b3a",
+        fontStyle: "bold",
+        resolution: 2,
+      })
+      .setOrigin(0, 0.5);
+    const detail = this.add
+      .text(x - width / 2 + 14, y + 10, started ? `Day ${slot.state.currentDay} · ${complete}/${QUESTS.length} quests · ${percentage}% complete` : "Fresh story · tap to begin", {
+        fontFamily: "monospace",
+        fontSize: "10px",
+        color: "#6d5665",
+        resolution: 2,
+      })
+      .setOrigin(0, 0.5);
+    const action = this.add
+      .text(x + width / 2 - 12, y, started ? "Play" : "Start", {
+        fontFamily: "monospace",
+        fontSize: "12px",
+        color: "#fff",
+        backgroundColor: started ? "#2f6fd0" : "#e46d94",
+        padding: { x: 7, y: 5 },
+        resolution: 2,
+      })
+      .setOrigin(1, 0.5);
+
+    const select = () => {
+      if (started) store.loadSaveSlot(slot.id);
+      else store.startNewSaveSlot(slot.id);
+      this.startGame();
+    };
+    card.on("pointerdown", select);
+    action.setInteractive({ useHandCursor: true }).on("pointerdown", select);
+    const cardParts = [card, label, detail, action];
+    for (const part of cardParts) part.setAlpha(0);
+    this.tweens.add({ targets: cardParts, alpha: 1, duration: 180, delay: index * 90, ease: "Sine.out" });
   }
 }

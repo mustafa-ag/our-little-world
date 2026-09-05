@@ -10,9 +10,11 @@
     "prebuild": "node scripts/generate-icons.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "audit:hd": "node scripts/audit-hd-assets.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "phaser": "^3.88.2"
   },
   "devDependencies": {

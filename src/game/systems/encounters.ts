@@ -17,9 +17,21 @@ export function pickEncounter(locationId: string): EncounterDef | null {
     return true;
   });
   if (!pool.length) return null;
-  const roll = Math.random();
-  const hit = pool.find((e) => roll < e.chance);
-  return hit ?? null;
+  // A stable day/location roll prevents save-reload fishing for rare events.
+  for (const event of pool) {
+    if (dailyRoll(`${locationId}:${event.id}`) < event.chance) return event;
+  }
+  return null;
+}
+
+function dailyRoll(seed: string) {
+  let hash = 2166136261;
+  const input = `${store.state.currentDay}:${seed}`;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
 }
 
 export function applyEncounter(e: EncounterDef) {

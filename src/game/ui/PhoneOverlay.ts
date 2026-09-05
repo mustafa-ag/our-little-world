@@ -3,21 +3,30 @@ import { CITIES } from "../data/locations";
 import { MEMORIES } from "../data/memories";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
+import { Outfits } from "../palette";
+import { OUTFIT_UNLOCKS } from "../data/outfits";
+import { rebuildPlayerTexture } from "../textures";
 import { REL_MAX } from "../data/relationships";
+import { bandFor } from "../data/relationships";
+import { KEEPSAKES } from "../data/relationshipMilestones";
+import { SECRETS } from "../data/secrets";
+import { QUESTS } from "../data/quests";
 import { store } from "../systems/store";
 import { markRead } from "../systems/phone";
 import { activateFromMessage as startQuest } from "../systems/quests";
 import { controls, uiEvents } from "../systems/controls";
 
 const FONT = "monospace";
-type Tab = "messages" | "memories" | "map" | "contacts" | "bag";
+export type PhoneTab = "messages" | "album" | "map" | "contacts" | "notes" | "bag" | "style" | "debug";
 
 export class PhoneOverlay {
   root: Phaser.GameObjects.Container;
   open = false;
-  private tab: Tab = "messages";
+  private tab: PhoneTab = "messages";
   private body: Phaser.GameObjects.GameObject[] = [];
   private badge?: Phaser.GameObjects.Text;
+  private readonly debugQuestTour = new URLSearchParams(window.location.search).has("debugQuests");
+  private debugQuestIndex = 0;
 
   constructor(private scene: Phaser.Scene) {
     this.root = scene.add.container(0, 0).setScrollFactor(0).setDepth(70);
@@ -40,7 +49,7 @@ export class PhoneOverlay {
     else this.show();
   }
 
-  show(tab?: Tab) {
+  show(tab?: PhoneTab) {
     this.open = true;
     this.tab = tab ?? this.tab;
     controls.locked = true;
@@ -95,19 +104,23 @@ export class PhoneOverlay {
       .setOrigin(1, 0);
     this.add(clock);
 
-    const tabs: { id: Tab; label: string }[] = [
+    const tabs: { id: PhoneTab; label: string }[] = [
       { id: "messages", label: "Msgs" },
-      { id: "memories", label: "Mem" },
+      { id: "album", label: "Album" },
       { id: "map", label: "Map" },
       { id: "contacts", label: "Ppl" },
+      { id: "notes", label: "Notes" },
       { id: "bag", label: "Bag" },
+      { id: "style", label: "Fit" },
     ];
+    if (this.debugQuestTour) tabs.push({ id: "debug", label: "Debug" });
+    const tabW = (w - 32) / tabs.length;
     tabs.forEach((t, i) => {
       const on = this.tab === t.id;
       const b = this.scene.add
-        .text(px + 16 + i * 70, py + 64, t.label, {
+        .text(px + 16 + i * tabW, py + 64, t.label, {
           fontFamily: FONT,
-          fontSize: "11px",
+          fontSize: "10px",
           color: on ? "#fff" : "#3a2b3a",
           backgroundColor: on ? "#e46d94" : "#efe4d4",
           padding: { x: 8, y: 4 },
@@ -125,10 +138,13 @@ export class PhoneOverlay {
     const innerTop = py + 96;
     const innerH = h - 140;
     if (this.tab === "messages") this.drawMessages(px + 16, innerTop, w - 32, innerH);
-    if (this.tab === "memories") this.drawMemories(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "album") this.drawAlbum(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "map") this.drawMap(px + 16, innerTop, w - 32);
     if (this.tab === "contacts") this.drawContacts(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "notes") this.drawNotes(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "bag") this.drawBag(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "style") this.drawStyle(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "debug" && this.debugQuestTour) this.drawQuestTour(px + 16, innerTop, w - 32, innerH);
 
     const close = this.scene.add
       .text(width / 2, py + h - 22, "Close", {
@@ -174,6 +190,51 @@ export class PhoneOverlay {
       this.add(row);
       yy += 46;
     }
+  }
+
+  private drawAlbum(x: number, y: number, w: number, maxH: number) {
+    const photos = Object.values(store.state.photos).sort((a, b) => b.day - a.day);
+    let yy = y;
+    if (!photos.length) {
+      this.add(this.scene.add.text(x, yy, "No Polaroids yet.\nFind little CAM markers and frame a moment.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", wordWrap: { width: w }, resolution: 2 }));
+      yy += 54;
+    }
+    for (const photo of photos.slice(0, 4)) {
+      if (yy > y + maxH - 52) break;
+      const card = this.scene.add.rectangle(x + w / 2, yy + 20, w, 42, 0xfffdf8).setStrokeStyle(2, 0xd9c7ab).setInteractive({ useHandCursor: true });
+      const companion = photo.companionId ? NPCS.find((npc) => npc.id === photo.companionId)?.name : undefined;
+      const label = this.scene.add.text(x + 10, yy + 5, `POLAROID  ${photo.title}\nDay ${photo.day} · ${photo.timeOfDay}${companion ? ` · ${companion}` : ""}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: w - 20 }, resolution: 2 });
+      card.on("pointerdown", (_p: Phaser.Input.Pointer, _lx: number, _ly: number, e?: Phaser.Types.Input.EventData) => {
+        e?.stopPropagation?.();
+        this.showPhotoViewer(photo.title, photo.caption ?? "A little moment, kept.");
+      });
+      this.add(card);
+      this.add(label);
+      yy += 50;
+    }
+    if (yy > y + maxH - 50) return;
+    this.add(this.scene.add.text(x, yy + 4, "MEMORY BOOK", { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    yy += 22;
+    for (const city of CITIES) {
+      const group = MEMORIES.filter((memory) => memory.cityId === city.id);
+      const have = group.filter((memory) => store.hasMemory(memory.id)).length;
+      if (!group.length || !have) continue;
+      this.add(this.scene.add.text(x, yy, `${city.name}  ${have}/${group.length}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", resolution: 2 }));
+      yy += 16;
+    }
+  }
+
+  private showPhotoViewer(title: string, caption: string) {
+    const { width, height } = this.scene.scale.gameSize;
+    const overlay = this.scene.add.container(0, 0).setDepth(80);
+    const shade = this.scene.add.rectangle(width / 2, height / 2, width, height, 0x1a1420, 0.72).setInteractive();
+    const paper = this.scene.add.rectangle(width / 2, height / 2, Math.min(width - 64, 330), 220, 0xfffdf8).setStrokeStyle(4, 0xd9c7ab);
+    const heading = this.scene.add.text(width / 2, height / 2 - 72, title, { fontFamily: FONT, fontSize: "16px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    const body = this.scene.add.text(width / 2, height / 2 - 18, caption, { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", align: "center", wordWrap: { width: 240 }, resolution: 2 }).setOrigin(0.5);
+    const close = this.scene.add.text(width / 2, height / 2 + 70, "Tap to close", { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 8, y: 4 }, resolution: 2 }).setOrigin(0.5);
+    overlay.add([shade, paper, heading, body, close]);
+    shade.on("pointerdown", () => overlay.destroy());
+    close.setInteractive({ useHandCursor: true }).on("pointerdown", () => overlay.destroy());
   }
 
   private drawMemories(x: number, y: number, w: number, maxH: number) {
@@ -223,13 +284,111 @@ export class PhoneOverlay {
   private drawContacts(x: number, y: number, w: number, maxH: number) {
     let yy = y;
     for (const n of NPCS) {
-      if (yy > y + maxH - 16) break;
+      if (yy > y + maxH - 34) break;
       const rel = store.getRelationship(n.id);
       const hearts = "♡".repeat(Math.max(1, Math.round((rel / REL_MAX) * 5)));
-      this.add(this.scene.add.text(x, yy, `${n.name}  ${hearts}  ${rel}`, { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 }));
-      yy += 20;
+      const unlocked = store.state.unlockedCompanions.includes(n.id);
+      const active = store.state.activeCompanionId === n.id;
+      this.add(this.scene.add.text(x, yy, `${n.name}  ${hearts}  ${rel} · ${bandFor(rel)}`, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", resolution: 2 }));
+      if (unlocked) {
+        const button = this.scene.add.text(x + w - 84, yy - 2, active ? "With you" : "Invite", {
+          fontFamily: FONT,
+          fontSize: "9px",
+          color: "#fff",
+          backgroundColor: active ? "#e46d94" : "#2f6fd0",
+          padding: { x: 5, y: 3 },
+          resolution: 2,
+        }).setInteractive({ useHandCursor: true });
+        button.on("pointerdown", (_p: Phaser.Input.Pointer, _lx: number, _ly: number, event?: Phaser.Types.Input.EventData) => {
+          event?.stopPropagation?.();
+          store.setActiveCompanion(active ? undefined : n.id);
+          uiEvents.emit("companionChanged");
+          store.toast(active ? "You are exploring solo for now." : `${n.name} is coming along.`, "#e46d94");
+          this.rebuild();
+        });
+        this.add(button);
+      }
+      yy += 24;
     }
-    this.add(this.scene.add.text(x, yy + 8, "Talk, gift, travel. They remember.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", wordWrap: { width: w }, resolution: 2 }));
+    this.add(this.scene.add.text(x, yy + 4, "Talk, gift, travel. Stronger bonds unlock outings.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", wordWrap: { width: w }, resolution: 2 }));
+  }
+
+  private drawNotes(x: number, y: number, w: number, maxH: number) {
+    let yy = y;
+    const discovered = SECRETS.filter((secret) => store.state.discoveredNotes.includes(secret.id));
+    this.add(this.scene.add.text(x, yy, `FOUND NOTES  ${discovered.length}/${SECRETS.length}`, { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    yy += 20;
+    if (!discovered.length) {
+      this.add(this.scene.add.text(x, yy, "No hidden notes yet.\nLook for the small things other people walk past.", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", wordWrap: { width: w }, resolution: 2 }));
+      yy += 46;
+    }
+    for (const secret of discovered) {
+      if (yy > y + maxH - 22) break;
+      this.add(this.scene.add.text(x, yy, `• ${secret.title}\n  ${secret.hint}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: w - 8 }, resolution: 2 }));
+      yy += 30;
+    }
+    if (yy > y + maxH - 30) return;
+    this.add(this.scene.add.text(x, yy + 4, "KEEPSAKES", { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    yy += 24;
+    const keepsakes = store.state.keepsakes.map((id) => KEEPSAKES[id]).filter(Boolean);
+    if (!keepsakes.length) {
+      this.add(this.scene.add.text(x, yy, "Grow your relationships to fill this shelf.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", wordWrap: { width: w }, resolution: 2 }));
+      return;
+    }
+    for (const keepsake of keepsakes) {
+      if (yy > y + maxH - 28) break;
+      this.add(this.scene.add.text(x, yy, `♡ ${keepsake.name}\n  ${keepsake.description}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: w - 8 }, resolution: 2 }));
+      yy += 31;
+    }
+  }
+
+  private drawQuestTour(x: number, y: number, w: number, maxH: number) {
+    const quest = QUESTS[this.debugQuestIndex];
+    if (!quest) return;
+    const status = store.state.quests[quest.id]?.status ?? "available";
+    const giver = NPCS.find((npc) => npc.id === quest.giver)?.name ?? quest.giver;
+    this.add(this.scene.add.text(x, y, `QUEST TOUR  ${this.debugQuestIndex + 1}/${QUESTS.length}`, { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    this.add(this.scene.add.text(x, y + 22, quest.title, { fontFamily: FONT, fontSize: "15px", color: "#3a2b3a", fontStyle: "bold", wordWrap: { width: w }, resolution: 2 }));
+    this.add(this.scene.add.text(x, y + 43, `Giver: ${giver} · ${status}`, { fontFamily: FONT, fontSize: "10px", color: "#a08a70", resolution: 2 }));
+    this.add(this.scene.add.text(x, y + 64, quest.intro, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", wordWrap: { width: w }, resolution: 2 }));
+    let yy = y + 118;
+    this.add(this.scene.add.text(x, yy, "OBJECTIVES", { fontFamily: FONT, fontSize: "10px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    yy += 18;
+    for (const [index, step] of quest.steps.entries()) {
+      this.add(this.scene.add.text(x, yy, `${index + 1}. ${step.hint}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: w - 4 }, resolution: 2 }));
+      yy += 26;
+    }
+    if (yy < y + maxH - 72) this.add(this.scene.add.text(x, yy + 2, `FINISH: ${quest.complete}`, { fontFamily: FONT, fontSize: "10px", color: "#7a6a5a", wordWrap: { width: w }, resolution: 2 }));
+    const controlsY = y + maxH - 26;
+    const start = this.scene.add.text(x + w / 2, controlsY - 34, status === "available" ? "Start this quest" : status === "active" ? "Quest already active" : "Quest completed", {
+      fontFamily: FONT,
+      fontSize: "10px",
+      color: "#fff",
+      backgroundColor: status === "available" ? "#e46d94" : "#8a7a6a",
+      padding: { x: 8, y: 4 },
+      resolution: 2,
+    }).setOrigin(0.5);
+    if (status === "available") {
+      start.setInteractive({ useHandCursor: true });
+      start.on("pointerdown", () => {
+        startQuest(quest.id);
+        store.toast(`Debug started: ${quest.title}`, "#f4c95d");
+        this.rebuild();
+      });
+    }
+    const previous = this.scene.add.text(x + 38, controlsY, "Previous", { fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 7, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const next = this.scene.add.text(x + w - 30, controlsY, "Next", { fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 7, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    previous.on("pointerdown", () => {
+      this.debugQuestIndex = (this.debugQuestIndex - 1 + QUESTS.length) % QUESTS.length;
+      this.rebuild();
+    });
+    next.on("pointerdown", () => {
+      this.debugQuestIndex = (this.debugQuestIndex + 1) % QUESTS.length;
+      this.rebuild();
+    });
+    this.add(start);
+    this.add(previous);
+    this.add(next);
   }
 
   private drawBag(x: number, y: number, w: number, maxH: number) {
@@ -244,6 +403,58 @@ export class PhoneOverlay {
       const def = ITEMS[id];
       this.add(this.scene.add.text(x, yy, `${def?.name ?? id}  ×${store.getItemQuantity(id)}\n  ${def?.desc ?? ""}`, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", wordWrap: { width: w - 8 }, resolution: 2 }));
       yy += 36;
+    }
+  }
+
+  private drawStyle(x: number, y: number, w: number, maxH: number) {
+    const sprinting = store.state.outfit === "red_bottom_boots";
+    this.add(
+      this.scene.add.text(x, y, sprinting ? "SPRINT ACTIVE  +65% speed" : "Choose a fit. Red-bottom boots unlock sprint.", {
+        fontFamily: FONT,
+        fontSize: "12px",
+        color: sprinting ? "#cf1737" : "#3a2b3a",
+        fontStyle: "bold",
+        wordWrap: { width: w },
+        resolution: 2,
+      }),
+    );
+    let yy = y + 30;
+    const entries = Object.entries(Outfits);
+    for (let i = 0; i < entries.length; i += 2) {
+      if (yy > y + maxH - 44) break;
+      for (let col = 0; col < 2; col++) {
+        const entry = entries[i + col];
+        if (!entry) continue;
+        const [id, outfit] = entry;
+        const unlocked = store.isOutfitUnlocked(id);
+        const cx = x + col * (w / 2);
+        const hint = OUTFIT_UNLOCKS.find((u) => u.id === id)?.hint ?? "";
+        const swatch = this.scene.add.rectangle(cx + 11, yy + 13, 20, 20, Phaser.Display.Color.HexStringToColor(outfit.top).color).setStrokeStyle(2, 0x3a2b3a).setAlpha(unlocked ? 1 : 0.3);
+        const button = this.scene.add
+          .text(cx + 26, yy, unlocked ? outfit.label : "Locked", {
+            fontFamily: FONT,
+            fontSize: "10px",
+            color: "#fff",
+            backgroundColor: unlocked ? (id === "red_bottom_boots" ? "#cf1737" : "#2f6fd0") : "#8a7a6a",
+            padding: { x: 5, y: 5 },
+            resolution: 2,
+          })
+          .setInteractive({ useHandCursor: true });
+        button.on("pointerdown", (_p: Phaser.Input.Pointer, _lx: number, _ly: number, e?: Phaser.Types.Input.EventData) => {
+          e?.stopPropagation?.();
+          if (!unlocked) {
+            store.toast(hint, "#a08a70");
+            return;
+          }
+          rebuildPlayerTexture(this.scene, id);
+          store.setOutfit(id);
+          store.toast(id === "red_bottom_boots" ? "Red-bottom sprint active" : `Now wearing: ${outfit.label}`, id === "red_bottom_boots" ? "#cf1737" : "#f4a6c0");
+          this.rebuild();
+        });
+        this.add(swatch);
+        this.add(button);
+      }
+      yy += 38;
     }
   }
 }

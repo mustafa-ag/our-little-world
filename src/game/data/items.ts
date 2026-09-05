@@ -19,6 +19,12 @@ export const ITEMS: Record<string, ItemDef> = {
   note: { id: "note", name: "Note", desc: "Folded twice. His handwriting.", kind: "quest", icon: "ui_star", giftable: true },
   keepsake_ring: { id: "keepsake_ring", name: "Tiny ring charm", desc: "A permanent little forever.", kind: "keepsake", icon: "ui_heart" },
   heart_fragment: { id: "heart_fragment", name: "Heart fragment", desc: "A secret tucked into the city.", kind: "keepsake", icon: "ui_heart" },
+  mlt_bites: { id: "mlt_bites", name: "MLT bites", desc: "A tiny Saadiyat snack crawl souvenir.", kind: "food", icon: "o_foodtruck", giftable: true },
+  last_exit_treat: { id: "last_exit_treat", name: "Last Exit treat", desc: "A road-trip snack saved for later.", kind: "food", icon: "o_foodtruck", giftable: true },
+  grill_wrap: { id: "grill_wrap", name: "Grill wrap", desc: "Smoky, messy, and worth the napkin situation.", kind: "food", icon: "o_foodtruck", giftable: true },
+  gelato: { id: "gelato", name: "Gelato", desc: "Cold, sunny, and gone far too quickly.", kind: "food", icon: "o_foodtruck", giftable: true },
+  road_burger: { id: "road_burger", name: "Road-trip burger", desc: "A proper Last Exit detour.", kind: "food", icon: "o_foodtruck", giftable: true },
+  road_dessert: { id: "road_dessert", name: "Road-trip dessert", desc: "One last sweet thing before the drive home.", kind: "food", icon: "o_foodtruck", giftable: true },
 };
 
 export const itemById = (id: string) => ITEMS[id];

@@ -67,6 +67,7 @@ export const Outfits: Record<string, { top: string; topShade: string; bottom: st
   pink_dress: { label: "Pink Dress", top: "#ff8fb8", topShade: "#e46d94", bottom: "#ff8fb8", shoes: "#fff4e6" },
   edi_hoodie: { label: "Edinburgh Hoodie", top: "#3d8b6e", topShade: "#2d6b54", bottom: "#333a45", shoes: "#2a2230" },
   sneakers: { label: "Mall sneakers", top: "#fff4e6", topShade: "#e8d6be", bottom: "#5b6ee1", shoes: "#ffffff" },
+  red_bottom_boots: { label: "Red-bottom boots", top: "#f28ab2", topShade: "#d96e98", bottom: "#5b6ee1", shoes: "#cf1737" },
   city_bag: { label: "City bag", top: "#c9a27a", topShade: "#a8845c", bottom: "#3a2b3a", shoes: "#2a2230" },
   secret_gold: { label: "Golden hour", top: "#f4c95d", topShade: "#d4a83a", bottom: "#3a2b3a", shoes: "#fff4e6" },
 };

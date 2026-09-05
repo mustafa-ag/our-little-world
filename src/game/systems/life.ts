@@ -25,8 +25,24 @@ export function npcWhere(npc: NpcDef) {
 export function npcInLocation(locationId: string): NpcDef[] {
   return NPCS.filter((n) => {
     const w = npcWhere(n);
+    if (n.id === "jad" || n.id === "shan") {
+      return w.present && w.location === locationId && isYasBrotherVisiting(n.id);
+    }
     return w.present && w.location === locationId;
   });
+}
+
+function isYasBrotherVisiting(npcId: "jad" | "shan") {
+  const visitKey = "yas_brother_visit";
+  const rivalKey = "yas_brother_is_jad";
+  if (!(visitKey in store.state.dailyFlags)) {
+    const visiting = Math.random() < 0.2;
+    store.state.dailyFlags[visitKey] = visiting;
+    if (visiting) store.state.dailyFlags[rivalKey] = Math.random() < 0.5;
+    store.save();
+  }
+  const jadIsVisiting = store.state.dailyFlags[rivalKey] === true;
+  return store.state.dailyFlags[visitKey] === true && (npcId === "jad" ? jadIsVisiting : !jadIsVisiting);
 }
 
 export function npcWorldPos(npc: NpcDef) {

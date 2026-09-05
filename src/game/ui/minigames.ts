@@ -3,7 +3,7 @@ import { controls } from "../systems/controls";
 
 const FONT = "monospace";
 
-export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo";
+export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown";
 
 export interface MiniSpec {
   kind: MiniKind;
@@ -21,6 +21,7 @@ export function openActivity(scene: Phaser.Scene, spec: MiniSpec): Phaser.GameOb
   if (spec.kind === "coffee") return coffeeGame(scene, spec);
   if (spec.kind === "bouquet") return bouquetGame(scene, spec);
   if (spec.kind === "photo") return photoGame(scene, spec);
+  if (spec.kind === "showdown") return showdownGame(scene, spec);
   return tapGame(scene, spec);
 }
 
@@ -106,31 +107,110 @@ function tapGame(scene: Phaser.Scene, spec: MiniSpec) {
   return scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
 }
 
+function showdownGame(scene: Phaser.Scene, spec: MiniSpec) {
+  const { items, px, py, w, h, width } = panel(scene, Math.min(scene.scale.gameSize.width - 36, 360), 330);
+  items.push(...titleHint(scene, spec, width / 2, py + 16, w - 36));
+  const need = spec.taps ?? 16;
+  let juju = 0;
+  let rival = 0;
+  let ended = false;
+  const bar = scene.add.graphics();
+  const score = scene.add
+    .text(width / 2, py + 182, "", { fontFamily: FONT, fontSize: "13px", color: "#3a2b3a", align: "center", resolution: 2 })
+    .setOrigin(0.5);
+  items.push(bar, score);
+
+  const draw = () => {
+    const barW = w - 64;
+    const x = px + 32;
+    bar.clear();
+    bar.fillStyle(0xe8dcc8, 1).fillRoundedRect(x, py + 118, barW, 16, 7);
+    bar.fillStyle(0xf28ab2, 1).fillRoundedRect(x, py + 118, Math.max(4, (barW * juju) / need), 16, 7);
+    bar.fillStyle(0xe8dcc8, 1).fillRoundedRect(x, py + 152, barW, 16, 7);
+    bar.fillStyle(0x2f6fd0, 1).fillRoundedRect(x, py + 152, Math.max(4, (barW * rival) / need), 16, 7);
+    score.setText(`JUJU  ${juju}/${need}\nRIVAL  ${rival}/${need}`);
+  };
+  const finish = (jujuWon: boolean) => {
+    if (ended) return;
+    ended = true;
+    rivalTimer.remove(false);
+    spec.onDone(jujuWon);
+  };
+  const rivalTimer = scene.time.addEvent({
+    delay: 220,
+    loop: true,
+    callback: () => {
+      rival = Math.min(need, rival + Phaser.Math.Between(1, 2));
+      draw();
+      if (rival >= need) finish(false);
+    },
+  });
+  draw();
+  items.push(
+    btn(scene, width / 2, py + h - 76, "Tap fast!", "#e46d94", () => {
+      if (ended) return;
+      juju = Math.min(need, juju + 1);
+      draw();
+      if (juju >= need) finish(true);
+    }),
+  );
+  items.push(btn(scene, width / 2, py + h - 26, spec.skipLabel ?? "Leave it", "#8a7a6a", () => finish(false)));
+  const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  container.once("destroy", () => rivalTimer.remove(false));
+  return container;
+}
+
 function coffeeGame(scene: Phaser.Scene, spec: MiniSpec) {
   const { items, py, w, h, width } = panel(scene, Math.min(scene.scale.gameSize.width - 36, 360), 340);
   items.push(...titleHint(scene, spec, width / 2, py + 14, w - 36));
   const steps = ["Cup", "Espresso", "Milk", "Lid"];
   let next = 0;
+  let brewing = false;
   const status = scene.add
     .text(width / 2, py + 78, "Build it in order.", { fontFamily: FONT, fontSize: "13px", color: "#3a2b3a", resolution: 2 })
     .setOrigin(0.5);
   items.push(status);
+  const machine = scene.add.rectangle(width / 2, py + 108, 104, 36, 0x3a2b3a).setStrokeStyle(2, 0xcaa27a);
+  const nozzle = scene.add.rectangle(width / 2, py + 132, 8, 12, 0x6f5b4c);
   const cup = scene.add.rectangle(width / 2, py + 150, 52, 58, 0xf4e8d4).setStrokeStyle(3, 0x3a2b3a);
-  items.push(cup);
-  const layers: Phaser.GameObjects.Rectangle[] = [];
+  const coffee = scene.add.rectangle(width / 2, py + 165, 38, 0, 0x5a3a22).setOrigin(0.5, 1);
+  const foam = scene.add.rectangle(width / 2, py + 158, 34, 0, 0xfff4e6).setOrigin(0.5, 1);
+  const stream = scene.add.rectangle(width / 2, py + 142, 5, 0, 0x5a3a22).setOrigin(0.5, 0);
+  const steam = scene.add.text(width / 2, py + 112, "~ ~", { fontFamily: FONT, fontSize: "12px", color: "#fff", resolution: 2 }).setOrigin(0.5).setAlpha(0);
+  items.push(machine, nozzle, cup, coffee, foam, stream, steam);
   steps.forEach((label, i) => {
     const b = btn(scene, width / 2 - 120 + (i % 2) * 240, py + 210 + Math.floor(i / 2) * 36, label, "#e46d94", () => {
+      if (brewing) return;
       if (i !== next) {
         status.setText("Not yet — " + steps[next] + " first.");
         return;
       }
-      next += 1;
-      const col = [0xf4e8d4, 0x5a3a22, 0xfff4e6, 0xe46d94][i];
-      const layer = scene.add.rectangle(width / 2, py + 168 - i * 8, 40 - i * 2, 10, col);
-      layers.push(layer);
-      items.push(layer);
-      status.setText(next >= steps.length ? "Perfect. That's the order." : `${label} in. Next: ${steps[next]}`);
-      if (next >= steps.length) scene.time.delayedCall(400, () => spec.onDone(true));
+      brewing = true;
+      b.setAlpha(0.45);
+      status.setText(i === 0 ? "Picking the cup..." : `${label} pouring...`);
+      if (i === 0) {
+        cup.setX(width / 2 - 48);
+        scene.tweens.add({ targets: cup, x: width / 2, duration: 360, ease: "Back.out" });
+      } else if (i === 1) {
+        stream.setFillStyle(0x5a3a22).setSize(5, 0);
+        scene.tweens.add({ targets: stream, displayHeight: 30, duration: 180, yoyo: true, repeat: 2 });
+        scene.tweens.add({ targets: coffee, displayHeight: 22, duration: 620, ease: "Sine.inOut" });
+      } else if (i === 2) {
+        stream.setFillStyle(0xfff4e6).setSize(5, 0);
+        scene.tweens.add({ targets: stream, displayHeight: 26, duration: 160, yoyo: true, repeat: 2 });
+        scene.tweens.add({ targets: foam, displayHeight: 9, duration: 580, ease: "Sine.inOut" });
+      } else {
+        const lid = scene.add.ellipse(width / 2, py + 137, 48, 10, 0xe46d94).setAlpha(0).setScale(1.4);
+        items.push(lid);
+        scene.tweens.add({ targets: lid, alpha: 1, scaleX: 1, scaleY: 1, duration: 360, ease: "Back.out" });
+      }
+      scene.tweens.add({ targets: steam, alpha: 0.8, y: py + 96, duration: 450, yoyo: true, repeat: 1 });
+      scene.time.delayedCall(680, () => {
+        next += 1;
+        brewing = false;
+        status.setText(next >= steps.length ? "Perfect. That's the order." : `${label} in. Next: ${steps[next]}`);
+        if (next >= steps.length) scene.time.delayedCall(420, () => spec.onDone(true));
+      });
     });
     items.push(b);
   });

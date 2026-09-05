@@ -1,21 +1,23 @@
 import Phaser from "phaser";
-import { Depths } from "../constants";
 import type { Facing } from "../data/npcs";
+import { createVisualShadow, DEFAULT_LIGHTING_PROFILE, getVisualAssetDef, type LightingProfile, type VisualShadowHandle } from "../visual";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   facing: Facing = "down";
   speed = 90;
-  private shadow: Phaser.GameObjects.Image;
+  private static readonly VISUAL_SCALE = 1.22;
+  private shadow?: VisualShadowHandle;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, texture = "char_her") {
+  constructor(scene: Phaser.Scene, x: number, y: number, texture = "char_her", lighting: LightingProfile = DEFAULT_LIGHTING_PROFILE) {
     super(scene, x, y, texture, 0);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.shadow = scene.add.image(x, y + 6, "o_shadow");
-    this.shadow.setDepth(Depths.ground + 1);
+    this.shadow = createVisualShadow(scene, x, y + 4, getVisualAssetDef(texture)?.shadow, lighting);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
+    // Presentation is larger for touch screens; this stays the same logical footprint.
+    this.setScale(Player.VISUAL_SCALE);
     body.setSize(8, 6);
     body.setOffset(4, 10);
     this.setOrigin(0.5, 0.85);
@@ -53,7 +55,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
     this.setDepth(this.y);
-    this.shadow.setPosition(this.x, this.y + 4);
+    this.shadow?.setContactPoint(this.x, this.y + 4);
   }
 
   /** The tile / point directly in front of the player (for interaction range). */

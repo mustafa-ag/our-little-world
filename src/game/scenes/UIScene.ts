@@ -2,11 +2,11 @@ import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { store } from "../systems/store";
 import { controls, uiEvents, minimap } from "../systems/controls";
-import { activeQuests } from "../systems/quests";
+import { activeQuests, type ActiveQuest } from "../systems/quests";
 import { Outfits } from "../palette";
 import { OUTFIT_UNLOCKS } from "../data/outfits";
 import { rebuildPlayerTexture } from "../textures";
-import { PhoneOverlay } from "../ui/PhoneOverlay";
+import { PhoneOverlay, type PhoneTab } from "../ui/PhoneOverlay";
 import { openActivity, type MiniSpec } from "../ui/minigames";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
@@ -21,7 +21,16 @@ export class UIScene extends Phaser.Scene {
   private coinIcon!: Phaser.GameObjects.Image;
   private heartText!: Phaser.GameObjects.Text;
   private coinText!: Phaser.GameObjects.Text;
-  private questBox!: Phaser.GameObjects.Text;
+  private questPanel!: Phaser.GameObjects.Graphics;
+  private questIcon!: Phaser.GameObjects.Image;
+  private questKicker!: Phaser.GameObjects.Text;
+  private questTitle!: Phaser.GameObjects.Text;
+  private questNext!: Phaser.GameObjects.Text;
+  private questHelp!: Phaser.GameObjects.Text;
+  private questCount!: Phaser.GameObjects.Text;
+  private questHit!: Phaser.GameObjects.Rectangle;
+  private mapGuide?: Phaser.GameObjects.Text;
+  private questIndex = 0;
   private promptText!: Phaser.GameObjects.Text;
 
   // joystick
@@ -29,7 +38,7 @@ export class UIScene extends Phaser.Scene {
   private joyThumb!: Phaser.GameObjects.Image;
   private joyPointerId = -1;
   private joyCenter = new Phaser.Math.Vector2();
-  private readonly joyRadius = 42;
+  private readonly joyRadius = 54;
 
   // buttons (plain interactive images + a text label stored on `.label`)
   private actionBtn!: Phaser.GameObjects.Image;
@@ -40,6 +49,7 @@ export class UIScene extends Phaser.Scene {
   private clockText!: Phaser.GameObjects.Text;
   private phone!: PhoneOverlay;
   private giftMenu?: Phaser.GameObjects.Container;
+  private foodMenu?: Phaser.GameObjects.Container;
   private pendingGiftNpc?: string;
 
   // dialogue
@@ -104,27 +114,15 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(20);
 
-    // ---- quest tracker ----
-    this.questBox = this.add
-      .text(width - 12, 12, "", {
-        fontFamily: FONT,
-        fontSize: "11px",
-        color: "#fff",
-        align: "right",
-        stroke: "#3a2b3a",
-        strokeThickness: 3,
-        resolution: 2,
-        lineSpacing: 3,
-      })
-      .setOrigin(1, 0)
-      .setScrollFactor(0);
+    // ---- focused quest card ----
+    this.buildQuestCard();
     this.refreshQuests();
 
     // ---- interaction prompt ----
     this.promptText = this.add
       .text(width / 2, height - 150, "", {
         fontFamily: FONT,
-        fontSize: "12px",
+        fontSize: "14px",
         color: "#fff",
         backgroundColor: "rgba(58,43,58,0.85)",
         padding: { x: 8, y: 5 },
@@ -137,6 +135,7 @@ export class UIScene extends Phaser.Scene {
     this.phone = new PhoneOverlay(this);
     this.buildJoystick();
     this.buildButtons();
+    this.buildMapGuide();
     this.buildDialogue();
     this.buildWardrobe();
     this.buildShop();
@@ -161,7 +160,9 @@ export class UIScene extends Phaser.Scene {
     });
     uiEvents.on("action", () => this.onAction());
     uiEvents.on("openShop", () => this.openShop());
-    uiEvents.on("openPhone", () => this.phone.show());
+    uiEvents.on("openFoodOrder", (spec: import("../systems/controls").FoodOrderSpec) => this.openFoodOrder(spec));
+    uiEvents.on("openWardrobe", () => this.openWardrobe());
+    uiEvents.on("openPhone", (tab?: PhoneTab) => this.phone.show(tab));
     uiEvents.on("openLocalMap", () => this.openLocalMap());
     uiEvents.on("minigame", (spec: import("../systems/controls").MiniGameSpec) => this.openMiniGame(spec));
     uiEvents.on("sceneReset", () => this.resetOverlays());
@@ -171,6 +172,106 @@ export class UIScene extends Phaser.Scene {
     });
 
     this.scale.on("resize", this.layout, this);
+  }
+
+  private buildQuestCard() {
+    this.questPanel = this.add.graphics().setScrollFactor(0).setDepth(24);
+    this.questIcon = this.add.image(0, 0, "ui_star").setScale(1.15).setScrollFactor(0).setDepth(26);
+    this.questKicker = this.add
+      .text(0, 0, "CURRENT PLAN", { fontFamily: FONT, fontSize: "9px", color: "#2f6fd0", fontStyle: "bold", resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questTitle = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "14px", color: "#3a2b3a", fontStyle: "bold", resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questNext = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", lineSpacing: 2, resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questHelp = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "9px", color: "#7a6a5a", resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questCount = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 5, y: 2 }, resolution: 2 })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(27);
+    this.questHit = this.add.rectangle(0, 0, 1, 1, 0xffffff, 0.001).setScrollFactor(0).setDepth(28).setInteractive({ useHandCursor: true });
+    this.questHit.on("pointerdown", () => this.cycleQuest());
+    this.layoutQuestCard();
+  }
+
+  private buildMapGuide() {
+    this.mapGuide = this.add
+      .text(0, 0, "MAP", {
+        fontFamily: FONT,
+        fontSize: "9px",
+        color: "#fff",
+        backgroundColor: "#2f6fd0",
+        padding: { x: 4, y: 2 },
+        resolution: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setScrollFactor(0)
+      .setDepth(29)
+      .setVisible(false);
+    this.tweens.add({ targets: this.mapGuide, y: "-=5", duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.layoutQuestCard();
+  }
+
+  private layoutQuestCard() {
+    if (!this.questPanel) return;
+    const { width } = this.scale.gameSize;
+    const panelW = Math.min(326, width - 24);
+    const panelH = 136;
+    const x = width - panelW - 12;
+    const y = 12;
+    this.questPanel.clear();
+    this.questPanel.fillStyle(0xfff9f0, 0.96).fillRoundedRect(x, y, panelW, panelH, 12);
+    this.questPanel.lineStyle(2, 0xcaa27a, 0.95).strokeRoundedRect(x, y, panelW, panelH, 12);
+    this.questPanel.fillStyle(0x2f6fd0, 1).fillRoundedRect(x, y, 8, panelH, { tl: 12, bl: 12, tr: 0, br: 0 });
+    this.questPanel.fillStyle(0xf4c95d, 1).fillCircle(x + 30, y + 27, 17);
+    this.questIcon.setPosition(x + 30, y + 27);
+    this.questKicker.setPosition(x + 54, y + 14);
+    this.questTitle.setPosition(x + 54, y + 29).setWordWrapWidth(panelW - 70);
+    this.questNext.setPosition(x + 18, y + 61).setWordWrapWidth(panelW - 36);
+    this.questHelp.setPosition(x + 18, y + 111).setWordWrapWidth(panelW - 36);
+    this.questCount.setPosition(x + panelW - 12, y + 12);
+    this.questHit.setPosition(x + panelW / 2, y + panelH / 2).setSize(panelW, panelH);
+    this.mapGuide?.setPosition(this.mapBtn?.x ?? width - 66, (this.mapBtn?.y ?? 150) - 34);
+  }
+
+  private cycleQuest() {
+    const list = activeQuests();
+    if (list.length < 2) return;
+    this.questIndex = (this.questIndex + 1) % list.length;
+    this.refreshQuests();
+    store.toast(`Guiding: ${list[this.questIndex].def.title}`, "#2f6fd0");
+  }
+
+  private questExplanation(q: ActiveQuest) {
+    const { step } = q;
+    if (step.type === "visit") return "Use the Map button to travel to the next place.";
+    if (step.type === "talk") {
+      const npc = NPCS.find((person) => person.id === step.target);
+      const name = npc?.name ?? step.target.replace(/_/g, " ");
+      if (npc && npc.location !== store.state.currentLocation) return `Open Map, travel to ${npc.location.replace(/_/g, " ")}, then look for ${name}.`;
+      return `Follow the gold guide marker to ${name}.`;
+    }
+    if (step.type === "collect") return "Look for the floating gold guide marker, then use Action nearby.";
+    if (step.type === "interact") return "Follow the gold guide marker and use the Action button nearby.";
+    if (step.type === "giveItem") return "Open your phone inventory if you need to check what you are carrying.";
+    if (step.type === "takePhoto") return "Stand near the landmark, then use Action to open the camera moment.";
+    if (step.type === "playMinigame") return "Find the highlighted activity spot and follow the on-screen instructions.";
+    return "Your next step is saved here whenever you return.";
+  }
+
+  private needsMapGuide(q: ActiveQuest) {
+    if (q.step.type === "visit") return true;
+    if (q.step.type !== "talk") return false;
+    return NPCS.find((npc) => npc.id === q.step.target)?.location !== store.state.currentLocation;
   }
 
   private buildMinimap() {
@@ -511,8 +612,8 @@ export class UIScene extends Phaser.Scene {
 
   // -------------------------------------------------------------------------
   private buildJoystick() {
-    this.joyBase = this.add.image(0, 0, "ui_joy_base").setScrollFactor(0).setAlpha(0.85).setDepth(10);
-    this.joyThumb = this.add.image(0, 0, "ui_joy_thumb").setScrollFactor(0).setDepth(11);
+    this.joyBase = this.add.image(0, 0, "ui_joy_base").setScrollFactor(0).setScale(1.18).setAlpha(0.9).setDepth(10);
+    this.joyThumb = this.add.image(0, 0, "ui_joy_thumb").setScrollFactor(0).setScale(1.1).setDepth(11);
     this.positionJoystick();
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
@@ -561,8 +662,8 @@ export class UIScene extends Phaser.Scene {
 
   private positionJoystick() {
     const { height } = this.scale.gameSize;
-    const cx = 92;
-    const cy = height - 92;
+    const cx = 108;
+    const cy = height - 108;
     this.joyCenter.set(cx, cy);
     this.joyBase.setPosition(cx, cy);
     this.joyThumb.setPosition(cx, cy);
@@ -597,12 +698,12 @@ export class UIScene extends Phaser.Scene {
   private buildButtons() {
     const { width, height } = this.scale.gameSize;
     // the action button drives both world interactions and dialogue advance
-    this.actionBtn = this.makeButton(width - 66, height - 70, "A", 1.1, () => uiEvents.emit("action"));
-    this.mapBtn = this.makeButton(width - 66, height - 150, "Map", 0.75, () => uiEvents.emit("openMap"));
-    this.fitBtn = this.makeButton(width - 140, height - 66, "Fit", 0.75, () => this.openWardrobe());
-    this.phoneBtn = this.makeButton(width - 214, height - 66, "Ph", 0.75, () => this.phone.show());
+    this.actionBtn = this.makeButton(width - 76, height - 78, "A", 1.2, () => uiEvents.emit("action"));
+    this.mapBtn = this.makeButton(width - 76, height - 168, "Map", 0.92, () => uiEvents.emit("openMap"));
+    this.fitBtn = this.makeButton(width - 164, height - 76, "Fit", 0.88, () => this.openWardrobe());
+    this.phoneBtn = this.makeButton(width - 252, height - 76, "Ph", 0.88, () => this.phone.show());
     this.phoneBadge = this.add
-      .text(width - 188, height - 92, "", {
+      .text(width - 220, height - 106, "", {
         fontFamily: FONT,
         fontSize: "10px",
         color: "#fff",
@@ -856,7 +957,7 @@ export class UIScene extends Phaser.Scene {
     this.miniGameOpen = true;
     controls.locked = true;
 
-    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo") {
+    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo" || spec.kind === "showdown") {
       const wrap: MiniSpec = {
         ...spec,
         onDone: (ok) => {
@@ -1086,6 +1187,56 @@ export class UIScene extends Phaser.Scene {
       controls.locked = false;
   }
 
+  private openFoodOrder(spec: import("../systems/controls").FoodOrderSpec) {
+    if (this.anyModal()) return;
+    const { width, height } = this.scale.gameSize;
+    const panelW = Math.min(width - 36, 360);
+    const panelH = Math.min(height - 72, 330);
+    const top = (height - panelH) / 2;
+    const children: Phaser.GameObjects.GameObject[] = [];
+    const catcher = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
+    const panel = this.add.graphics();
+    panel.fillStyle(0xfff9f0, 1).fillRoundedRect((width - panelW) / 2, top, panelW, panelH, 14);
+    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect((width - panelW) / 2, top, panelW, panelH, 14);
+    children.push(catcher, panel);
+    children.push(this.add.text(width / 2, top + 18, spec.title, { fontFamily: FONT, fontSize: "18px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5));
+    children.push(this.add.text(width / 2, top + 44, spec.subtitle, { fontFamily: FONT, fontSize: "11px", color: "#a08a70", align: "center", wordWrap: { width: panelW - 42 }, resolution: 2 }).setOrigin(0.5, 0));
+    spec.items.slice(0, 4).forEach((item, index) => {
+      const y = top + 92 + index * 44;
+      children.push(this.add.text((width - panelW) / 2 + 20, y, `${item.name}\n${item.description}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: panelW - 130 }, resolution: 2 }));
+      const order = this.add.text(width / 2 + panelW / 2 - 50, y + 8, `${item.price} coins`, {
+        fontFamily: FONT,
+        fontSize: "10px",
+        color: "#fff",
+        backgroundColor: "#2f6fd0",
+        padding: { x: 6, y: 4 },
+        resolution: 2,
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      order.on("pointerdown", () => {
+        if (!store.spendCoins(item.price)) {
+          store.toast("Not enough coins", "#e46d94");
+          return;
+        }
+        this.closeFoodOrder();
+        spec.onOrder(item.id);
+      });
+      children.push(order);
+    });
+    const close = this.add.text(width / 2, top + panelH - 22, "Maybe later", { fontFamily: FONT, fontSize: "12px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 10, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    close.on("pointerdown", () => this.closeFoodOrder());
+    catcher.on("pointerdown", () => this.closeFoodOrder());
+    children.push(close);
+    this.foodMenu = this.add.container(0, 0, children).setScrollFactor(0).setDepth(75);
+    controls.locked = true;
+  }
+
+  private closeFoodOrder() {
+    this.foodMenu?.destroy(true);
+    this.foodMenu = undefined;
+    if (!this.dialogueOpen && !this.wardrobeOpen && !this.shopOpen && !this.miniGameOpen && !this.phone.open && !this.giftMenu)
+      controls.locked = false;
+  }
+
   private buyFurniture(tex: string, price: number) {
     if (!store.spendCoins(price)) {
       store.toast("Not enough coins", "#e46d94");
@@ -1112,12 +1263,30 @@ export class UIScene extends Phaser.Scene {
   private refreshQuests() {
     const list = activeQuests();
     if (!list.length) {
-      this.questBox.setText("");
+      this.questPanel.setVisible(false);
+      this.questIcon.setVisible(false);
+      this.questKicker.setVisible(false);
+      this.questTitle.setVisible(false);
+      this.questNext.setVisible(false);
+      this.questHelp.setVisible(false);
+      this.questCount.setVisible(false);
+      this.questHit.setVisible(false);
+      this.mapGuide?.setVisible(false);
       return;
     }
-    const lines = ["- Quests -"];
-    for (const q of list) lines.push(`${q.def.title}`, `  ${q.hint}`);
-    this.questBox.setText(lines.join("\n"));
+    this.questIndex %= list.length;
+    const q = list[this.questIndex];
+    this.questPanel.setVisible(true);
+    this.questIcon.setVisible(true);
+    this.questKicker.setVisible(true);
+    this.questTitle.setVisible(true).setText(q.def.title);
+    this.questNext.setVisible(true).setText(`NEXT  ${q.hint}`);
+    this.questHelp.setVisible(true).setText(this.questExplanation(q));
+    this.questCount.setVisible(true).setText(list.length > 1 ? `${this.questIndex + 1} / ${list.length}  TAP TO SWITCH` : "FOCUSED");
+    this.questHit.setVisible(true);
+    this.mapGuide?.setVisible(this.needsMapGuide(q));
+    uiEvents.emit("questFocus", q.def.id);
+    this.layoutQuestCard();
   }
 
   private setPrompt(p: string | null) {
@@ -1172,6 +1341,7 @@ export class UIScene extends Phaser.Scene {
       if (this.localMapOpen) this.closeLocalMap();
       if (this.miniGameOpen) this.closeMiniGame(true);
       this.closeGiftMenu();
+      this.closeFoodOrder();
       if (this.phone.open) this.phone.close();
     } catch {
       /* stale overlay after a scene hop */
@@ -1182,14 +1352,13 @@ export class UIScene extends Phaser.Scene {
   }
 
   private anyModal() {
-    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu;
+    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu || !!this.foodMenu;
   }
 
   private layout() {
     // reposition size-dependent elements on resize/rotate
     const { width, height } = this.scale.gameSize;
-    this.questBox.setPosition(width - 12, 12);
-    this.promptText.setPosition(width / 2, height - 150);
+    this.promptText.setPosition(width / 2, height - 180);
     this.placeMinimap();
     if (this.localMapOpen) this.refreshLocalMap();
     if (this.joyPointerId === -1) this.positionJoystick();
@@ -1197,11 +1366,12 @@ export class UIScene extends Phaser.Scene {
       btn.setPosition(x, y);
       (btn as ButtonImage).label?.setPosition(x, y);
     };
-    place(this.actionBtn, width - 66, height - 70);
-    place(this.mapBtn, width - 66, height - 150);
-    place(this.fitBtn, width - 140, height - 66);
-    place(this.phoneBtn, width - 214, height - 66);
-    this.phoneBadge?.setPosition(width - 188, height - 92);
+    place(this.actionBtn, width - 76, height - 78);
+    place(this.mapBtn, width - 76, height - 168);
+    place(this.fitBtn, width - 164, height - 76);
+    place(this.phoneBtn, width - 252, height - 76);
+    this.phoneBadge?.setPosition(width - 220, height - 106);
+    this.layoutQuestCard();
   }
 
   update() {

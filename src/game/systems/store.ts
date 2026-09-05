@@ -1,19 +1,36 @@
 import Phaser from "phaser";
 import {
   defaultState,
+  createNewSaveSlot,
+  getActiveSaveSlotId,
+  getSaveSlots,
+  getSaveArchive,
+  restoreSaveArchive,
+  archiveUpdatedAt,
   loadState,
   saveState,
   clearSave,
   type GameState,
   type PlacedFurniture,
   type TimeOfDay,
+  type SavedPhoto,
 } from "./save";
+import {
+  cloudSaveEnabled,
+  currentCloudUser,
+  readCloudArchive,
+  signInOrCreateCloudSave,
+  signOutOfCloud,
+  writeCloudArchive,
+  type CloudSaveStatus,
+} from "./cloudSave";
 import { ITEMS, giftRelGain, giftTier, itemById } from "../data/items";
 import { NPCS } from "../data/npcs";
 import { REL_MAX, VOICES, GIFT_GENERIC } from "../data/relationships";
 import { MEMORIES, memoryById, memoriesForCity } from "../data/memories";
 import { OUTFIT_UNLOCKS } from "../data/outfits";
 import { weekdayName } from "../data/schedules";
+import { RELATIONSHIP_MILESTONES } from "../data/relationshipMilestones";
 
 const TIME_ORDER: TimeOfDay[] = ["morning", "afternoon", "evening", "night"];
 
@@ -26,14 +43,126 @@ function npcName(id: string) {
 // react (hearts/coins changes, quest updates, toasts...).
 class Store extends Phaser.Events.EventEmitter {
   state: GameState = defaultState();
+  cloudStatus: CloudSaveStatus = cloudSaveEnabled ? "signed-out" : "disabled";
+  cloudEmail?: string;
+  private cloudUserId?: string;
+  private cloudSaveTimer?: number;
 
   init() {
     this.state = loadState();
     this.refreshOutfitUnlocks(false);
   }
 
+  async syncCloud() {
+    if (!cloudSaveEnabled) return;
+    try {
+      const user = await currentCloudUser();
+      if (!user) {
+        this.setCloudStatus("signed-out");
+        return;
+      }
+
+      this.cloudUserId = user.id;
+      this.cloudEmail = user.email;
+      this.setCloudStatus("syncing");
+      const localArchive = getSaveArchive();
+      const remoteArchive = await readCloudArchive(user.id);
+      const remoteState = remoteArchive ? restoreSaveArchive(remoteArchive) : undefined;
+
+      if (!remoteArchive) {
+        await writeCloudArchive(user.id, localArchive);
+      } else if (!remoteState) {
+        // A malformed remote record is never allowed to overwrite a valid device save.
+        await writeCloudArchive(user.id, localArchive);
+      } else {
+        const remoteUpdatedAt = archiveUpdatedAt(getSaveArchive());
+        const localUpdatedAt = archiveUpdatedAt(localArchive);
+        if (localUpdatedAt > remoteUpdatedAt) {
+          // restoreSaveArchive above only validates; put the local archive back before uploading it.
+          restoreSaveArchive(localArchive);
+          await writeCloudArchive(user.id, localArchive);
+        } else {
+          this.state = remoteState;
+          this.refreshOutfitUnlocks(false);
+          this.emit("changed");
+        }
+      }
+      this.setCloudStatus("synced");
+    } catch (error) {
+      console.warn("Cloud save sync failed; local saves remain available.", error);
+      this.setCloudStatus("error");
+    }
+  }
+
+  async connectCloudSave(saveName: string, password: string) {
+    try {
+      const account = await signInOrCreateCloudSave(saveName, password);
+      this.cloudEmail = account.email;
+      await this.syncCloud();
+      return account.created;
+    } catch (error) {
+      console.warn("Could not connect cloud saves.", error);
+      this.setCloudStatus("error");
+      throw error;
+    }
+  }
+
+  async signOutOfCloud() {
+    await signOutOfCloud();
+    this.cloudUserId = undefined;
+    this.cloudEmail = undefined;
+    this.setCloudStatus("signed-out");
+  }
+
+  private setCloudStatus(status: CloudSaveStatus) {
+    this.cloudStatus = status;
+    this.emit("cloud", status, this.cloudEmail);
+  }
+
+  private queueCloudSave() {
+    if (!this.cloudUserId) return;
+    if (this.cloudSaveTimer !== undefined) window.clearTimeout(this.cloudSaveTimer);
+    this.cloudSaveTimer = window.setTimeout(() => {
+      this.cloudSaveTimer = undefined;
+      void this.pushCloudSave();
+    }, 700);
+  }
+
+  private async pushCloudSave() {
+    if (!this.cloudUserId) return;
+    try {
+      await writeCloudArchive(this.cloudUserId, getSaveArchive());
+      this.setCloudStatus("synced");
+    } catch (error) {
+      console.warn("Cloud save upload failed; it will retry after the next local save.", error);
+      this.setCloudStatus("error");
+    }
+  }
+
+  getSaveSlots() {
+    return getSaveSlots();
+  }
+
+  get activeSaveSlotId() {
+    return getActiveSaveSlotId();
+  }
+
+  loadSaveSlot(id: string) {
+    this.state = loadState(id);
+    this.refreshOutfitUnlocks(false);
+    this.emit("changed");
+    this.queueCloudSave();
+  }
+
+  startNewSaveSlot(id: string) {
+    this.state = createNewSaveSlot(id);
+    this.emit("changed");
+    this.queueCloudSave();
+  }
+
   save() {
     saveState(this.state);
+    this.queueCloudSave();
   }
 
   reset() {
@@ -217,7 +346,9 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   setRelationship(npcId: string, value: number) {
+    const previous = this.getRelationship(npcId);
     this.state.relationships[npcId] = Phaser.Math.Clamp(Math.round(value), 0, REL_MAX);
+    this.applyRelationshipMilestones(npcId, previous, this.state.relationships[npcId]);
     this.emit("relationship", npcId, this.state.relationships[npcId]);
     this.save();
     this.refreshOutfitUnlocks();
@@ -232,6 +363,52 @@ class Store extends Phaser.Events.EventEmitter {
       this.emit("relGain", npcId, amount);
     }
     return this.getRelationship(npcId);
+  }
+
+  private applyRelationshipMilestones(npcId: string, previous: number, next: number) {
+    for (const milestone of RELATIONSHIP_MILESTONES) {
+      if (milestone.npcId !== npcId || previous >= milestone.threshold || next < milestone.threshold) continue;
+      const flag = `milestone_${milestone.id}`;
+      if (this.state.flags[flag]) continue;
+      this.state.flags[flag] = true;
+      if (milestone.companionUnlock && !this.state.unlockedCompanions.includes(npcId)) this.state.unlockedCompanions.push(npcId);
+      if (milestone.keepsake && !this.state.keepsakes.includes(milestone.keepsake)) this.state.keepsakes.push(milestone.keepsake);
+      if (milestone.memoryId) this.unlockMemory(milestone.memoryId);
+      this.emit("milestone", milestone);
+      this.emit("toast", `Relationship · ${milestone.title}`, "#f4c95d");
+    }
+  }
+
+  // ---- companions ----
+  setActiveCompanion(id?: string) {
+    if (id && !this.state.unlockedCompanions.includes(id)) return false;
+    this.state.activeCompanionId = id;
+    this.emit("companion", id);
+    this.save();
+    return true;
+  }
+
+  // ---- keepsakes ----
+  hasKeepsake(id: string) {
+    return this.state.keepsakes.includes(id);
+  }
+
+  // ---- photos & notes ----
+  capturePhoto(photo: SavedPhoto) {
+    if (this.state.photos[photo.id]) return false;
+    this.state.photos[photo.id] = photo;
+    this.emit("photo", photo.id);
+    this.emit("toast", `Polaroid · ${photo.title}`, "#8ecae6");
+    this.save();
+    return true;
+  }
+
+  addNote(id: string) {
+    if (this.state.discoveredNotes.includes(id)) return false;
+    this.state.discoveredNotes.push(id);
+    this.emit("note", id);
+    this.save();
+    return true;
   }
 
   // ---- inventory ----
@@ -304,6 +481,7 @@ class Store extends Phaser.Events.EventEmitter {
   discoverSecret(id: string) {
     if (this.state.discoveredSecrets.includes(id)) return false;
     this.state.discoveredSecrets.push(id);
+    this.addNote(id);
     this.emit("secret", id);
     this.save();
     return true;

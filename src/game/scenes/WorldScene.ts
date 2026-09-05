@@ -13,11 +13,18 @@ import { npcInLocation, npcWorldPos, linesFor, worldTint, skyHex, homeComment } 
 import { tryDeliverMessages } from "../systems/phone";
 import { pickEncounter, applyEncounter } from "../systems/encounters";
 import { secretsFor } from "../data/secrets";
+import { photoSpotsFor } from "../data/photos";
+import { capturePhoto, photoSpotReady } from "../systems/photos";
+import { companionComment, canCompanionTravel } from "../systems/companions";
+import { outfitReaction } from "../systems/outfitReactions";
+import { buildHdGround, createVisualShadow, getVisualAssetDef, getVisualTexture, getWorldVisualTheme, type HdGroundLayer, type VisualShadowHandle, type WorldVisualTheme } from "../visual";
 
 interface Interactable {
   x: number;
   y: number;
   radius: number;
+  tag?: string;
+  npc?: NPC;
   prompt: string;
   trigger: () => void;
 }
@@ -35,6 +42,8 @@ export class WorldScene extends Phaser.Scene {
   private baseSpeed = 90;
   private rideJeep?: Phaser.GameObjects.Image;
   private parkedJeep?: Phaser.GameObjects.Image;
+  private rideJeepShadow?: VisualShadowHandle;
+  private parkedJeepShadow?: VisualShadowHandle;
   private transitioning = false;
   private driveMenu?: Phaser.GameObjects.Container;
   private worldW = 0;
@@ -42,9 +51,16 @@ export class WorldScene extends Phaser.Scene {
   private timeAcc = 0;
   private followingCat?: Phaser.GameObjects.Image;
   private timeWash?: Phaser.GameObjects.Rectangle;
+  private themeWash?: Phaser.GameObjects.Rectangle;
+  private visualTheme!: WorldVisualTheme;
+  private groundLayer?: HdGroundLayer;
   private jeepSpot: Interactable | null = null;
   private jeepReadyAt = 0;
   private arriveAt = 0;
+  private focusedQuestId?: string;
+  private questArrow?: Phaser.GameObjects.Text;
+  private questArrowLabel?: Phaser.GameObjects.Text;
+  private companionNpc?: NPC;
 
   constructor() {
     super(SceneKeys.World);
@@ -58,10 +74,18 @@ export class WorldScene extends Phaser.Scene {
     this.driving = false;
     this.rideJeep = undefined;
     this.parkedJeep = undefined;
+    this.rideJeepShadow = undefined;
+    this.parkedJeepShadow = undefined;
     this.jeepSpot = null;
     this.driveMenu = undefined;
     this.timeWash = undefined;
+    this.themeWash = undefined;
+    this.groundLayer = undefined;
     this.followingCat = undefined;
+    this.focusedQuestId = undefined;
+    this.questArrow = undefined;
+    this.questArrowLabel = undefined;
+    this.companionNpc = undefined;
     this.arriveAt = this.time.now + 600;
     controls.locked = false;
     controls.moveX = 0;
@@ -75,6 +99,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.locationId = data.locationId ?? store.state.currentLocation ?? "abudhabi_yas";
     const def = getLocation(this.locationId);
+    this.visualTheme = getWorldVisualTheme(def);
     store.setLocation(def.id);
     store.unlockLocation(def.cityId);
     store.unlockLocation(def.id);
@@ -85,6 +110,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.cameras.main.setBackgroundColor(skyHex());
     this.cameras.main.setRoundPixels(true);
+    this.applyVisualTheme();
     this.applyAtmosphere();
     this.physics.world.setBounds(0, 0, this.worldW, this.worldH);
     this.cameras.main.setBounds(0, 0, this.worldW, this.worldH);
@@ -108,9 +134,10 @@ export class WorldScene extends Phaser.Scene {
       if (data.from === "east") sx = Math.min(sx, this.worldW - inset);
       spawn = { x: sx, y: sy };
     }
-    this.player = new Player(this, spawn.x, spawn.y, "char_her");
+    this.player = new Player(this, spawn.x, spawn.y, getVisualTexture(this, "char_her"), this.visualTheme.lighting);
     this.player.setDepth(spawn.y);
     this.baseSpeed = this.player.speed;
+    this.spawnActiveCompanion(spawn.x, spawn.y);
 
     this.physics.add.collider(this.player, this.solids);
 
@@ -120,6 +147,7 @@ export class WorldScene extends Phaser.Scene {
     }
     this.placeFollowJeep(spawn.x, spawn.y, data.driving ?? store.state.inJeep);
     this.placeSecrets();
+    this.placePhotoSpots();
 
     this.setupMinimap(def);
 
@@ -133,17 +161,22 @@ export class WorldScene extends Phaser.Scene {
     }
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("openMap", this.openMap, this);
+    uiEvents.on("questFocus", this.focusQuest, this);
+    uiEvents.on("companionChanged", this.refreshCompanion, this);
+    store.on("questUpdated", this.refreshQuestGuide, this);
 
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
 
     quests.onVisit(def.id);
     quests.onVisit(def.cityId);
+    this.refreshQuestGuide();
     tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
     uiEvents.emit("locationTitle", def.name, def.subtitle);
     this.time.delayedCall(700, () => {
       if (!this.sys.isActive() || this.transitioning) return;
       this.maybeEncounter();
     });
+    this.time.delayedCall(1250, () => this.maybeCompanionComment());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
   }
@@ -151,16 +184,7 @@ export class WorldScene extends Phaser.Scene {
   private solids!: Phaser.Physics.Arcade.StaticGroup;
 
   private drawGround(world: WorldData) {
-    const rt = this.add.renderTexture(0, 0, world.w * TILE, world.h * TILE);
-    rt.setOrigin(0, 0).setDepth(Depths.ground);
-    rt.beginDraw();
-    for (let y = 0; y < world.h; y++) {
-      for (let x = 0; x < world.w; x++) {
-        const key = world.ground[y][x];
-        if (this.textures.exists(key)) rt.batchDraw(key, x * TILE, y * TILE);
-      }
-    }
-    rt.endDraw();
+    this.groundLayer = buildHdGround(this, world, this.visualTheme);
   }
 
   private buildCollision(world: WorldData) {
@@ -175,10 +199,13 @@ export class WorldScene extends Phaser.Scene {
 
   private buildProps(world: WorldData) {
     for (const p of world.props) {
-      if (!this.textures.exists(p.tex)) continue;
-      const img = this.add.image(p.x, p.y, p.tex);
+      const key = getVisualTexture(this, p.tex);
+      if (!this.textures.exists(key)) continue;
+      const img = this.add.image(p.x, p.y, key);
       img.setOrigin(p.originX ?? 0.5, p.originY ?? 1);
       img.setDepth(p.y);
+      const shadow = createVisualShadow(this, p.x, p.y, getVisualAssetDef(p.tex)?.shadow, this.visualTheme.lighting);
+      img.once("destroy", () => shadow?.destroy());
     }
   }
 
@@ -204,12 +231,13 @@ export class WorldScene extends Phaser.Scene {
   private buildCollectibles(world: WorldData) {
     for (const c of world.collectibles) {
       if (store.state.collected[c.id]) continue;
-      const img = this.add.image(c.x, c.y, c.tex).setOrigin(0.5, 0.9).setDepth(c.y);
+      const img = this.add.image(c.x, c.y, getVisualTexture(this, c.tex)).setOrigin(0.5, 0.9).setDepth(c.y);
       this.tweens.add({ targets: img, y: c.y - 2, duration: 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const it: Interactable = {
         x: c.x,
         y: c.y,
         radius: 16,
+        tag: c.tag,
         prompt: "Pick this flower",
         trigger: () => {
           if (!store.collect(c.id)) return;
@@ -234,23 +262,31 @@ export class WorldScene extends Phaser.Scene {
     const here = npcInLocation(this.locationId);
     const placed = new Set<string>();
     const place = (def: (typeof NPCS)[number], x: number, y: number) => {
+      if (def.id === store.state.activeCompanionId) return;
       if (placed.has(def.id)) return;
       placed.add(def.id);
-      const npc = new NPC(this, def);
+      const npc = new NPC(this, def, this.visualTheme.lighting);
       npc.place(x, y);
       this.npcs.push(npc);
       this.interactables.push({
         x,
         y,
         radius: 26,
+        tag: def.id,
+        npc,
         prompt: `Talk to ${def.name}`,
         trigger: () => {
           npc.faceTowards(this.player.x, this.player.y);
           store.state.lastPassenger = def.id;
           store.save();
+          if (def.id === "jad" || def.id === "shan") {
+            this.openSiblingShowdown(def, npc);
+            return;
+          }
           const lines = linesFor(def.id, def.dialogue);
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
-          const res = quests.onTalk(def.id, extra ? [...lines, extra] : lines);
+          const styleNote = outfitReaction(def.id);
+          const res = quests.onTalk(def.id, [...lines, ...(styleNote ? [styleNote] : []), ...(extra ? [extra] : [])]);
           uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
         },
       });
@@ -267,14 +303,148 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private spawnActiveCompanion(x: number, y: number) {
+    const companionId = store.state.activeCompanionId;
+    if (!companionId || !canCompanionTravel(companionId)) return;
+    const def = NPCS.find((candidate) => candidate.id === companionId);
+    if (!def) return;
+    const companion = new NPC(this, def, this.visualTheme.lighting);
+    companion.place(x - 22, y + 8);
+    this.companionNpc = companion;
+  }
+
+  private refreshCompanion() {
+    this.companionNpc?.destroy();
+    this.companionNpc = undefined;
+    if (this.player) this.spawnActiveCompanion(this.player.x, this.player.y);
+  }
+
+  private maybeCompanionComment() {
+    const companionId = store.state.activeCompanionId;
+    if (!companionId || !this.companionNpc || !canCompanionTravel(companionId)) return;
+    const def = NPCS.find((candidate) => candidate.id === companionId);
+    if (!def) return;
+    const line = companionComment(companionId, this.locationId);
+    if (line) uiEvents.emit("dialogue", def.name, [line]);
+  }
+
+  private placePhotoSpots() {
+    for (const spot of photoSpotsFor(this.locationId)) {
+      if (!photoSpotReady(spot)) continue;
+      const x = spot.tx * TILE + TILE / 2;
+      const y = spot.ty * TILE + TILE;
+      const marker = this.add.text(x, y - 20, "CAM", {
+        fontFamily: "monospace",
+        fontSize: "8px",
+        color: "#fff5d6",
+        backgroundColor: "#5f4267",
+        padding: { x: 3, y: 2 },
+        resolution: 2,
+      }).setOrigin(0.5).setDepth(y + 1);
+      const it: Interactable = {
+        x,
+        y,
+        radius: 30,
+        prompt: `Take photo: ${spot.title}`,
+        trigger: () => {
+          uiEvents.emit("minigame", {
+            kind: "photo",
+            title: spot.title,
+            hint: "Line up the picture, then capture this little moment.",
+            onDone: (success?: boolean) => {
+              if (!success) return;
+              const captured = capturePhoto(spot.id);
+              if (!captured) return;
+              marker.setText("SAVED").setAlpha(0.7);
+              uiEvents.emit("toast", `Polaroid saved: ${spot.title}`);
+            },
+          });
+        },
+      };
+      this.interactables.push(it);
+    }
+  }
+
+  private openSiblingShowdown(def: (typeof NPCS)[number], npc: NPC) {
+    if (store.hasDaily("yas_sibling_showdown")) {
+      uiEvents.emit("dialogue", def.name, ["We already settled today's family chaos championship. Bragging rights are still active."]);
+      return;
+    }
+    uiEvents.emit("minigame", {
+      kind: "showdown",
+      title: `Juju vs ${def.name}`,
+      hint: "First to 16 taps wins the Family Chaos Championship.",
+      taps: 16,
+      skipLabel: "Let them win",
+      onDone: (jujuWon?: boolean) => {
+        store.setDaily("yas_sibling_showdown");
+        quests.onMinigame("sibling_showdown");
+        store.addRelationship(def.id, 2);
+        this.showFamilyChaosCap(jujuWon ? npc.x : this.player.x, (jujuWon ? npc.y : this.player.y) - 25);
+        uiEvents.emit("dialogue", "Family chaos", [
+          jujuWon ? `Juju wins. ${def.name} has to wear the blue-and-white cap with the pink heart.` : `${def.name} wins. Juju wears the blue-and-white cap with the pink heart.`,
+          "The bragging rights will definitely last until tomorrow.",
+        ]);
+      },
+    });
+  }
+
+  private showFamilyChaosCap(x: number, y: number) {
+    const cap = this.add.container(x, y).setDepth(y + 4);
+    const crown = this.add.ellipse(0, -3, 18, 11, 0x2f6fd0);
+    const stripe = this.add.rectangle(0, -3, 16, 3, 0xffffff);
+    const brim = this.add.ellipse(5, 1, 14, 5, 0x2f6fd0);
+    const heart = this.add.text(0, -4, "♥", { fontFamily: "monospace", fontSize: "9px", color: "#f28ab2", resolution: 2 }).setOrigin(0.5);
+    cap.add([crown, stripe, brim, heart]);
+    this.tweens.add({ targets: cap, y: y - 8, alpha: 0, duration: 2300, ease: "Sine.easeOut", onComplete: () => cap.destroy() });
+  }
+
   private addZoneInteractable(z: import("../worldgen").ZoneSpec) {
     const trigger = () => {
       switch (z.action) {
         case "cafe":
+          {
+            const truck = {
+              saadiyat_mlt: { title: "MLT truck", line: "A tiny Saadiyat stop with a surprisingly serious fan club.", choices: [{ id: "mlt_bites", name: "MLT bites", description: "The little snack everyone has an opinion about.", price: 7 }, { id: "coffee", name: "Iced coffee", description: "Cold, strong, and beach-proof.", price: 6 }] },
+              saadiyat_grill: { title: "Saadiyat grill", line: "Smoky, sunny, and exactly the right amount of messy.", choices: [{ id: "grill_wrap", name: "Grill wrap", description: "Fresh off the hot plate.", price: 9 }, { id: "mlt_bites", name: "Side bites", description: "A small extra for the walk.", price: 5 }] },
+              saadiyat_gelato: { title: "Gelato truck", line: "Cold gelato in full sun. It works.", choices: [{ id: "gelato", name: "Pistachio gelato", description: "A tiny holiday in a cup.", price: 7 }, { id: "mlt_bites", name: "Cookie bites", description: "A second dessert is valid.", price: 5 }] },
+              last_exit_burgers: { title: "Last Exit burgers", line: "Road-trip burger acquired. No notes.", choices: [{ id: "road_burger", name: "Road-trip burger", description: "The reason you took the detour.", price: 11 }, { id: "last_exit_treat", name: "Fries for the car", description: "They will not survive the drive.", price: 6 }] },
+              last_exit_coffee: { title: "Last Exit coffee", line: "Coffee for the road. The detour was worth it.", choices: [{ id: "coffee", name: "Road coffee", description: "Warm, two sugars, ready to go.", price: 6 }, { id: "last_exit_treat", name: "Date shake", description: "A sweet little road treat.", price: 7 }] },
+              last_exit_dessert: { title: "Last Exit dessert", line: "One last sweet thing before heading out.", choices: [{ id: "road_dessert", name: "Road dessert", description: "No schedule, no regrets.", price: 8 }, { id: "last_exit_treat", name: "Cookie box", description: "Save one for later. Or do not.", price: 6 }] },
+            }[z.tag ?? ""];
+            if (truck) {
+              uiEvents.emit("openFoodOrder", {
+                title: truck.title,
+                subtitle: truck.line,
+                items: truck.choices,
+                onOrder: (itemId: string) => {
+                  quests.onInteract("cafe");
+                  if (z.tag) quests.onInteract(z.tag);
+                  store.addItem(itemId);
+                  store.advanceTime();
+                  uiEvents.emit("dialogue", truck.title, [`Order up: ${itemId.replace(/_/g, " ")}. ${truck.line}`]);
+                },
+              });
+              break;
+            }
+          }
           if (z.tag === "hudayriyat_trucks") {
-            quests.onInteract("cafe");
-            if (z.tag) quests.onInteract(z.tag);
-            uiEvents.emit("dialogue", "Hudayriyat", ["Food trucks by the water. You drove out for this."]);
+            uiEvents.emit("openFoodOrder", {
+              title: "Hudayriyat food trucks",
+              subtitle: "Food by the water. Choose the stop that sounds right.",
+              items: [
+                { id: "grill_wrap", name: "Grill wrap", description: "Smoky and made to eat outside.", price: 9 },
+                { id: "coffee", name: "Saddle coffee", description: "A proper coffee before the drive home.", price: 6 },
+                { id: "gelato", name: "Gelato", description: "Cold enough to make the sun feel fair.", price: 7 },
+              ],
+              onOrder: (itemId: string) => {
+                quests.onInteract("cafe");
+                quests.onInteract("hudayriyat_trucks");
+                store.addItem(itemId);
+                store.advanceTime();
+                uiEvents.emit("dialogue", "Hudayriyat", ["Order up. Food trucks by the water were the plan."]);
+              },
+            });
             break;
           }
           uiEvents.emit("minigame", {
@@ -297,7 +467,8 @@ export class WorldScene extends Phaser.Scene {
           });
           break;
         case "shop":
-          uiEvents.emit("openShop");
+          if (z.tag === "style_studio") uiEvents.emit("openWardrobe");
+          else uiEvents.emit("openShop");
           break;
         case "home":
           this.scene.start(SceneKeys.House, { title: getLocation(this.locationId).homeName ?? "Home", interior: "cream" });
@@ -391,9 +562,54 @@ export class WorldScene extends Phaser.Scene {
       }
     };
     if (z.action === "drive") {
-      this.parkedJeep = this.add.image(z.x, z.y, "v_jeep_blue").setOrigin(0.5, 1).setDepth(z.y);
+      this.parkedJeep = this.add.image(z.x, z.y, getVisualTexture(this, "v_jeep_blue")).setOrigin(0.5, 1).setDepth(z.y);
+      this.parkedJeepShadow = createVisualShadow(this, z.x, z.y, getVisualAssetDef("v_jeep_blue")?.shadow, this.visualTheme.lighting);
     }
-    this.interactables.push({ x: z.x, y: z.y, radius: z.radius, prompt: z.prompt, trigger });
+    this.interactables.push({ x: z.x, y: z.y, radius: z.radius, tag: z.tag, prompt: z.prompt, trigger });
+  }
+
+  private focusQuest(questId: string) {
+    this.focusedQuestId = questId;
+    this.refreshQuestGuide();
+  }
+
+  private refreshQuestGuide() {
+    this.questArrow?.destroy();
+    this.questArrowLabel?.destroy();
+    this.questArrow = undefined;
+    this.questArrowLabel = undefined;
+    if (!this.player) return;
+
+    const list = quests.activeQuests();
+    const quest = list.find((q) => q.def.id === this.focusedQuestId) ?? list[0];
+    if (!quest || quest.step.type === "visit") return;
+
+    const target = this.interactables.find((it) => it.tag === quest.step.target);
+    if (!target) return;
+
+    this.questArrow = this.add
+      .text(target.x, target.y - 30, "v", {
+        fontFamily: "monospace",
+        fontSize: "28px",
+        color: "#ffe08a",
+        stroke: "#3a2b3a",
+        strokeThickness: 4,
+        resolution: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(70010);
+    this.questArrowLabel = this.add
+      .text(target.x, target.y - 48, "GO HERE", {
+        fontFamily: "monospace",
+        fontSize: "8px",
+        color: "#3a2b3a",
+        backgroundColor: "#ffe08a",
+        padding: { x: 4, y: 2 },
+        resolution: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(70011);
+    this.tweens.add({ targets: [this.questArrow, this.questArrowLabel], y: "-=7", duration: 480, yoyo: true, repeat: -1, ease: "Sine.inOut" });
   }
 
   private placeFollowJeep(x: number, y: number, stayIn: boolean) {
@@ -413,6 +629,7 @@ export class WorldScene extends Phaser.Scene {
 
   private parkJeepAt(x: number, y: number) {
     this.parkedJeep?.setPosition(x, y).setVisible(true).setDepth(y);
+    this.parkedJeepShadow?.setContactPoint(x, y);
     if (this.jeepSpot) {
       this.jeepSpot.x = x;
       this.jeepSpot.y = y;
@@ -428,9 +645,12 @@ export class WorldScene extends Phaser.Scene {
     this.player.speed = this.baseSpeed * 2.8;
     this.player.setVisible(false);
     this.player.setAlpha(0);
+    for (const it of this.interactables) it.npc?.setTalkAvailable(false);
     this.parkedJeep?.setVisible(false);
     this.rideJeep?.destroy();
-    this.rideJeep = this.add.image(this.player.x, this.player.y, "v_jeep_blue").setDepth(this.player.y + 1);
+    this.rideJeepShadow?.destroy();
+    this.rideJeep = this.add.image(this.player.x, this.player.y, getVisualTexture(this, "v_jeep_blue")).setDepth(this.player.y + 1);
+    this.rideJeepShadow = createVisualShadow(this, this.player.x, this.player.y, getVisualAssetDef("v_jeep_blue")?.shadow, this.visualTheme.lighting);
     if (!opts?.quiet) store.toast("Jeep time — hold a direction. A to hop out.", "#2f6fd0");
     uiEvents.emit("prompt", "A · hop out of the Jeep");
   }
@@ -445,6 +665,8 @@ export class WorldScene extends Phaser.Scene {
     this.player.setAlpha(1);
     this.rideJeep?.destroy();
     this.rideJeep = undefined;
+    this.rideJeepShadow?.destroy();
+    this.rideJeepShadow = undefined;
     this.parkJeepAt(this.player.x - 24, this.player.y + 6);
     this.currentPrompt = null;
     uiEvents.emit("prompt", null);
@@ -539,10 +761,21 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** Theme selection is global and data-driven; it never changes worldgen or gameplay state. */
+  private applyVisualTheme() {
+    const { width, height } = this.scale.gameSize;
+    this.themeWash = this.add
+      .rectangle(0, 0, width, height, this.visualTheme.ambientColor, this.visualTheme.ambientAlpha)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(5);
+  }
+
   private applyZoom() {
     const { width, height } = this.scale.gameSize;
     this.cameras.main.setZoom(Phaser.Math.Clamp(height / (42 * TILE), 1.35, 2.15));
     this.timeWash?.setSize(width, height);
+    this.themeWash?.setSize(width, height);
   }
 
   private tryInteract() {
@@ -572,15 +805,25 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private onShutdown() {
+    this.groundLayer?.destroy();
+    this.groundLayer = undefined;
+    this.rideJeepShadow?.destroy();
+    this.parkedJeepShadow?.destroy();
+    this.companionNpc?.destroy();
+    this.companionNpc = undefined;
     minimap.on = false;
     this.closeDriveMenu();
     uiEvents.off("action", this.tryInteract, this);
     uiEvents.off("openMap", this.openMap, this);
+    uiEvents.off("questFocus", this.focusQuest, this);
+    uiEvents.off("companionChanged", this.refreshCompanion, this);
+    store.off("questUpdated", this.refreshQuestGuide, this);
     this.scale.off("resize", this.applyZoom, this);
   }
 
   update(time: number) {
     if (!this.player) return;
+    this.groundLayer?.update(this.game.loop.delta);
 
     let vx = 0;
     let vy = 0;
@@ -602,15 +845,33 @@ export class WorldScene extends Phaser.Scene {
         vy /= len;
       }
     }
-    this.player.move(vx * this.player.speed, vy * this.player.speed);
+    const walkingSpeed = !this.driving && store.state.outfit === "red_bottom_boots" ? this.player.speed * 1.65 : this.player.speed;
+    this.player.move(vx * walkingSpeed, vy * walkingSpeed);
 
     if (this.rideJeep) {
       this.rideJeep.setPosition(this.player.x, this.player.y);
       this.rideJeep.setDepth(this.player.y + 2);
       this.rideJeep.setAngle(vx !== 0 ? vx * 8 : 0);
+      this.rideJeepShadow?.setContactPoint(this.player.x, this.player.y);
     }
 
     for (const npc of this.npcs) npc.update(time);
+
+    if (this.companionNpc) {
+      const targetX = this.player.x - 18;
+      const targetY = this.player.y + 10;
+      const distance = Phaser.Math.Distance.Between(this.companionNpc.x, this.companionNpc.y, targetX, targetY);
+      if (distance > 120) {
+        this.companionNpc.place(targetX, targetY);
+      } else {
+        this.companionNpc.place(
+          this.companionNpc.x + (targetX - this.companionNpc.x) * 0.07,
+          this.companionNpc.y + (targetY - this.companionNpc.y) * 0.07,
+        );
+      }
+      this.companionNpc.faceTowards(this.player.x, this.player.y);
+      this.companionNpc.update(time);
+    }
 
     if (!this.driving && !this.transitioning) {
       let best: Interactable | null = null;
@@ -627,6 +888,7 @@ export class WorldScene extends Phaser.Scene {
         this.currentPrompt = best;
         uiEvents.emit("prompt", best ? best.prompt : null);
       }
+      for (const it of this.interactables) it.npc?.setTalkAvailable(!controls.locked && it === best);
     }
 
     if (this.followingCat && this.player) {
@@ -649,7 +911,7 @@ export class WorldScene extends Phaser.Scene {
 
   private petalBurst(x: number, y: number) {
     for (let i = 0; i < 6; i++) {
-      const p = this.add.image(x, y, i % 2 ? "o_flower_pink" : "o_flower_yellow").setScale(0.45).setDepth(y + 8);
+      const p = this.add.image(x, y, getVisualTexture(this, i % 2 ? "o_flower_pink" : "o_flower_yellow")).setScale(0.45).setDepth(y + 8);
       this.tweens.add({
         targets: p,
         x: x + Phaser.Math.Between(-18, 18),
@@ -696,7 +958,7 @@ export class WorldScene extends Phaser.Scene {
                   : s.kind === "coins"
                     ? "ui_coin"
                     : "ui_star";
-      const img = this.add.image(x, y, tex).setOrigin(0.5, 0.9).setDepth(y).setScale(s.kind === "heart" ? 1.2 : 1);
+      const img = this.add.image(x, y, getVisualTexture(this, tex)).setOrigin(0.5, 0.9).setDepth(y).setScale(s.kind === "heart" ? 1.2 : 1);
       this.tweens.add({ targets: img, y: y - 2, duration: 800, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       const it: Interactable = {
         x,

@@ -75,6 +75,24 @@ function seedOf(id: string) {
   return s;
 }
 
+/**
+ * HD ground batches one continuous material into a single visual surface. Randomly
+ * interleaving distinct materials creates thousands of tiny surfaces, so mixed
+ * materials must be authored through explicit roads, parks, and water instead.
+ */
+function hdGroundMaterial(key: string) {
+  if (key === "t_water") return "water";
+  if (["t_road", "t_asphalt", "t_road_lane", "t_crossing", "t_parking"].includes(key)) return "road";
+  if (["t_path", "t_brick_path", "t_wood", "t_carpet"].includes(key)) return "path";
+  if (key === "t_sand") return "sand";
+  if (["t_pavement", "t_paving_light", "t_paving_dark", "t_cobble", "t_plaza_stone", "t_tile", "t_snow"].includes(key)) return "pavement";
+  return "grass";
+}
+
+function compatibleGroundVariant(base: string, alternate?: string) {
+  return alternate && hdGroundMaterial(base) === hdGroundMaterial(alternate) ? alternate : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Big procedural city: built from the LocationDef fields for places that don't
 // have a hand-authored map. Still large and themed (skyline + landmark + shops).
@@ -150,6 +168,7 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   const collectibles: CollectibleSpec[] = [];
   const labels: LabelSpec[] = [];
   const npcSpots: NpcSpot[] = [];
+  const baseVariant = compatibleGroundVariant(city.base, city.baseAlt);
 
   const centerPx = (tx: number) => tx * TILE + TILE / 2;
 
@@ -159,7 +178,7 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
     blocked[y] = [];
     walk[y] = [];
     for (let x = 0; x < w; x++) {
-      ground[y][x] = hash(x, y, seed) > 0.85 ? city.baseAlt : city.base;
+      ground[y][x] = baseVariant && hash(x, y, seed) > 0.85 ? baseVariant : city.base;
       blocked[y][x] = false;
       walk[y][x] = false;
     }
@@ -169,20 +188,22 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
 
   // ---- districts ----
   for (const d of city.districts ?? []) {
+    const districtVariant = compatibleGroundVariant(d.ground, d.alt);
     for (let y = d.y; y < d.y + d.h; y++)
       for (let x = d.x; x < d.x + d.w; x++) {
         if (!inB(x, y)) continue;
-        ground[y][x] = d.alt && hash(x, y, seed + 3) > 0.82 ? d.alt : d.ground;
+        ground[y][x] = districtVariant && hash(x, y, seed + 3) > 0.82 ? districtVariant : d.ground;
       }
     if (d.name)
       labels.push({ x: centerPx(d.x + Math.floor(d.w / 2)), y: (d.y + 1) * TILE, text: d.name, big: true });
   }
 
   const paintRect = (r: { x: number; y: number; w: number; h: number }, tex: string, alt: string | undefined, block: boolean, street = false) => {
+    const surfaceVariant = compatibleGroundVariant(tex, alt);
     for (let y = r.y; y < r.y + r.h; y++)
       for (let x = r.x; x < r.x + r.w; x++) {
         if (!inB(x, y)) continue;
-        ground[y][x] = alt && hash(x, y, seed + 11) > 0.84 ? alt : tex;
+        ground[y][x] = surfaceVariant && hash(x, y, seed + 11) > 0.84 ? surfaceVariant : tex;
         blocked[y][x] = block;
         if (street) walk[y][x] = true;
         if (block) walk[y][x] = false;

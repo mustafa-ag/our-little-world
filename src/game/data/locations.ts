@@ -406,7 +406,9 @@ const DUBAI_OASIS: CityDef = {
   w: 120,
   h: 100,
   base: "t_sand",
-  baseAlt: "t_grass2",
+  // Grass is authored through parks and landscaped surfaces below. Mixing it into
+  // the sand base created thousands of tiny HD terrain regions during generation.
+  baseAlt: "t_sand",
   road: "t_road",
   border: "fence",
   dense: true,
@@ -601,6 +603,15 @@ const AD_YAS: CityDef = {
       name: "Yas Acres Ja'mee",
       desc: "The neighbourhood mosque, on the edge of the golf.",
     },
+    {
+      tex: "b_shop",
+      tx: 38,
+      ty: 24,
+      role: "shop",
+      tag: "style_studio",
+      name: "The Style Studio",
+      desc: "Fits, boots, and a mirror that tells the truth nicely.",
+    },
     ...mixRow(["b_villa_terra", "b_villa_terra3", "b_villa_modern"], 118, 110, 3, 12),
     ...palms(16, 22, 8, 10),
     ...palms(116, 22, 4, 10),
@@ -725,12 +736,62 @@ const AD_SAADIYAT: CityDef = {
       tag: "saadiyat_salon",
       desc: "Nails and brows. She can skip if she's not in the mood.",
     },
+    {
+      tex: "o_foodtruck",
+      tx: 26,
+      ty: 34,
+      role: "cafe",
+      name: "MLT truck",
+      tag: "saadiyat_mlt",
+      desc: "The little MLT truck everyone suddenly has an opinion about.",
+    },
+    {
+      tex: "o_foodtruck",
+      tx: 68,
+      ty: 34,
+      role: "cafe",
+      name: "Saadiyat grill truck",
+      tag: "saadiyat_grill",
+      desc: "A smoky grill stop between the beach and the villas.",
+    },
+    {
+      tex: "o_foodtruck",
+      tx: 84,
+      ty: 34,
+      role: "cafe",
+      name: "Gelato truck",
+      tag: "saadiyat_gelato",
+      desc: "Cold gelato, bright sun, no need to rush anywhere.",
+    },
     ...mixRow(["b_villa_modern", "b_glass_c", "b_villa_modern"], 16, 58, 3, 24),
     ...palms(12, 22, 7, 14),
     jeep(56, 52),
   ],
   spawn: { tx: 100, ty: 50 },
   entry: { south: { tx: 52, ty: 78 }, east: { tx: 104, ty: 50 } },
+};
+
+const AD_LAST_EXIT: CityDef = {
+  w: 108,
+  h: 76,
+  base: "t_sand",
+  baseAlt: "t_lawn",
+  road: "t_road",
+  border: "fence",
+  dense: true,
+  surfaces: [plaza(16, 26, 76, 20, "t_paving_light"), parking(20, 50, 68, 12)],
+  paths: [
+    ...boulevard([pt(8, 48), pt(100, 48)], 3, 2),
+    walkPath([pt(24, 48), pt(24, 36), pt(84, 36)], 2, "t_paving_light"),
+  ],
+  pois: [
+    { tex: "o_foodtruck", tx: 28, ty: 32, role: "cafe", name: "Last Exit burgers", tag: "last_exit_burgers", desc: "A proper road-trip burger stop." },
+    { tex: "o_foodtruck", tx: 52, ty: 32, role: "cafe", name: "Last Exit coffee", tag: "last_exit_coffee", desc: "Coffee before the drive home." },
+    { tex: "o_foodtruck", tx: 76, ty: 32, role: "cafe", name: "Last Exit dessert", tag: "last_exit_dessert", desc: "One last sweet thing for the road." },
+    ...palms(14, 18, 6, 14),
+    jeep(54, 54),
+  ],
+  spawn: { tx: 54, ty: 64 },
 };
 
 const AD_HUDAYRIYAT: CityDef = {
@@ -1301,6 +1362,14 @@ export const LOCATIONS: Record<string, LocationDef> = {
     hasWater: true,
     geo: { lat: 24.42, lng: 54.33 },
     exits: { north: "abudhabi_corniche" },
+  }),
+  abudhabi_last_exit: loc({
+    id: "abudhabi_last_exit",
+    cityId: "abudhabi",
+    name: "Last Exit",
+    subtitle: "Roadside food-truck stop",
+    city: AD_LAST_EXIT,
+    geo: { lat: 24.58, lng: 54.47 },
   }),
 
   dubai_downtown: loc({

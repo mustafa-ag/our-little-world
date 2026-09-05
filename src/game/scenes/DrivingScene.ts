@@ -1,15 +1,16 @@
 import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { getLocation } from "../data/locations";
+import { createVisualShadow, getVisualAssetDef, getVisualTexture, getWorldVisualTheme, type VisualShadowHandle } from "../visual";
 import { store } from "../systems/store";
 import { controls, uiEvents } from "../systems/controls";
 import { NPCS } from "../data/npcs";
-import { worldTint } from "../systems/life";
 
 // A gentle top-down highway drive. Steer with the joystick / arrow keys,
 // dodge the other cars, scoop up hearts, and cruise to your destination.
 export class DrivingScene extends Phaser.Scene {
   private car!: Phaser.GameObjects.Image;
+  private carShadow?: VisualShadowHandle;
   private road!: Phaser.GameObjects.TileSprite;
   private grassL!: Phaser.GameObjects.TileSprite;
   private grassR!: Phaser.GameObjects.TileSprite;
@@ -46,7 +47,9 @@ export class DrivingScene extends Phaser.Scene {
   create(data: { destId?: string; passenger?: string } = {}) {
     const dest = data.destId ?? store.state.currentLocation;
     this.destId = dest;
-    this.destName = getLocation(dest).name;
+    const destination = getLocation(dest);
+    this.destName = destination.name;
+    const visualTheme = getWorldVisualTheme(destination);
     this.passenger = data.passenger ?? store.state.lastPassenger;
     this.bumps = 0;
     this.near = 0;
@@ -58,10 +61,10 @@ export class DrivingScene extends Phaser.Scene {
     this.finished = false;
     this.distance = 0;
 
-    this.grassL = this.add.tileSprite(0, 0, width, height, "t_grass").setOrigin(0, 0);
-    this.grassR = this.add.tileSprite(0, 0, width, height, "t_grass").setOrigin(0, 0).setVisible(false);
+    this.grassL = this.add.tileSprite(0, 0, width, height, getVisualTexture(this, "t_grass")).setOrigin(0, 0);
+    this.grassR = this.add.tileSprite(0, 0, width, height, getVisualTexture(this, "t_grass")).setOrigin(0, 0).setVisible(false);
     this.road = this.add
-      .tileSprite(this.roadX, 0, this.roadW, height, "t_road")
+      .tileSprite(this.roadX, 0, this.roadW, height, getVisualTexture(this, "t_road"))
       .setOrigin(0.5, 0);
     this.lines = this.add.graphics();
 
@@ -72,7 +75,7 @@ export class DrivingScene extends Phaser.Scene {
     kerb.fillRect(this.roadX + this.roadW / 2, 0, 3, height);
 
     this.add
-      .rectangle(0, 0, width, height, worldTint(), store.state.timeOfDay === "night" ? 0.2 : 0.08)
+      .rectangle(0, 0, width, height, visualTheme.ambientColor, store.state.timeOfDay === "night" ? 0.2 : visualTheme.ambientAlpha)
       .setOrigin(0)
       .setScrollFactor(0)
       .setDepth(4);
@@ -80,7 +83,8 @@ export class DrivingScene extends Phaser.Scene {
       const rain = this.add.graphics().setDepth(20).setScrollFactor(0);
       for (let i = 0; i < 40; i++) rain.fillStyle(0xffffff, 0.18).fillRect(Phaser.Math.Between(0, width), Phaser.Math.Between(0, height), 1, 8);
     }
-    this.car = this.add.image(this.roadX, height - 90, "v_jeep_blue").setScale(2).setDepth(10);
+    this.car = this.add.image(this.roadX, height - 90, getVisualTexture(this, "v_jeep_blue")).setScale(2).setDepth(10);
+    this.carShadow = createVisualShadow(this, this.roadX, height - 90, getVisualAssetDef("v_jeep_blue")?.shadow, visualTheme.lighting);
     this.chatText = this.add
       .text(width / 2, height - 36, "", {
         fontFamily: "monospace",
@@ -147,13 +151,14 @@ export class DrivingScene extends Phaser.Scene {
     const kinds = ["v_car_red", "v_car_blue", "v_jeep_blue"] as const;
     const tex = kinds[Phaser.Math.Between(0, kinds.length - 1)];
     const bike = Math.random() < 0.15;
-    const car = this.add.image(x, -40, tex).setScale(bike ? 1.2 : 2).setDepth(9).setFlipY(true);
+    const car = this.add.image(x, -40, getVisualTexture(this, tex)).setScale(bike ? 1.2 : 2).setDepth(9).setFlipY(true);
+    car.setData("visualShadow", createVisualShadow(this, x, -40, getVisualAssetDef(tex)?.shadow, getWorldVisualTheme(getLocation(this.destId)).lighting));
     this.obstacles.push(car);
   }
 
   private spawnHeart() {
     const x = this.roadX + Phaser.Math.Between(-1, 1) * (this.roadW / 3);
-    const h = this.add.image(x, -20, "ui_heart").setScale(2).setDepth(9);
+    const h = this.add.image(x, -20, getVisualTexture(this, "ui_heart")).setScale(2).setDepth(9);
     this.hearts.push(h);
   }
 
@@ -179,6 +184,7 @@ export class DrivingScene extends Phaser.Scene {
       this.roadX + this.roadW / 2 - 12,
     );
     this.car.setAngle(dx * 6);
+    this.carShadow?.setContactPoint(this.car.x, this.car.y);
 
     // scroll world
     const scroll = this.speed * dt;
@@ -209,6 +215,7 @@ export class DrivingScene extends Phaser.Scene {
     // move obstacles
     for (const o of this.obstacles) {
       o.y += (scroll + 40 * dt) * 1.0;
+      (o.getData("visualShadow") as VisualShadowHandle | undefined)?.setContactPoint(o.x, o.y);
       const dxo = Math.abs(o.x - this.car.x);
       const dyo = Math.abs(o.y - this.car.y);
       if (dxo < 24 && dyo < 34) {
@@ -222,6 +229,7 @@ export class DrivingScene extends Phaser.Scene {
     }
     this.obstacles = this.obstacles.filter((o) => {
       if (o.y > height + 60) {
+        (o.getData("visualShadow") as VisualShadowHandle | undefined)?.destroy();
         o.destroy();
         return false;
       }

@@ -13,6 +13,15 @@ export interface TalkResult {
   acceptedQuest?: QuestDef;
 }
 
+export interface ActiveQuest {
+  def: QuestDef;
+  step: QuestDef["steps"][number];
+  hint: string;
+  progress: number;
+}
+
+const MAX_ACTIVE_QUESTS = 2;
+
 function ensure(id: string): QuestProgress {
   let p = store.state.quests[id];
   if (!p) {
@@ -26,8 +35,8 @@ export function statusOf(id: string) {
   return store.state.quests[id]?.status ?? "available";
 }
 
-export function activeQuests(): { def: QuestDef; hint: string }[] {
-  const out: { def: QuestDef; hint: string }[] = [];
+export function activeQuests(): ActiveQuest[] {
+  const out: ActiveQuest[] = [];
   for (const def of QUESTS) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
@@ -35,7 +44,7 @@ export function activeQuests(): { def: QuestDef; hint: string }[] {
     if (!step) continue;
     let hint = step.hint;
     if (step.type === "collect" && step.count) hint = `${step.hint} (${p.progress}/${step.count})`;
-    out.push({ def, hint });
+    out.push({ def, step, hint, progress: p.progress });
   }
   return out;
 }
@@ -120,20 +129,23 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
     }
   }
 
-  // 2) offer ONE new quest from this npc if available
-  for (const def of QUESTS) {
-    if (def.giver !== npcId) continue;
-    const p = ensure(def.id);
-    if (p.status === "available") {
-      p.status = "active";
-      p.step = 0;
-      p.progress = 0;
-      store.emit("questUpdated");
-      store.save();
-      result.lines.push(def.intro);
-      result.acceptedQuest = def;
-      store.toast(`New quest: ${def.title}`, "#f4c95d");
-      break;
+  // 2) Offer one new story only when the player has room to follow it.
+  // This keeps conversations warm instead of silently filling the tracker.
+  if (activeQuests().length < MAX_ACTIVE_QUESTS) {
+    for (const def of QUESTS) {
+      if (def.giver !== npcId) continue;
+      const p = ensure(def.id);
+      if (p.status === "available") {
+        p.status = "active";
+        p.step = 0;
+        p.progress = 0;
+        store.emit("questUpdated");
+        store.save();
+        result.lines.push(def.intro);
+        result.acceptedQuest = def;
+        store.toast(`New quest: ${def.title}`, "#f4c95d");
+        break;
+      }
     }
   }
 

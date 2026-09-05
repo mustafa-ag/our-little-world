@@ -10,9 +10,11 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
+      manifestFilename: "our-world-heart.webmanifest",
       includeAssets: [
         "icons/favicon.png",
         "icons/apple-touch-icon.png",
+        "icons/apple-touch-heart.png",
       ],
       manifest: {
         name: "Our Little World",
@@ -26,17 +28,17 @@ export default defineConfig({
         scope: "./",
         icons: [
           {
-            src: "icons/icon-192.png",
+            src: "icons/icon-heart-192.png",
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "icons/icon-512.png",
+            src: "icons/icon-heart-512.png",
             sizes: "512x512",
             type: "image/png",
           },
           {
-            src: "icons/icon-512.png",
+            src: "icons/icon-heart-512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",
@@ -46,6 +48,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        clientsClaim: true,
+        skipWaiting: true,
       },
       devOptions: {
         enabled: false,
