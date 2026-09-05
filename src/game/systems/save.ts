@@ -2,6 +2,7 @@
 // remember between visits lives here.
 
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
+export type Career = "explorer" | "chemical_engineer" | "ceo";
 
 export interface PlacedFurniture {
   tex: string;
@@ -45,6 +46,8 @@ export interface GameState {
   started: boolean;
   hearts: number;
   coins: number;
+  fuel: number;
+  career: Career;
   outfit: string;
   currentLocation: string;
   /** True while she's in the Jeep — survives map / district travel. */
@@ -69,6 +72,8 @@ export interface GameState {
   eventCooldowns: Record<string, number>;
   discoveredSecrets: string[];
   unlockedOutfits: string[];
+  unlockedAccessories: string[];
+  equippedAccessory?: string;
   dailyFlags: Record<string, boolean>;
   lastPassenger?: string;
 }
@@ -101,6 +106,8 @@ export function defaultState(): GameState {
     started: false,
     hearts: 0,
     coins: 10,
+    fuel: 100,
+    career: "explorer",
     outfit: "casual",
     currentLocation: "abudhabi_yas",
     inJeep: false,
@@ -123,6 +130,8 @@ export function defaultState(): GameState {
     eventCooldowns: {},
     discoveredSecrets: [],
     unlockedOutfits: [...STARTER_OUTFITS],
+    unlockedAccessories: [],
+    equippedAccessory: undefined,
     dailyFlags: {},
   };
 }
@@ -161,6 +170,20 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   const tod = raw.timeOfDay;
   const timeOfDay: TimeOfDay =
     tod === "morning" || tod === "afternoon" || tod === "evening" || tod === "night" ? tod : d.timeOfDay;
+  const career: Career = raw.career === "chemical_engineer" || raw.career === "ceo" ? raw.career : d.career;
+
+  // Keep the original beta quest record, but let players who completed the
+  // replaced Baba introduction enter the new mall sequence without a reset.
+  const quests: Record<string, QuestProgress> =
+    raw.quests && typeof raw.quests === "object" ? { ...raw.quests } : { ...d.quests };
+  const legacyBabaIntro = quests.q_start;
+  if (legacyBabaIntro && !quests.q_baba_card) {
+    quests.q_baba_card = {
+      status: legacyBabaIntro.status === "done" ? "done" : "available",
+      step: 0,
+      progress: 0,
+    };
+  }
 
   const photos: Record<string, SavedPhoto> = {};
   if (raw.photos && typeof raw.photos === "object") {
@@ -194,6 +217,8 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     started: !!raw.started,
     hearts: Number.isFinite(raw.hearts) ? Number(raw.hearts) : d.hearts,
     coins: Number.isFinite(raw.coins) ? Number(raw.coins) : d.coins,
+    fuel: Number.isFinite(raw.fuel) ? Math.min(100, Math.max(0, Math.round(Number(raw.fuel)))) : d.fuel,
+    career,
     outfit: typeof raw.outfit === "string" ? raw.outfit : d.outfit,
     currentLocation: typeof raw.currentLocation === "string" ? raw.currentLocation : d.currentLocation,
     inJeep: !!raw.inJeep,
@@ -217,6 +242,8 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     eventCooldowns: numMap(raw.eventCooldowns),
     discoveredSecrets: Array.isArray(raw.discoveredSecrets) ? uniq(raw.discoveredSecrets) : [],
     unlockedOutfits: uniq([...(raw.unlockedOutfits ?? []), ...STARTER_OUTFITS]),
+    unlockedAccessories: Array.isArray(raw.unlockedAccessories) ? uniq(raw.unlockedAccessories) : [],
+    equippedAccessory: typeof raw.equippedAccessory === "string" ? raw.equippedAccessory : undefined,
     dailyFlags: raw.dailyFlags && typeof raw.dailyFlags === "object" ? { ...raw.dailyFlags } : {},
     lastPassenger: typeof raw.lastPassenger === "string" ? raw.lastPassenger : undefined,
   };

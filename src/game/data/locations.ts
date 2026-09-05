@@ -38,7 +38,7 @@ import {
   waterway,
 } from "./mapkit";
 
-export type BuildingRole = "cafe" | "shop" | "apartment" | "uni" | "plain" | "stairs" | "salon";
+export type BuildingRole = "cafe" | "shop" | "apartment" | "uni" | "plain" | "stairs" | "salon" | "fuel" | "office";
 export type PoiRole = BuildingRole | "home" | "landmark" | "drive" | "deco";
 export type Cardinal = "north" | "south" | "east" | "west";
 
@@ -365,10 +365,12 @@ const DUBAI_DAMAC: CityDef = {
       tex: "b_adnoc",
       tx: 116,
       ty: 48,
-      role: "plain",
-      name: "ADNOC",
-      desc: "On the way in from the main gate — petrol, not a supermarket.",
+      role: "fuel",
+      tag: "adnoc_lagoons",
+      name: "ADNOC Oasis",
+      desc: "Blue pumps, a quick refill, and an actual little shop.",
     },
+    { tex: "b_shop", tx: 106, ty: 42, role: "shop", tag: "adnoc_oasis", name: "ADNOC Oasis Shop", desc: "Snacks, karak, and emergency road-trip supplies." },
     {
       tex: "o_sign",
       tx: 108,
@@ -858,8 +860,19 @@ const AD_CITY: CityDef = {
   roads: [...roundabout(56, 46, 5, 2)],
   pois: [
     { tex: "lm_mosque", tx: 56, ty: 26, role: "landmark", name: "Sheikh Zayed Grand Mosque" },
+    {
+      tex: "b_adnoc_hq",
+      tx: 94,
+      ty: 30,
+      role: "office",
+      tag: "adnoc_hq",
+      name: "ADNOC HQ",
+      desc: "The blue headquarters where Juju works as a chemical engineer, not at the petrol station.",
+      npc: "adnoc_recruiter",
+      footprint: { w: 7, h: 4, oy: -3 },
+    },
     ...mixRow(["b_glass_c", "b_tower", "b_glass_a"], 16, 56, 3, 22),
-    ...mixRow(["b_glass_b", "b_glass_c", "b_tower"], 70, 56, 3, 18),
+    ...mixRow(["b_glass_b", "b_glass_c"], 70, 56, 2, 18),
     ...mixRow(["b_villa_modern", "b_glass_c"], 24, 78, 2, 28),
     ...palms(18, 40, 6, 16),
     jeep(58, 70),

@@ -580,23 +580,39 @@ function buildBuildings(scene: Phaser.Scene) {
     px(ctx, 26, 34, 12, 14, "#1f5c38");
   });
 
-  // ADNOC — red / white / black petrol station + canopy
+  // ADNOC Oasis — blue convenience station near home. Juju works at HQ, not here.
   createTex(scene, "b_adnoc", 60, 42, (ctx) => {
-    px(ctx, 4, 22, 52, 20, "#f4f1ea");
-    px(ctx, 2, 8, 56, 16, "#e6e6e6");
-    px(ctx, 0, 6, 60, 6, "#c8102e");
-    px(ctx, 4, 10, 52, 3, "#000");
-    px(ctx, 8, 12, 3, 5, "#c8102e");
-    px(ctx, 12, 12, 3, 5, "#fff");
-    px(ctx, 16, 12, 3, 5, "#000");
-    px(ctx, 20, 12, 3, 5, "#c8102e");
-    px(ctx, 24, 12, 3, 5, "#fff");
-    px(ctx, 10, 26, 6, 12, "#2a2a2a");
-    px(ctx, 28, 26, 6, 12, "#2a2a2a");
-    px(ctx, 44, 26, 6, 12, "#2a2a2a");
-    px(ctx, 11, 24, 4, 3, "#c8102e");
-    px(ctx, 29, 24, 4, 3, "#c8102e");
-    px(ctx, 45, 24, 4, 3, "#c8102e");
+    px(ctx, 4, 22, 52, 20, "#eef7fb");
+    px(ctx, 2, 8, 56, 16, "#dbeef7");
+    px(ctx, 0, 6, 60, 6, "#1674b6");
+    px(ctx, 0, 12, 60, 3, "#34addb");
+    px(ctx, 6, 16, 48, 4, "#fff");
+    px(ctx, 8, 13, 3, 5, "#1674b6");
+    px(ctx, 13, 13, 3, 5, "#34addb");
+    px(ctx, 18, 13, 3, 5, "#1674b6");
+    px(ctx, 10, 26, 6, 12, "#245a83");
+    px(ctx, 28, 26, 6, 12, "#245a83");
+    px(ctx, 44, 26, 6, 12, "#245a83");
+    px(ctx, 11, 24, 4, 3, "#34addb");
+    px(ctx, 29, 24, 4, 3, "#34addb");
+    px(ctx, 45, 24, 4, 3, "#34addb");
+    px(ctx, 23, 28, 8, 9, "#fff");
+    px(ctx, 25, 30, 4, 2, "#1674b6");
+  });
+
+  // Separate HQ facade: offices, labs, and eventually an extremely fun CEO title.
+  createTex(scene, "b_adnoc_hq", 80, 68, (ctx) => {
+    px(ctx, 8, 14, 64, 54, "#dbeef7");
+    px(ctx, 12, 6, 56, 10, "#1674b6");
+    px(ctx, 16, 16, 48, 42, "#2d6c94");
+    for (let y = 20; y < 54; y += 9) {
+      for (let x = 20; x < 60; x += 10) px(ctx, x, y, 6, 5, "#a9e2f3");
+    }
+    px(ctx, 26, 58, 28, 10, "#eef7fb");
+    px(ctx, 36, 48, 8, 20, "#185a83");
+    px(ctx, 39, 51, 2, 2, "#ffe08a");
+    px(ctx, 18, 9, 44, 4, "#fff");
+    px(ctx, 29, 10, 20, 2, "#1674b6");
   });
 
   // Yas Acres neighbourhood mosque (Ja'mee) — not the Grand Mosque
@@ -1532,6 +1548,28 @@ function buildFurniture(scene: Phaser.Scene) {
     ctx.closePath();
     ctx.fill();
   });
+  createTex(scene, "f_vanity", 28, 30, (ctx) => {
+    px(ctx, 3, 14, 22, 10, "#f1c5d9");
+    px(ctx, 5, 4, 18, 12, "#bfe6ff");
+    px(ctx, 3, 2, 22, 2, "#e46d94");
+    px(ctx, 5, 24, 3, 6, Palette.woodDark);
+    px(ctx, 20, 24, 3, 6, Palette.woodDark);
+  });
+  createTex(scene, "f_desk", 36, 26, (ctx) => {
+    px(ctx, 2, 10, 32, 8, "#b87558");
+    px(ctx, 2, 10, 32, 2, "#7a5238");
+    px(ctx, 5, 18, 4, 8, "#7a5238");
+    px(ctx, 27, 18, 4, 8, "#7a5238");
+    px(ctx, 12, 2, 12, 8, "#2a334d");
+    px(ctx, 14, 3, 8, 5, "#8ecae6");
+  });
+  createTex(scene, "f_wallart", 24, 20, (ctx) => {
+    px(ctx, 1, 1, 22, 18, "#7a5238");
+    px(ctx, 3, 3, 18, 14, "#fff4e6");
+    circle(ctx, 8, 8, 3, "#ffe08a");
+    px(ctx, 4, 13, 16, 3, "#5cb06d");
+    px(ctx, 12, 10, 5, 3, "#5c8ce2");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1614,6 +1652,32 @@ function buildUI(scene: Phaser.Scene) {
     ctx.beginPath();
     ctx.arc(32, 32, 28, 0, Math.PI * 2);
     ctx.stroke();
+  });
+  createTex(scene, "i_baba_card", 18, 12, (ctx) => {
+    px(ctx, 1, 1, 16, 10, "#f4c95d");
+    px(ctx, 2, 2, 14, 2, "#fff4e6");
+    px(ctx, 3, 7, 7, 1, "#8a5c3b");
+    px(ctx, 12, 6, 2, 2, "#e46d94");
+  });
+  createTex(scene, "i_jewelry", 16, 16, (ctx) => {
+    px(ctx, 7, 1, 2, 14, "#f4c95d");
+    px(ctx, 3, 5, 10, 2, "#f4c95d");
+    px(ctx, 2, 7, 3, 5, "#8ecae6");
+    px(ctx, 11, 7, 3, 5, "#ff8fae");
+    px(ctx, 6, 10, 4, 4, "#c9a2f0");
+  });
+  createTex(scene, "i_bangle", 16, 16, (ctx) => {
+    ctx.strokeStyle = "#f4c95d";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(8, 8, 5, 0, Math.PI * 2);
+    ctx.stroke();
+    px(ctx, 11, 3, 2, 2, "#fff4e6");
+  });
+  createTex(scene, "i_bag", 16, 16, (ctx) => {
+    px(ctx, 3, 6, 10, 8, "#e46d94");
+    px(ctx, 5, 3, 6, 4, "#8a5c3b");
+    px(ctx, 6, 4, 4, 2, "#fff4e6");
   });
 }
 

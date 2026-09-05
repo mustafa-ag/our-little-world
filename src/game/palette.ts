@@ -70,6 +70,10 @@ export const Outfits: Record<string, { top: string; topShade: string; bottom: st
   red_bottom_boots: { label: "Red-bottom boots", top: "#f28ab2", topShade: "#d96e98", bottom: "#5b6ee1", shoes: "#cf1737" },
   city_bag: { label: "City bag", top: "#c9a27a", topShade: "#a8845c", bottom: "#3a2b3a", shoes: "#2a2230" },
   secret_gold: { label: "Golden hour", top: "#f4c95d", topShade: "#d4a83a", bottom: "#3a2b3a", shoes: "#fff4e6" },
+  mall_dress: { label: "Mall Dress", top: "#ff7eaa", topShade: "#d9588a", bottom: "#ff7eaa", shoes: "#fff4e6" },
+  sparkle_set: { label: "Sparkle Set", top: "#a06de2", topShade: "#7d4fbd", bottom: "#3d5a80", shoes: "#f4c95d" },
+  weekend_jacket: { label: "Weekend Jacket", top: "#6a9ed8", topShade: "#4779b5", bottom: "#2a334d", shoes: "#fff4e6" },
+  pirate_chic: { label: "Pirate Chic", top: "#d84652", topShade: "#a82d39", bottom: "#2a2230", shoes: "#f4c95d" },
 };
 
 export type OutfitId = keyof typeof Outfits;

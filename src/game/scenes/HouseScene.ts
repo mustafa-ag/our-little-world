@@ -6,6 +6,7 @@ import { store } from "../systems/store";
 import { controls, uiEvents } from "../systems/controls";
 import { tryDeliverMessages } from "../systems/phone";
 import { homeComment } from "../systems/life";
+import * as quests from "../systems/quests";
 import type { PlacedFurniture } from "../systems/save";
 import { createVisualShadow, getVisualAssetDef, getVisualTexture, type VisualShadowHandle } from "../visual";
 
@@ -220,6 +221,7 @@ export class HouseScene extends Phaser.Scene {
     if (!this.editing) {
       store.setFurniture(this.placed.map((p) => p.data));
       this.maybeStoreNearest();
+      quests.onDecorate("home");
     }
   }
 

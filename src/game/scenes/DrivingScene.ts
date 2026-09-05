@@ -259,10 +259,11 @@ export class DrivingScene extends Phaser.Scene {
     }
 
     const remaining = Math.max(0, Math.ceil((this.goal - this.distance) / 20));
-    this.distText.setText(`${this.destName} in ${remaining}m`);
+    this.distText.setText(`${this.destName} in ${remaining}m\nFuel ${store.state.fuel}%`);
 
     if (this.distance >= this.goal) {
       this.finished = true;
+      store.useFuel(12);
       store.addHearts(2);
       if (this.bumps === 0) {
         store.addCoins(10);

@@ -25,6 +25,10 @@ export const ITEMS: Record<string, ItemDef> = {
   gelato: { id: "gelato", name: "Gelato", desc: "Cold, sunny, and gone far too quickly.", kind: "food", icon: "o_foodtruck", giftable: true },
   road_burger: { id: "road_burger", name: "Road-trip burger", desc: "A proper Last Exit detour.", kind: "food", icon: "o_foodtruck", giftable: true },
   road_dessert: { id: "road_dessert", name: "Road-trip dessert", desc: "One last sweet thing before the drive home.", kind: "food", icon: "o_foodtruck", giftable: true },
+  baba_card: { id: "baba_card", name: "Baba's card", desc: "For something sensible. Obviously.", kind: "quest", icon: "i_baba_card" },
+  grandmas_jewelry: { id: "grandmas_jewelry", name: "Grandma's jewelry", desc: "Sparkly family treasure, acquired extremely theatrically.", kind: "keepsake", icon: "i_jewelry" },
+  mamas_bangle: { id: "mamas_bangle", name: "Mama's gold bangles", desc: "A gleaming stack of gold bangles with a very long story.", kind: "keepsake", icon: "i_bangle" },
+  home_sketch: { id: "home_sketch", name: "Home sketch", desc: "A tiny plan for a home that feels entirely yours.", kind: "keepsake", icon: "ui_star" },
 };
 
 export const itemById = (id: string) => ITEMS[id];

@@ -17,7 +17,7 @@ export interface ZoneSpec {
   x: number;
   y: number;
   radius: number;
-  action: "cafe" | "shop" | "home" | "drive" | "landmark" | "info" | "exit" | "stairs" | "salon";
+  action: "cafe" | "shop" | "home" | "drive" | "landmark" | "info" | "exit" | "stairs" | "salon" | "fuel" | "office";
   tag?: string;
   prompt: string;
   data?: unknown;
@@ -387,6 +387,28 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
           tag: p.tag,
           prompt: `Nails & brows at ${p.name ?? "the salon"}`,
           data: { name: p.name, desc: p.desc, tag: p.tag },
+        });
+        break;
+      case "fuel":
+        zones.push({
+          x: cx,
+          y: doorY,
+          radius: 26,
+          action: "fuel",
+          tag: p.tag ?? "adnoc",
+          prompt: `Refuel at ${p.name ?? "ADNOC"}`,
+          data: { name: p.name, desc: p.desc },
+        });
+        break;
+      case "office":
+        zones.push({
+          x: cx,
+          y: doorY,
+          radius: 28,
+          action: "office",
+          tag: p.tag ?? "office",
+          prompt: `Enter ${p.name ?? "the office"}`,
+          data: { name: p.name, desc: p.desc },
         });
         break;
       case "apartment":

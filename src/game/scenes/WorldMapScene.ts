@@ -4,6 +4,7 @@ import { LAND, LOCKED_CITIES, MAP_H, MAP_W, PLACE_NAMES, geoToMap } from "../dat
 import { CITIES, districtsOf, getLocation } from "../data/locations";
 import { store } from "../systems/store";
 import { uiEvents } from "../systems/controls";
+import * as quests from "../systems/quests";
 
 interface Pin {
   name: string;
@@ -344,6 +345,10 @@ export class WorldMapScene extends Phaser.Scene {
     store.unlockLocation(loc.id);
     uiEvents.emit("prompt", null);
     uiEvents.emit("sceneReset");
+    if (loc.cityId === "edinburgh" && quests.currentStep("q_family_jewel_heist")?.target === "edinburgh") {
+      this.scene.start(SceneKeys.PirateVoyage);
+      return;
+    }
     this.scene.start(SceneKeys.World, { locationId: loc.id, driving: store.state.inJeep });
   }
 }

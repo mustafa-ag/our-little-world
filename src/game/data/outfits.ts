@@ -24,4 +24,8 @@ export const OUTFIT_UNLOCKS: OutfitUnlock[] = [
   { id: "red_bottom_boots", label: "Red-bottom boots", hint: "Open Phone > Style to equip sprint boots.", starter: true },
   { id: "city_bag", label: "City bag", hint: "Finish the mall coffee run.", questDone: "q_date" },
   { id: "secret_gold", label: "Golden hour", hint: "A quiet forever with Moomoo (100).", relationship: { npc: "moomoo", min: 100 } },
+  { id: "mall_dress", label: "Mall Dress", hint: "Win Baba's shopping spree.", questDone: "q_baba_spree" },
+  { id: "sparkle_set", label: "Sparkle Set", hint: "Win Baba's shopping spree.", questDone: "q_baba_spree" },
+  { id: "weekend_jacket", label: "Weekend Jacket", hint: "Win Baba's shopping spree.", questDone: "q_baba_spree" },
+  { id: "pirate_chic", label: "Pirate Chic", hint: "Finish the family jewel heist.", questDone: "q_family_jewel_heist" },
 ];
