@@ -17,6 +17,7 @@ export interface MiniGameSpec {
   title: string;
   hint: string;
   taps?: number;
+  difficulty?: number;
   skipLabel?: string;
   photoLabel?: string;
   photoTex?: string;

@@ -32,6 +32,8 @@ export class UIScene extends Phaser.Scene {
   private mapGuide?: Phaser.GameObjects.Text;
   private questIndex = 0;
   private promptText!: Phaser.GameObjects.Text;
+  private dedicatedStatus!: Phaser.GameObjects.Text;
+  private dedicatedStatusActive = false;
 
   // joystick
   private joyBase!: Phaser.GameObjects.Image;
@@ -89,6 +91,7 @@ export class UIScene extends Phaser.Scene {
   private localTitle!: Phaser.GameObjects.Text;
   private localLegend!: Phaser.GameObjects.Text;
   private localPins: Phaser.GameObjects.Text[] = [];
+  private dedicatedHud = false;
 
   constructor() {
     super({ key: SceneKeys.UI, active: false });
@@ -132,6 +135,15 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setVisible(false);
+    this.dedicatedStatus = this.add.text(width / 2, 64, "", {
+      fontFamily: FONT,
+      fontSize: "13px",
+      color: "#fff4e6",
+      align: "center",
+      backgroundColor: "rgba(43,34,51,0.9)",
+      padding: { x: 9, y: 5 },
+      resolution: 2,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(94).setVisible(false);
 
     this.phone = new PhoneOverlay(this);
     this.buildJoystick();
@@ -160,6 +172,10 @@ export class UIScene extends Phaser.Scene {
       this.openDialogue(name, lines);
     });
     uiEvents.on("action", () => this.onAction());
+    uiEvents.on("dedicatedStatus", (text: string | null, color = "#fff4e6") => {
+      this.dedicatedStatusActive = !!text;
+      this.dedicatedStatus.setText(text ?? "").setColor(color);
+    });
     uiEvents.on("openShop", (mode?: "home" | "adnoc") => this.openShop(mode));
     uiEvents.on("openFoodOrder", (spec: import("../systems/controls").FoodOrderSpec) => this.openFoodOrder(spec));
     uiEvents.on("openWardrobe", () => this.openWardrobe());
@@ -798,6 +814,7 @@ export class UIScene extends Phaser.Scene {
       } else {
         controls.locked = false;
       }
+      uiEvents.emit("dialogueClosed");
     } else {
       this.dlgText.setText(this.dlgLines[this.dlgIndex]);
     }
@@ -1302,6 +1319,12 @@ export class UIScene extends Phaser.Scene {
 
   // -------------------------------------------------------------------------
   private refreshQuests() {
+    if (this.dedicatedHud) {
+      for (const item of [this.questPanel, this.questIcon, this.questKicker, this.questTitle, this.questNext, this.questHelp, this.questCount]) item.setVisible(false);
+      this.questHit.setVisible(false).disableInteractive();
+      this.mapGuide?.setVisible(false);
+      return;
+    }
     const list = activeQuests();
     if (!list.length) {
       this.questPanel.setVisible(false);
@@ -1366,7 +1389,7 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist);
   }
   private walkableScene() {
     const m = this.scene.manager;
@@ -1396,10 +1419,25 @@ export class UIScene extends Phaser.Scene {
     return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu || !!this.foodMenu;
   }
 
+  private setDedicatedHud(hidden: boolean) {
+    if (this.dedicatedHud === hidden) return;
+    this.dedicatedHud = hidden;
+    const common = [this.heartIcon, this.heartText, this.coinIcon, this.coinText, this.clockText, this.questPanel, this.questIcon, this.questKicker, this.questTitle, this.questNext, this.questHelp, this.questCount];
+    for (const item of common) item.setVisible(!hidden);
+    if (hidden) {
+      this.questHit.setVisible(false).disableInteractive();
+      this.mapGuide?.setVisible(false);
+    } else {
+      this.questHit.setVisible(true).setInteractive({ useHandCursor: true });
+      this.refreshQuests();
+    }
+  }
+
   private layout() {
     // reposition size-dependent elements on resize/rotate
     const { width, height } = this.scale.gameSize;
     this.promptText.setPosition(width / 2, height - 180);
+    this.dedicatedStatus.setPosition(width / 2, 64).setWordWrapWidth(Math.max(220, width - 32), true);
     this.placeMinimap();
     if (this.localMapOpen) this.refreshLocalMap();
     if (this.joyPointerId === -1) this.positionJoystick();
@@ -1434,9 +1472,14 @@ export class UIScene extends Phaser.Scene {
     const gp = this.gameplayActive();
     const modal = this.anyModal();
     const driving = this.scene.manager.isActive(SceneKeys.Driving);
+    const dedicated = this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist);
+    this.setDedicatedHud(dedicated);
+    this.dedicatedStatus.setVisible(dedicated && this.dedicatedStatusActive && !modal);
 
-    const showTouch = gp && !modal;
+    const showTouch = gp && (!modal || this.miniGameOpen);
     this.setButtonVisible(this.actionBtn, showTouch);
+    this.actionBtn.setDepth(this.miniGameOpen ? 90 : 12);
+    (this.actionBtn as ButtonImage).label?.setDepth(this.miniGameOpen ? 91 : 13);
     const showJoy = showTouch && this.joyPointerId !== -1;
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);

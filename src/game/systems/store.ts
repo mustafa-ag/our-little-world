@@ -561,6 +561,17 @@ class Store extends Phaser.Events.EventEmitter {
     this.save();
   }
 
+  incrementStat(id: string, amount = 1) {
+    const next = (this.state.stats[id] ?? 0) + amount;
+    this.state.stats[id] = next;
+    this.save();
+    return next;
+  }
+
+  getStat(id: string) {
+    return this.state.stats[id] ?? 0;
+  }
+
   toast(text: string, color = "#fff4e6") {
     this.emit("toast", text, color);
   }

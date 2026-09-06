@@ -10,6 +10,7 @@ export interface MiniSpec {
   title: string;
   hint: string;
   taps?: number;
+  difficulty?: number;
   skipLabel?: string;
   photoLabel?: string;
   photoTex?: string;
@@ -24,6 +25,7 @@ export function openActivity(scene: Phaser.Scene, spec: MiniSpec): Phaser.GameOb
   if (spec.kind === "showdown") return showdownGame(scene, spec);
   if (spec.kind === "stairs") return stairsGame(scene, spec);
   if (spec.kind === "shopping") return shoppingGame(scene, spec);
+  if (spec.kind === "lockpick") return lockpickGame(scene, spec);
   if (spec.kind === "safe") return safeGame(scene, spec);
   return tapGame(scene, spec);
 }
@@ -175,37 +177,156 @@ function shoppingGame(scene: Phaser.Scene, spec: MiniSpec) {
   return container;
 }
 
-function safeGame(scene: Phaser.Scene, spec: MiniSpec) {
-  const { items, px, py, w, width } = panel(scene, Math.min(scene.scale.gameSize.width - 28, 360), 320);
-  items.push(...titleHint(scene, spec, width / 2, py + 14, w - 32));
-  const labels = ["STAR", "HEART", "FISH"];
-  const target = [1, 2, 0];
-  const values = [0, 0, 0];
+function lockpickGame(scene: Phaser.Scene, spec: MiniSpec) {
+  const { items, px, py, w, width } = panel(scene, Math.min(scene.scale.gameSize.width - 28, 370), 350);
+  items.push(...titleHint(scene, spec, width / 2, py + 14, w - 34));
+  const total = Phaser.Math.Clamp(spec.taps ?? 3, 3, 5);
+  const difficulty = Phaser.Math.Clamp(spec.difficulty ?? 1, 1, 3);
+  const trackX = px + 34;
+  const trackW = w - 68;
+  const trackY = py + 180;
+  let pin = 0;
+  let phase = 0;
+  let marker = 0;
   let finished = false;
-  const buttons: Phaser.GameObjects.Text[] = [];
-  const status = scene.add.text(width / 2, py + 200, "Line up the symbols from Grandma's note.", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", resolution: 2 }).setOrigin(0.5);
-  items.push(status);
-  const draw = () => buttons.forEach((button, i) => button.setText(labels[values[i]]));
-  const check = () => {
-    if (finished) return;
-    if (values.every((value, i) => value === target[i])) {
-      finished = true;
-      status.setColor("#57a56d").setText("CLICK! The jewelry box opens.");
-      scene.time.delayedCall(420, () => spec.onDone(true));
-    } else status.setText("Not quite. Grandma loved a puzzle.");
+  const targetPattern = [0.24, 0.67, 0.42, 0.78, 0.31];
+  const gauge = scene.add.graphics();
+  const lock = scene.add.graphics();
+  const status = scene.add.text(width / 2, py + 238, "Pin 1 is pretending not to be nervous.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", align: "center", resolution: 2 }).setOrigin(0.5);
+  const pinText = scene.add.text(width / 2, py + 104, "", { fontFamily: FONT, fontSize: "13px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+  items.push(lock, gauge, status, pinText);
+
+  const draw = () => {
+    const target = targetPattern[pin];
+    const zoneW = Math.max(24, 46 - difficulty * 6 - pin * 2);
+    lock.clear();
+    lock.fillStyle(0xf4c95d, 1).fillRoundedRect(width / 2 - 30, py + 76, 60, 52, 8);
+    lock.lineStyle(5, 0x8a6b38, 1).strokeCircle(width / 2, py + 78, 19);
+    for (let i = 0; i < total; i++) {
+      lock.fillStyle(i < pin ? 0x57a56d : i === pin ? 0xfff4e6 : 0x8a6b38, 1).fillCircle(width / 2 - (total - 1) * 9 + i * 18, py + 111, 5);
+    }
+    gauge.clear();
+    gauge.fillStyle(0x3a2b3a, 1).fillRoundedRect(trackX, trackY, trackW, 18, 8);
+    gauge.fillStyle(0x7be0a3, 1).fillRoundedRect(trackX + target * trackW - zoneW / 2, trackY + 2, zoneW, 14, 6);
+    gauge.fillStyle(0xffffff, 1).fillRect(trackX + marker * trackW - 3, trackY - 5, 6, 28);
+    pinText.setText(`CARTOON PIN ${Math.min(pin + 1, total)} / ${total}`);
   };
-  for (let i = 0; i < 3; i++) {
-    const button = btn(scene, width / 2 - 100 + i * 100, py + 150, labels[0], ["#e46d94", "#f4c95d", "#2f6fd0"][i], () => {
-      values[i] = (values[i] + 1) % labels.length;
-      draw();
-      check();
-    });
-    buttons.push(button);
-    items.push(button);
-  }
-  items.push(btn(scene, width / 2, py + 262, "CHECK", "#7be0a3", check));
+  const action = () => {
+    if (finished) return;
+    const zone = Math.max(24, 46 - difficulty * 6 - pin * 2) / trackW / 2;
+    if (Math.abs(marker - targetPattern[pin]) <= zone) {
+      pin += 1;
+      phase = 0;
+      status.setColor("#57a56d").setText(pin >= total ? "CLICK... unlocked!" : "CLICK! Next pin is faster.");
+      scene.cameras.main.shake(45, 0.002);
+      if (pin >= total) {
+        finished = true;
+        draw();
+        scene.time.delayedCall(440, () => spec.onDone(true));
+        return;
+      }
+    } else {
+      phase = 0;
+      status.setColor("#e46d94").setText("CLUNK. The lock remains deeply unimpressed.");
+    }
+    draw();
+  };
+  const update = (_time: number, delta: number) => {
+    if (finished) return;
+    phase += delta * (0.00115 + pin * 0.00018 + difficulty * 0.00012);
+    marker = (Math.sin(phase * Math.PI * 2) + 1) / 2;
+    draw();
+  };
+  items.push(btn(scene, width / 2, py + 298, "HIT THE GREEN ZONE", "#2f6fd0", action));
   const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
-  bindAction(scene, container, check);
+  scene.events.on(Phaser.Scenes.Events.UPDATE, update);
+  container.once(Phaser.GameObjects.Events.DESTROY, () => scene.events.off(Phaser.Scenes.Events.UPDATE, update));
+  bindAction(scene, container, action);
+  draw();
+  return container;
+}
+
+function safeGame(scene: Phaser.Scene, spec: MiniSpec) {
+  const { items, px, py, w, width } = panel(scene, Math.min(scene.scale.gameSize.width - 24, 382), 390);
+  items.push(...titleHint(scene, spec, width / 2, py + 12, w - 30));
+  const dialX = width / 2;
+  const dialY = py + 158;
+  const trackX = px + 34;
+  const trackW = w - 68;
+  const trackY = py + 232;
+  const targets = [0.22, 0.7, 0.39, 0.82];
+  let stage: "dial" | "pins" = "dial";
+  let phase = 0;
+  let marker = 0;
+  let pin = 0;
+  let finished = false;
+  const graphic = scene.add.graphics();
+  const status = scene.add.text(width / 2, py + 286, "Find the glowing cartoon dial zone.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", align: "center", resolution: 2 }).setOrigin(0.5);
+  const tension = scene.add.text(width / 2, py + 86, "FADWA COULD COME BACK ANY SECOND", { fontFamily: FONT, fontSize: "10px", color: "#d84652", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+  items.push(graphic, status, tension);
+  const tensionTween = scene.tweens.add({ targets: tension, alpha: 0.35, duration: 520, yoyo: true, repeat: -1 });
+
+  const draw = () => {
+    graphic.clear();
+    graphic.fillStyle(0x59616d, 1).fillRoundedRect(width / 2 - 88, py + 108, 176, 160, 10);
+    graphic.lineStyle(4, 0x2b2233, 1).strokeRoundedRect(width / 2 - 88, py + 108, 176, 160, 10);
+    if (stage === "dial") {
+      graphic.lineStyle(10, 0x3a2b3a, 1).strokeCircle(dialX, dialY, 38);
+      graphic.lineStyle(9, 0x7be0a3, 1).beginPath().arc(dialX, dialY, 38, -0.25, 0.28).strokePath();
+      const angle = marker * Math.PI * 2 - Math.PI / 2;
+      graphic.lineStyle(4, 0xffffff, 1).lineBetween(dialX, dialY, dialX + Math.cos(angle) * 31, dialY + Math.sin(angle) * 31);
+      graphic.fillStyle(0xf4c95d, 1).fillCircle(dialX, dialY, 7);
+    } else {
+      const target = targets[pin];
+      const zoneW = Math.max(20, 34 - pin * 2);
+      graphic.fillStyle(0x2b2233, 1).fillRoundedRect(trackX, trackY, trackW, 18, 7);
+      graphic.fillStyle(0x7be0a3, 1).fillRoundedRect(trackX + target * trackW - zoneW / 2, trackY + 2, zoneW, 14, 5);
+      graphic.fillStyle(0xffffff, 1).fillRect(trackX + marker * trackW - 3, trackY - 5, 6, 28);
+      for (let i = 0; i < targets.length; i++) graphic.fillStyle(i < pin ? 0x57a56d : 0x8a6b38, 1).fillCircle(width / 2 - 30 + i * 20, py + 190, 5);
+    }
+  };
+  const action = () => {
+    if (finished) return;
+    if (stage === "dial") {
+      if (Math.abs(marker - 0.25) < 0.085) {
+        stage = "pins";
+        phase = 0;
+        status.setColor("#57a56d").setText("BZZT! Fictional dial accepted. Now hit four pins.");
+      } else status.setColor("#e46d94").setText("The dial says: not even slightly.");
+    } else {
+      const half = Math.max(20, 34 - pin * 2) / trackW / 2;
+      if (Math.abs(marker - targets[pin]) <= half) {
+        pin += 1;
+        phase = 0;
+        status.setColor("#57a56d").setText(pin >= targets.length ? "CLICK" : `CLICK! ${pin} / ${targets.length}`);
+        if (pin >= targets.length) {
+          finished = true;
+          scene.cameras.main.flash(240, 255, 224, 138, false);
+          scene.time.delayedCall(500, () => spec.onDone(true));
+          return;
+        }
+      } else {
+        phase = 0;
+        status.setColor("#e46d94").setText("CLUNK. Grandma's safe judges your timing.");
+      }
+    }
+    draw();
+  };
+  const update = (_time: number, delta: number) => {
+    if (finished) return;
+    phase += delta * (stage === "dial" ? 0.00055 : 0.00135 + pin * 0.00017);
+    marker = stage === "dial" ? phase % 1 : (Math.sin(phase * Math.PI * 2) + 1) / 2;
+    draw();
+  };
+  items.push(btn(scene, width / 2, py + 342, "STOP / CLICK", "#e46d94", action));
+  const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  scene.events.on(Phaser.Scenes.Events.UPDATE, update);
+  container.once(Phaser.GameObjects.Events.DESTROY, () => {
+    scene.events.off(Phaser.Scenes.Events.UPDATE, update);
+    tensionTween.stop();
+  });
+  bindAction(scene, container, action);
+  draw();
   return container;
 }
 

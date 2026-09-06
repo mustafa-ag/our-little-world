@@ -345,7 +345,7 @@ export class WorldMapScene extends Phaser.Scene {
     store.unlockLocation(loc.id);
     uiEvents.emit("prompt", null);
     uiEvents.emit("sceneReset");
-    if (loc.cityId === "edinburgh" && quests.currentStep("q_family_jewel_heist")?.target === "edinburgh") {
+    if (loc.cityId === "london" && quests.currentStep("q_family_jewel_heist")?.target === "pirate_voyage") {
       this.scene.start(SceneKeys.PirateVoyage);
       return;
     }

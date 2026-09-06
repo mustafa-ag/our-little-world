@@ -70,6 +70,7 @@ export interface GameState {
   currentDay: number;
   timeOfDay: TimeOfDay;
   eventCooldowns: Record<string, number>;
+  stats: Record<string, number>;
   discoveredSecrets: string[];
   unlockedOutfits: string[];
   unlockedAccessories: string[];
@@ -83,7 +84,7 @@ const SAVE_KEY = "ourlittleworld.save.v3";
 const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
 const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
 export const SAVE_SLOT_COUNT = 3;
-export const VERSION = 5;
+export const VERSION = 6;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
 
@@ -128,6 +129,7 @@ export function defaultState(): GameState {
     currentDay: 1,
     timeOfDay: "morning",
     eventCooldowns: {},
+    stats: {},
     discoveredSecrets: [],
     unlockedOutfits: [...STARTER_OUTFITS],
     unlockedAccessories: [],
@@ -202,10 +204,22 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     }
   }
 
-  // This removed quest may exist in saves created before the rollback.
-  const quests = raw.quests && typeof raw.quests === "object" ? { ...raw.quests } : { ...d.quests };
   const flags = raw.flags && typeof raw.flags === "object" ? { ...raw.flags } : {};
   const inventory = numMap(raw.inventory);
+  let currentLocation = typeof raw.currentLocation === "string" ? raw.currentLocation : d.currentLocation;
+
+  // v6 expands the beta heist. Move in-progress saves to the closest safe
+  // checkpoint and never strand an old Edinburgh run in the new London flow.
+  if ((raw.version ?? 0) < 6) {
+    const heist = quests.q_family_jewel_heist;
+    if (heist?.status === "active") {
+      const legacyStep = Math.max(0, Math.floor(heist.step));
+      heist.step = legacyStep <= 1 ? legacyStep : legacyStep === 2 ? 4 : legacyStep === 3 ? 7 : 9;
+      heist.progress = 0;
+      if (legacyStep >= 2) currentLocation = "london_westend";
+      if (legacyStep >= 4 || inventory.grandmas_jewelry > 0) flags.heist_jewelry_claimed = true;
+    }
+  }
   delete quests.q_pirate_keepsakes;
   delete flags.pirate_juju;
   delete inventory.family_keepsakes;
@@ -220,7 +234,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     fuel: Number.isFinite(raw.fuel) ? Math.min(100, Math.max(0, Math.round(Number(raw.fuel)))) : d.fuel,
     career,
     outfit: typeof raw.outfit === "string" ? raw.outfit : d.outfit,
-    currentLocation: typeof raw.currentLocation === "string" ? raw.currentLocation : d.currentLocation,
+    currentLocation,
     inJeep: !!raw.inJeep,
     unlockedLocations: Array.isArray(raw.unlockedLocations) ? uniq(raw.unlockedLocations) : d.unlockedLocations,
     quests,
@@ -240,6 +254,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     currentDay: Number.isFinite(raw.currentDay) && (raw.currentDay as number) > 0 ? Math.floor(raw.currentDay as number) : d.currentDay,
     timeOfDay,
     eventCooldowns: numMap(raw.eventCooldowns),
+    stats: numMap(raw.stats),
     discoveredSecrets: Array.isArray(raw.discoveredSecrets) ? uniq(raw.discoveredSecrets) : [],
     unlockedOutfits: uniq([...(raw.unlockedOutfits ?? []), ...STARTER_OUTFITS]),
     unlockedAccessories: Array.isArray(raw.unlockedAccessories) ? uniq(raw.unlockedAccessories) : [],

@@ -61,6 +61,8 @@ export class WorldScene extends Phaser.Scene {
   private questArrow?: Phaser.GameObjects.Text;
   private questArrowLabel?: Phaser.GameObjects.Text;
   private companionNpc?: NPC;
+  private ideaDialogueHandler?: () => void;
+  private transformDialogueHandler?: () => void;
 
   constructor() {
     super(SceneKeys.World);
@@ -173,9 +175,19 @@ export class WorldScene extends Phaser.Scene {
     this.refreshQuestGuide();
     tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
     uiEvents.emit("locationTitle", def.name, def.subtitle);
-    if (store.hasFlag("heist_victory_pending")) {
-      store.setFlag("heist_victory_pending", false);
-      this.time.delayedCall(350, () => uiEvents.emit("dialogue", "Juju", ["THE GREAT FAMILY JEWEL HEIST · Complete", "Absolutely no crimes occurred."]));
+    const heistResume = quests.currentStep("q_family_jewel_heist")?.target;
+    if (heistResume === "pirate_idea" && !store.hasFlag("pirate_disguise")) {
+      this.time.delayedCall(850, () => {
+        if (!this.sys.isActive() || controls.locked) return;
+        this.startPirateIdea();
+        uiEvents.emit("dialogue", "Juju", ["Mama specifically said not to get ideas.", "Unfortunately, I remembered my idea."]);
+      });
+    } else if (store.hasFlag("pirate_disguise") && (heistResume === "pirate_voyage" || heistResume === "great_white_boss")) {
+      this.time.delayedCall(650, () => {
+        if (!this.sys.isActive() || this.transitioning) return;
+        uiEvents.emit("sceneReset");
+        this.scene.start(SceneKeys.PirateVoyage);
+      });
     }
     this.time.delayedCall(700, () => {
       if (!this.sys.isActive() || this.transitioning) return;
@@ -292,8 +304,9 @@ export class WorldScene extends Phaser.Scene {
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
           const styleNote = outfitReaction(def.id);
           const res = quests.onTalk(def.id, [...lines, ...(styleNote ? [styleNote] : []), ...(extra ? [extra] : [])]);
-          uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
-          if (res.acceptedQuest?.id === "q_family_jewel_heist") this.startPirateIdea();
+          const startsHeist = res.acceptedQuest?.id === "q_family_jewel_heist";
+          uiEvents.emit("dialogue", def.name, res.lines, startsHeist ? undefined : { npcId: def.id });
+          if (startsHeist) this.startPirateIdea();
         },
       });
     };
@@ -307,57 +320,121 @@ export class WorldScene extends Phaser.Scene {
       const p = npcWorldPos(def);
       place(def, p.x, p.y);
     }
-    if (this.locationId === "edinburgh_oldtown" && quests.currentStep("q_family_jewel_heist")?.target === "sister_room") {
-      const fadwa = NPCS.find((n) => n.id === "fadwa");
-      if (fadwa && !placed.has(fadwa.id)) {
-        const npc = new NPC(this, fadwa).place(52 * TILE + TILE / 2, 54 * TILE);
-        this.npcs.push(npc);
+  }
+
+  private placeQuestObjects() {
+    if (this.locationId === "abudhabi_yas" && quests.currentStep("q_baba_card")?.target === "take_baba_card") {
+      const baba = NPCS.find((npc) => npc.id === "baba");
+      if (baba) {
+        const pos = npcWorldPos(baba);
+        const card = this.add.image(pos.x + 24, pos.y + 2, "i_baba_card").setDepth(pos.y + 3);
+        this.tweens.add({ targets: card, y: card.y - 4, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
         this.interactables.push({
-          x: npc.x,
-          y: npc.y,
-          radius: 28,
-          prompt: "Talk to Fadwa (very normally)",
+          x: card.x,
+          y: card.y,
+          radius: 22,
+          prompt: "Take Baba's card",
           trigger: () => {
-            quests.onInteract("sister_room");
-            uiEvents.emit("sceneReset");
-            this.scene.start(SceneKeys.SisterHeist);
+            card.destroy();
+            store.addItem("baba_card");
+            quests.onInteract("take_baba_card");
+            uiEvents.emit("dialogue", "Juju", ["No reason. Completely normal mall errand incoming."]);
           },
         });
       }
     }
-  }
 
-  private placeQuestObjects() {
-    if (this.locationId !== "abudhabi_yas" || quests.currentStep("q_baba_card")?.target !== "take_baba_card") return;
-    const baba = NPCS.find((npc) => npc.id === "baba");
-    if (!baba) return;
-    const pos = npcWorldPos(baba);
-    const card = this.add.image(pos.x + 24, pos.y + 2, "i_baba_card").setDepth(pos.y + 3);
-    this.tweens.add({ targets: card, y: card.y - 4, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-    this.interactables.push({
-      x: card.x,
-      y: card.y,
-      radius: 22,
-      prompt: "Take Baba's card",
-      trigger: () => {
-        card.destroy();
-        store.addItem("baba_card");
-        quests.onInteract("take_baba_card");
-        uiEvents.emit("dialogue", "Juju", ["No reason. Completely normal mall errand incoming."]);
-      },
-    });
+    const heistTarget = quests.currentStep("q_family_jewel_heist")?.target;
+    if (this.locationId === "london_westend" && ["house_lock", "enter_fadwa_house", "reach_fadwa_room", "drawer_lock", "family_safe", "escape_fadwa_house"].includes(heistTarget ?? "")) {
+      const x = this.worldW * 0.56;
+      const y = Math.min(this.worldH - 80, this.worldH * 0.48);
+      const sign = this.add.text(x, y - 28, "FADWA'S HOUSE\nEXTREMELY NORMAL ENTRANCE", {
+        fontFamily: "monospace",
+        fontSize: "9px",
+        align: "center",
+        color: "#fff4e6",
+        backgroundColor: "#3a2b3a",
+        padding: { x: 5, y: 3 },
+        resolution: 2,
+      }).setOrigin(0.5).setDepth(y + 4);
+      this.tweens.add({ targets: sign, y: sign.y - 3, duration: 720, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      this.interactables.push({
+        x,
+        y,
+        radius: 34,
+        prompt: "Approach Fadwa's house",
+        trigger: () => {
+          uiEvents.emit("sceneReset");
+          this.scene.start(SceneKeys.SisterHeist);
+        },
+      });
+    }
   }
 
   private startPirateIdea() {
+    const begin = () => {
+      this.ideaDialogueHandler = undefined;
+      if (!this.sys.isActive()) return;
+      controls.locked = true;
+      const shout = this.add.text(this.player.x, this.player.y - 38, "FADWAAAA.", { fontFamily: "monospace", fontSize: "16px", color: "#d84652", stroke: "#3a2b3a", strokeThickness: 4, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 12);
+      this.player.setTint(0xff8b82);
+      this.tweens.add({ targets: this.player, x: this.player.x + 44, angle: { from: -2, to: 2 }, duration: 170, yoyo: true, repeat: 4, ease: "Quad.inOut" });
+      this.cameras.main.shake(130, 0.004);
+      for (let i = 0; i < 7; i++) {
+        const puff = this.add.circle(this.player.x + (i % 2 ? 12 : -12), this.player.y - 25, 3 + (i % 3), 0xffffff, 0.82).setDepth(this.player.y + 11);
+        this.tweens.add({ targets: puff, x: puff.x + (i % 2 ? 14 : -14), y: puff.y - 22 - i * 2, scale: 1.8, alpha: 0, delay: i * 120, duration: 760, onComplete: () => puff.destroy() });
+      }
+      this.tweens.add({ targets: shout, y: shout.y - 18, alpha: 0, delay: 620, duration: 650, onComplete: () => shout.destroy() });
+      this.time.delayedCall(1450, () => {
+        this.player.clearTint().setAngle(0);
+        const mark = this.add.text(this.player.x, this.player.y - 42, "!", { fontFamily: "monospace", fontSize: "42px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 6, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 14).setScale(0.2);
+        this.tweens.add({ targets: mark, scale: 1.35, y: mark.y - 8, duration: 420, ease: "Back.out", yoyo: true, hold: 450, onComplete: () => mark.destroy() });
+        this.tweens.add({ targets: this.player, y: this.player.y - 10, scaleX: 1.35, scaleY: 1.35, duration: 180, yoyo: true, ease: "Back.out" });
+        for (let i = 0; i < 9; i++) this.ideaSparkle(this.player.x, this.player.y - 20, i * 42);
+        const transform = () => {
+          this.transformDialogueHandler = undefined;
+          this.transformPirate();
+        };
+        this.transformDialogueHandler = transform;
+        uiEvents.once("dialogueClosed", transform);
+        uiEvents.emit("dialogue", "Juju", ["Wait.", "I have a completely reasonable idea."]);
+      });
+    };
+    this.ideaDialogueHandler = begin;
+    uiEvents.once("dialogueClosed", begin);
+  }
+
+  private ideaSparkle(x: number, y: number, delay: number) {
+    const star = this.add.image(x, y, "ui_star").setScale(0.3).setDepth(y + 30).setAlpha(0);
+    const angle = (delay / 42) * (Math.PI * 2 / 9);
+    this.tweens.add({ targets: star, x: x + Math.cos(angle) * 32, y: y + Math.sin(angle) * 22, alpha: 1, scale: 0.7, delay, duration: 260, yoyo: true, onComplete: () => star.destroy() });
+  }
+
+  private transformPirate() {
+    if (!this.sys.isActive()) return;
     controls.locked = true;
-    const mark = this.add.text(this.player.x, this.player.y - 34, "!", { fontFamily: "monospace", fontSize: "28px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 4, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 10);
-    const sparkle = this.add.image(this.player.x + 14, this.player.y - 24, "ui_star").setScale(0.7).setDepth(this.player.y + 10);
-    this.tweens.add({ targets: [mark, sparkle], y: "-=12", alpha: 0, duration: 720, ease: "Quad.out", onComplete: () => { mark.destroy(); sparkle.destroy(); } });
-    this.time.delayedCall(260, () => uiEvents.emit("dialogue", "Juju", ["Operation: definitely mine now."]));
-    this.time.delayedCall(740, () => {
+    const { width, height } = this.scale.gameSize;
+    for (let i = 0; i < 12; i++) {
+      const smoke = this.add.circle(this.player.x + Phaser.Math.Between(-15, 15), this.player.y + Phaser.Math.Between(-10, 8), Phaser.Math.Between(4, 8), 0xffffff, 0.8).setDepth(this.player.y + 20);
+      this.tweens.add({ targets: smoke, x: smoke.x + Phaser.Math.Between(-28, 28), y: smoke.y - Phaser.Math.Between(15, 38), alpha: 0, scale: 1.8, delay: i * 55, duration: 620, onComplete: () => smoke.destroy() });
+    }
+    this.tweens.add({ targets: this.player, angle: 360, y: this.player.y - 16, duration: 520, yoyo: true, ease: "Cubic.inOut", onComplete: () => this.player.setAngle(0) });
+    this.time.delayedCall(300, () => {
+      store.setInJeep(false);
       store.setFlag("pirate_disguise");
+    });
+    this.time.delayedCall(620, () => {
       quests.onInteract("pirate_idea");
-      controls.locked = false;
+      const card = this.add.container(width / 2, height * 0.34).setScrollFactor(0).setDepth(800).setScale(0.4).setAlpha(0);
+      const title = this.add.text(0, 0, "PIRATE JUJU", { fontFamily: "monospace", fontSize: "31px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 7, resolution: 2 }).setOrigin(0.5);
+      const sub = this.add.text(0, 38, "Master of Extremely Legal\nFamily Retrieval", { fontFamily: "monospace", fontSize: "13px", color: "#fff4e6", align: "center", stroke: "#3a2b3a", strokeThickness: 4, resolution: 2 }).setOrigin(0.5);
+      card.add([title, sub]);
+      this.tweens.add({ targets: card, alpha: 1, scale: 1, duration: 440, ease: "Back.out", hold: 1250, yoyo: true, onComplete: () => card.destroy() });
+    });
+    this.time.delayedCall(2550, () => {
+      if (!this.sys.isActive() || quests.currentStep("q_family_jewel_heist")?.target !== "pirate_voyage") return;
+      uiEvents.emit("sceneReset");
+      this.scene.start(SceneKeys.PirateVoyage);
     });
   }
 
@@ -929,6 +1006,10 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private onShutdown() {
+    if (this.ideaDialogueHandler) uiEvents.off("dialogueClosed", this.ideaDialogueHandler);
+    if (this.transformDialogueHandler) uiEvents.off("dialogueClosed", this.transformDialogueHandler);
+    this.ideaDialogueHandler = undefined;
+    this.transformDialogueHandler = undefined;
     this.groundLayer?.destroy();
     this.groundLayer = undefined;
     this.rideJeepShadow?.destroy();

@@ -156,7 +156,14 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
         p.progress = 0;
         store.emit("questUpdated");
         store.save();
-        result.lines.push(def.intro);
+        if (def.id === "q_family_jewel_heist") {
+          result.lines.push(
+            "Fadwa still has my gold bangles...",
+            "And Grandma's jewelry.",
+            "Juju: ...she has WHAT?",
+            "Juju. Do not get any ideas.",
+          );
+        } else result.lines.push(def.intro);
         result.acceptedQuest = def;
         store.toast(`New quest: ${def.title}`, "#f4c95d");
         break;
