@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { store } from "../systems/store";
-import { resetControls } from "../systems/controls";
+import { resetControls, uiEvents, type MiniGameSpec } from "../systems/controls";
+import type { QuestActivityId } from "./QuestActivityScene";
 import { QUESTS } from "../data/quests";
 import type { SaveSlot } from "../systems/save";
 
@@ -13,6 +14,22 @@ export class TitleScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale.gameSize;
     resetControls();
+
+    if (import.meta.env.DEV) {
+      const query = new URLSearchParams(window.location.search);
+      const activity = query.get("debugActivity") as QuestActivityId | null;
+      const activities: QuestActivityId[] = ["shopping_spree", "apartment_1701", "chloe_thesis", "nour_visit", "fry_thief"];
+      if (activity && activities.includes(activity)) {
+        this.scene.start(SceneKeys.QuestActivity, { activity, mallId: "dubai_mall", returnLocation: "abudhabi_yas" });
+        return;
+      }
+      const mini = query.get("debugMini") as MiniGameSpec["kind"] | null;
+      const minis: MiniGameSpec["kind"][] = ["stairs", "salon", "coffee", "bouquet", "photo", "showdown", "shopping", "safe", "lab", "pitch", "lockpick", "badge_photo"];
+      if (mini && minis.includes(mini)) {
+        this.scene.launch(SceneKeys.UI);
+        this.time.delayedCall(80, () => uiEvents.emit("minigame", { kind: mini, title: `QA · ${mini}`, hint: "Development-only activity preview. A and touch controls should both work.", taps: 20, photoBuddy: "char_fadwa", photoTex: "o_fountain", onDone: () => store.toast("QA activity completed", "#7be0a3") } satisfies MiniGameSpec));
+      }
+    }
 
     // soft sky gradient
     const g = this.add.graphics();

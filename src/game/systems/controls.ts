@@ -13,7 +13,7 @@ export const controls = {
 export const uiEvents = new Phaser.Events.EventEmitter();
 
 export interface MiniGameSpec {
-  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick";
+  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo";
   title: string;
   hint: string;
   taps?: number;

@@ -29,6 +29,7 @@ export const ITEMS: Record<string, ItemDef> = {
   grandmas_jewelry: { id: "grandmas_jewelry", name: "Grandma's jewelry", desc: "Sparkly family treasure, acquired extremely theatrically.", kind: "keepsake", icon: "i_jewelry" },
   mamas_bangle: { id: "mamas_bangle", name: "Mama's gold bangles", desc: "A gleaming stack of gold bangles with a very long story.", kind: "keepsake", icon: "i_bangle" },
   home_sketch: { id: "home_sketch", name: "Home sketch", desc: "A tiny plan for a home that feels entirely yours.", kind: "keepsake", icon: "ui_star" },
+  adnoc_badge: { id: "adnoc_badge", name: "ADNOC employee badge", desc: "The photo is official. Whether it is reasonable is another matter.", kind: "keepsake", icon: "i_baba_card" },
 };
 
 export const itemById = (id: string) => ITEMS[id];

@@ -92,6 +92,41 @@ export const MESSAGES: MessageDef[] = [
     body: "it's late. text me when you're in bed. no i will not be normal about it",
     unlock: { flag: "night_walk" },
   },
+  {
+    id: "msg_adnoc_pressure",
+    sender: "Alya · ADNOC HQ",
+    body: "Can you come in tomorrow? Something is making a noise that definitely should not make a noise.",
+    questId: "q_adnoc_pressure_problem",
+    unlock: { questDone: "q_adnoc_engineer", flag: "adnoc_pressure_ready" },
+  },
+  {
+    id: "msg_adnoc_paperclip",
+    sender: "ADNOC HQ",
+    body: "Please attend a calm conversation about report ownership. Paperclips have been counted.",
+    questId: "q_adnoc_paperclip_incident",
+    unlock: { flag: "adnoc_paperclip_ready" },
+  },
+  {
+    id: "msg_adnoc_teamlead",
+    sender: "Alya · ADNOC HQ",
+    body: "Team Lead meeting. 9:00. Juju: blocked. Alya: you are leading it.",
+    questId: "q_adnoc_team_lead",
+    unlock: { flag: "adnoc_teamlead_ready" },
+  },
+  {
+    id: "msg_adnoc_control",
+    sender: "Operations",
+    body: "The control room would like to formally apologise in advance.",
+    questId: "q_adnoc_control_room",
+    unlock: { flag: "adnoc_control_ready" },
+  },
+  {
+    id: "msg_adnoc_board",
+    sender: "ADNOC Board",
+    body: "Executive Floor. One serious presentation. Slide 14 may not be only shawarma.",
+    questId: "q_adnoc_ceo",
+    unlock: { flag: "adnoc_ceo_ready" },
+  },
 ];
 
 export const messageById = (id: string) => MESSAGES.find((m) => m.id === id);

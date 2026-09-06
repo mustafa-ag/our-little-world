@@ -17,6 +17,7 @@ import { photoSpotsFor } from "../data/photos";
 import { capturePhoto, photoSpotReady } from "../systems/photos";
 import { companionComment, canCompanionTravel } from "../systems/companions";
 import { outfitReaction } from "../systems/outfitReactions";
+import { reunionBounce, worldEmote, worldSparkles } from "../systems/questJuice";
 import { buildHdGround, createVisualShadow, getVisualAssetDef, getVisualTexture, getWorldVisualTheme, type HdGroundLayer, type VisualShadowHandle, type WorldVisualTheme } from "../visual";
 
 interface Interactable {
@@ -61,8 +62,10 @@ export class WorldScene extends Phaser.Scene {
   private questArrow?: Phaser.GameObjects.Text;
   private questArrowLabel?: Phaser.GameObjects.Text;
   private companionNpc?: NPC;
+  private companionInteractable?: Interactable;
   private ideaDialogueHandler?: () => void;
   private transformDialogueHandler?: () => void;
+  private storyDialogueHandler?: () => void;
 
   constructor() {
     super(SceneKeys.World);
@@ -88,6 +91,7 @@ export class WorldScene extends Phaser.Scene {
     this.questArrow = undefined;
     this.questArrowLabel = undefined;
     this.companionNpc = undefined;
+    this.companionInteractable = undefined;
     this.arriveAt = this.time.now + 600;
     controls.locked = false;
     controls.moveX = 0;
@@ -139,6 +143,9 @@ export class WorldScene extends Phaser.Scene {
     }
     this.player = new Player(this, spawn.x, spawn.y, getVisualTexture(this, "char_her"), this.visualTheme.lighting);
     this.player.setDepth(spawn.y);
+    const arrivalScale = this.player.scaleX;
+    this.player.setAlpha(0).setScale(arrivalScale * 0.78);
+    this.tweens.add({ targets: this.player, alpha: 1, scaleX: arrivalScale, scaleY: arrivalScale, y: spawn.y - 3, duration: 360, ease: "Back.out", onComplete: () => this.player.setY(spawn.y) });
     this.baseSpeed = this.player.speed;
     this.spawnActiveCompanion(spawn.x, spawn.y);
 
@@ -264,6 +271,11 @@ export class WorldScene extends Phaser.Scene {
           store.addCoins(1);
           store.addItem("flower");
           this.petalBurst(c.x, c.y);
+          if (c.id.endsWith("1") || Phaser.Math.Between(0, 4) === 0) {
+            const butterfly = this.add.text(c.x, c.y - 8, "ʚɞ", { fontFamily: "monospace", fontSize: "12px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(c.y + 12);
+            this.tweens.add({ targets: butterfly, x: butterfly.x + 42, y: butterfly.y - 38, angle: 18, alpha: 0, duration: 1300, ease: "Sine.inOut", onComplete: () => butterfly.destroy() });
+            worldEmote(this, this.player.x, this.player.y - 28, "oh!", "#fff4e6");
+          }
           quests.onCollect(c.tag);
           if (store.getItemQuantity("flower") >= 3 && !store.hasDaily("bouquet_offer")) {
             store.setDaily("bouquet_offer");
@@ -300,6 +312,49 @@ export class WorldScene extends Phaser.Scene {
             this.openSiblingShowdown(def, npc);
             return;
           }
+          if (def.id === "nour" && ["nour", "nour_snacks"].includes(quests.currentStep("q_nour")?.target ?? "")) {
+            uiEvents.emit("sceneReset");
+            this.scene.start(SceneKeys.QuestActivity, { activity: "nour_visit", returnLocation: this.locationId });
+            return;
+          }
+          if (def.id === "chloe" && ["chloe", "chloe_thesis"].includes(quests.currentStep("q_chloe")?.target ?? "")) {
+            uiEvents.emit("sceneReset");
+            this.scene.start(SceneKeys.QuestActivity, { activity: "chloe_thesis", returnLocation: this.locationId });
+            return;
+          }
+          if (def.id === "rhiannon" && quests.currentStep("q_edinburgh")?.target === "rhiannon") {
+            this.playEdiReunion(def, npc);
+            return;
+          }
+          if (def.id === "fadwa" && quests.currentStep("q_london")?.target === "fadwa") {
+            if (!["london_clue_scarf", "london_clue_tea", "london_clue_heart"].every((flag) => store.hasFlag(flag))) {
+              worldEmote(this, npc.x, npc.y - 28, "?");
+              uiEvents.emit("dialogue", "Fadwa", ["You found me too early! Follow the three pink sister clues around the West End first."]);
+              return;
+            }
+            this.playFamilyHandoff(def, npc, "fadwa");
+            return;
+          }
+          if (def.id === "mama" && quests.currentStep("q_flowers")?.target === "bouquet") {
+            this.offerBouquet();
+            return;
+          }
+          if (def.id === "mama" && quests.currentStep("q_flowers")?.target === "mama") {
+            this.playFamilyHandoff(def, npc, "mama");
+            return;
+          }
+          if (def.id === "moomoo" && quests.currentStep("q_date")?.target === "moomoo") {
+            this.playFamilyHandoff(def, npc, "coffee_pair");
+            return;
+          }
+          if (def.id === "moomoo" && quests.currentStep("q_coffee_run")?.target === "moomoo:coffee" && store.getItemQuantity("coffee") > 0) {
+            store.removeItem("coffee");
+            const done = quests.onGive("moomoo", "coffee");
+            this.animateGift(this.player.x, this.player.y - 12, npc.x, npc.y - 12, "☕");
+            worldEmote(this, npc.x, npc.y - 30, "♥", "#ffdbe7");
+            uiEvents.emit("dialogue", "Moomoo", ["Warm. Two sugars. Exactly my order.", "You remembered without asking. Come sit—everything else can wait.", done?.complete ?? "Perfect."]);
+            return;
+          }
           const lines = linesFor(def.id, def.dialogue);
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
           const styleNote = outfitReaction(def.id);
@@ -307,6 +362,7 @@ export class WorldScene extends Phaser.Scene {
           const startsHeist = res.acceptedQuest?.id === "q_family_jewel_heist";
           uiEvents.emit("dialogue", def.name, res.lines, startsHeist ? undefined : { npcId: def.id });
           if (startsHeist) this.startPirateIdea();
+          if (res.acceptedQuest?.id === "q_baba_card") this.spawnBabaCard(npc.x, npc.y);
         },
       });
     };
@@ -325,22 +381,29 @@ export class WorldScene extends Phaser.Scene {
   private placeQuestObjects() {
     if (this.locationId === "abudhabi_yas" && quests.currentStep("q_baba_card")?.target === "take_baba_card") {
       const baba = NPCS.find((npc) => npc.id === "baba");
-      if (baba) {
-        const pos = npcWorldPos(baba);
-        const card = this.add.image(pos.x + 24, pos.y + 2, "i_baba_card").setDepth(pos.y + 3);
-        this.tweens.add({ targets: card, y: card.y - 4, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-        this.interactables.push({
-          x: card.x,
-          y: card.y,
-          radius: 22,
-          prompt: "Take Baba's card",
-          trigger: () => {
-            card.destroy();
-            store.addItem("baba_card");
-            quests.onInteract("take_baba_card");
-            uiEvents.emit("dialogue", "Juju", ["No reason. Completely normal mall errand incoming."]);
-          },
-        });
+      if (baba) { const pos = npcWorldPos(baba); this.spawnBabaCard(pos.x, pos.y); }
+    }
+
+    if (this.locationId === "london_westend" && quests.currentStep("q_london")?.target === "fadwa") {
+      const fadwa = NPCS.find((npc) => npc.id === "fadwa");
+      const target = fadwa ? npcWorldPos(fadwa) : { x: this.worldW * 0.55, y: this.worldH * 0.45 };
+      const clues = [
+        { flag: "london_clue_scarf", x: target.x - 155, y: target.y + 100, icon: "~", name: "Fadwa's dramatic scarf clue" },
+        { flag: "london_clue_tea", x: target.x + 120, y: target.y + 80, icon: "☕", name: "A suspicious sister tea clue" },
+        { flag: "london_clue_heart", x: target.x - 70, y: target.y - 105, icon: "♥", name: "The final sister clue" },
+      ];
+      for (const clue of clues) {
+        if (store.hasFlag(clue.flag)) continue;
+        const marker = this.add.text(clue.x, clue.y, clue.icon, { fontFamily: "monospace", fontSize: "19px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 6, y: 4 }, resolution: 2 }).setOrigin(0.5).setDepth(clue.y + 5);
+        this.tweens.add({ targets: marker, y: clue.y - 6, duration: 620, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+        const it: Interactable = { x: clue.x, y: clue.y, radius: 25, tag: clue.flag, prompt: `Inspect ${clue.name}`, trigger: () => {
+          store.setFlag(clue.flag);
+          marker.destroy();
+          this.interactables = this.interactables.filter((candidate) => candidate !== it);
+          worldSparkles(this, clue.x, clue.y, "♥");
+          store.toast(`${clue.name} ✓`, "#ff8fae");
+        } };
+        this.interactables.push(it);
       }
     }
 
@@ -369,6 +432,34 @@ export class WorldScene extends Phaser.Scene {
         },
       });
     }
+  }
+
+  private spawnBabaCard(x: number, y: number) {
+    if (this.interactables.some((it) => it.tag === "take_baba_card")) return;
+    const card = this.add.image(x + 7, y - 8, "i_baba_card").setDepth(y + 3);
+    this.tweens.add({ targets: card, y: card.y - 4, duration: 700, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const cardIt: Interactable = {
+      x,
+      y,
+      radius: 22,
+      tag: "take_baba_card",
+      prompt: "Ask Baba for the card",
+      trigger: () => {
+        this.interactables = this.interactables.filter((it) => it !== cardIt);
+        controls.locked = true;
+        worldEmote(this, x, y - 34, "!!!", "#ffe08a");
+        this.cameras.main.shake(80, 0.003);
+        this.tweens.add({ targets: card, x: this.player.x, y: this.player.y - 12, angle: 360, scale: 1.35, duration: 650, ease: "Back.inOut", onComplete: () => {
+          card.destroy();
+          store.addItem("baba_card");
+          quests.onInteract("take_baba_card");
+          worldSparkles(this, this.player.x, this.player.y - 14);
+          controls.locked = false;
+          uiEvents.emit("dialogue", "Baba", ["One sensible thing. One.", "Juju acquired BABA'S CARD.", "Baba's stress level: already detectable from space."]);
+        } });
+      },
+    };
+    this.interactables.push(cardIt);
   }
 
   private startPirateIdea() {
@@ -402,6 +493,52 @@ export class WorldScene extends Phaser.Scene {
     };
     this.ideaDialogueHandler = begin;
     uiEvents.once("dialogueClosed", begin);
+  }
+
+  private playFamilyHandoff(def: (typeof NPCS)[number], npc: NPC, kind: "fadwa" | "mama" | "coffee_pair") {
+    const lines = linesFor(def.id, def.dialogue);
+    const res = quests.onTalk(def.id, lines);
+    if (kind === "fadwa") {
+      store.unlockCompanion("fadwa");
+      store.setActiveCompanion("fadwa");
+      reunionBounce(this, this.player, npc.sprite);
+      worldEmote(this, npc.x, npc.y - 33, "JUJU!", "#ffdbe7");
+      uiEvents.emit("dialogue", def.name, ["There she is. Fadwa runs in before either sister remembers to act normal.", "Hug. Spin. Almost fall over. Recover with dignity.", ...res.lines], { npcId: def.id });
+      return;
+    }
+    if (kind === "mama") {
+      this.animateGift(this.player.x, this.player.y - 13, npc.x, npc.y - 14, "✿");
+      reunionBounce(this, this.player, npc.sprite);
+      worldEmote(this, npc.x, npc.y - 34, "♥", "#ffdbe7");
+      uiEvents.emit("dialogue", def.name, ["Mama holds the bouquet up to the light. One petal lands on her nose.", "Big hug. Bouquet still visible, because she is not putting it down.", ...res.lines], { npcId: def.id });
+      return;
+    }
+    this.animateGift(this.player.x - 5, this.player.y - 14, npc.x - 5, npc.y - 14, "☕");
+    this.animateGift(this.player.x + 6, this.player.y - 14, npc.x + 6, npc.y - 14, "☕", 130);
+    worldEmote(this, npc.x, npc.y - 34, "♥", "#ffdbe7");
+    this.tweens.add({ targets: npc.sprite, scaleX: 1.35, scaleY: 1.35, duration: 180, yoyo: true, repeat: 1, ease: "Back.out" });
+    uiEvents.emit("dialogue", def.name, ["Two coffees arrive safely. This is frankly the most impressive part.", "Moomoo takes both, then gives one straight back.", ...res.lines], { npcId: def.id });
+  }
+
+  private animateGift(fromX: number, fromY: number, toX: number, toY: number, symbol: string, delay = 0) {
+    const gift = this.add.text(fromX, fromY, symbol, { fontFamily: "monospace", fontSize: "18px", color: "#fff4e6", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 }).setOrigin(0.5).setDepth(Math.max(fromY, toY) + 80).setScale(0.7);
+    this.tweens.add({ targets: gift, x: toX, y: toY - 8, scale: 1.15, angle: 8, delay, duration: 650, ease: "Sine.inOut", onComplete: () => {
+      worldSparkles(this, toX, toY - 10, symbol === "✿" ? "✿" : "♥");
+      this.tweens.add({ targets: gift, alpha: 0, y: gift.y - 8, duration: 300, onComplete: () => gift.destroy() });
+    } });
+  }
+
+  private playEdiReunion(def: (typeof NPCS)[number], npc: NPC) {
+    const res = quests.onTalk(def.id, linesFor(def.id, def.dialogue));
+    reunionBounce(this, this.player, npc.sprite);
+    const umbrella = this.add.text((this.player.x + npc.x) / 2, Math.min(this.player.y, npc.y) - 40, "☂", { fontFamily: "monospace", fontSize: "34px", color: "#e46d94", stroke: "#3a2b3a", strokeThickness: 4, resolution: 2 }).setOrigin(0.5).setDepth(Math.max(this.player.y, npc.y) + 80).setAngle(-8);
+    this.tweens.add({ targets: umbrella, angle: 8, duration: 320, yoyo: true, repeat: 3, ease: "Sine.inOut", onComplete: () => this.tweens.add({ targets: umbrella, alpha: 0, y: umbrella.y - 12, duration: 450, onComplete: () => umbrella.destroy() }) });
+    for (let i = 0; i < 15; i += 1) {
+      const rain = this.add.text(this.player.x + Phaser.Math.Between(-70, 70), this.player.y - Phaser.Math.Between(45, 100), "|", { fontFamily: "monospace", fontSize: "10px", color: "#bfe6ff", resolution: 2 }).setDepth(this.player.y + 70);
+      this.tweens.add({ targets: rain, x: rain.x - 12, y: rain.y + 80, alpha: 0, delay: i * 35, duration: 600, onComplete: () => rain.destroy() });
+    }
+    worldEmote(this, npc.x, npc.y - 34, "JUJU!", "#dff3ff");
+    uiEvents.emit("dialogue", def.name, ["Rhiannon spots Juju. The reunion hug begins before the rain can finish arriving.", "One umbrella opens backwards. Nobody acknowledges it.", ...res.lines], { npcId: def.id });
   }
 
   private ideaSparkle(x: number, y: number, delay: number) {
@@ -446,11 +583,29 @@ export class WorldScene extends Phaser.Scene {
     const companion = new NPC(this, def, this.visualTheme.lighting);
     companion.place(x - 22, y + 8);
     this.companionNpc = companion;
+    const companionInteractable: Interactable = {
+      x: companion.x,
+      y: companion.y,
+      radius: 26,
+      tag: def.id,
+      npc: companion,
+      prompt: `Talk to ${def.name}`,
+      trigger: () => {
+        companion.faceTowards(this.player.x, this.player.y);
+        const res = quests.onTalk(def.id, linesFor(def.id, def.dialogue));
+        worldEmote(this, companion.x, companion.y - 30, res.completedQuest ? "♥" : "☺", "#ffdbe7");
+        uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
+      },
+    };
+    this.companionInteractable = companionInteractable;
+    this.interactables.push(companionInteractable);
   }
 
   private refreshCompanion() {
+    if (this.companionInteractable) this.interactables = this.interactables.filter((it) => it !== this.companionInteractable);
     this.companionNpc?.destroy();
     this.companionNpc = undefined;
+    this.companionInteractable = undefined;
     if (this.player) this.spawnActiveCompanion(this.player.x, this.player.y);
   }
 
@@ -539,6 +694,7 @@ export class WorldScene extends Phaser.Scene {
       switch (z.action) {
         case "cafe":
           if (z.tag === "dubai_mall" || z.tag === "dubai_hills_mall") {
+            quests.onInteract(z.tag);
             this.enterMall(z.tag);
             break;
           }
@@ -581,7 +737,14 @@ export class WorldScene extends Phaser.Scene {
                 quests.onInteract("hudayriyat_trucks");
                 store.addItem(itemId);
                 store.advanceTime();
-                uiEvents.emit("dialogue", "Hudayriyat", ["Order up. Food trucks by the water were the plan."]);
+                this.storyDialogueHandler = () => {
+                  this.storyDialogueHandler = undefined;
+                  if (!this.sys.isActive() || quests.currentStep("q_hudayriyat")?.target !== "fry_thief") return;
+                  uiEvents.emit("sceneReset");
+                  this.scene.start(SceneKeys.QuestActivity, { activity: "fry_thief", returnLocation: this.locationId });
+                };
+                uiEvents.once("dialogueClosed", this.storyDialogueHandler);
+                uiEvents.emit("dialogue", "Hudayriyat", ["Order up. Food trucks by the water were the plan.", "A seagull has also reviewed the menu and selected: your fries."]);
               },
             });
             break;
@@ -631,15 +794,22 @@ export class WorldScene extends Phaser.Scene {
         case "stairs": {
           const d = (z.data as { name?: string; tag?: string }) ?? {};
           const brown = d.tag === "well_court";
+          if (z.tag === "residences_t8" && ["residences_t8", "apartment_1701_package"].includes(quests.currentStep("q_residences")?.target ?? "")) {
+            if (quests.currentStep("q_residences")?.target === "residences_t8") quests.onInteract("residences_t8");
+            uiEvents.emit("sceneReset");
+            this.scene.start(SceneKeys.QuestActivity, { activity: "apartment_1701", returnLocation: this.locationId });
+            break;
+          }
           uiEvents.emit("minigame", {
             kind: "stairs",
             title: d.name ?? "Stairs",
             hint: brown
-              ? "20 steps. 13 seconds. There is no skip button in this building."
+              ? "Hit A inside the bright timing zone. The girls are already racing."
               : "Climb quickly to the lobby.",
             taps: brown ? 20 : 10,
             onDone: () => {
-              if (z.tag) quests.onInteract(z.tag);
+              if (brown) quests.onMinigame("well_court_race");
+              else if (z.tag) quests.onInteract(z.tag);
               if (brown) store.unlockMemory("mem_well_court");
               this.scene.start(SceneKeys.House, {
                 title: d.name ?? "Inside",
@@ -650,16 +820,19 @@ export class WorldScene extends Phaser.Scene {
           break;
         }
         case "salon": {
-          if (z.tag) quests.onInteract(z.tag);
           uiEvents.emit("minigame", {
             kind: "salon",
             title: "Saadiyat",
             hint: "Nails or brows. Tap along — or skip if she's not in the mood.",
             taps: 10,
             skipLabel: "Skip",
-            onDone: () => {
-              store.addHearts(1);
-              uiEvents.emit("dialogue", "Saadiyat", ["Fresh set. Eyebrows neat. She looks so pretty."]);
+            onDone: (ok?: boolean) => {
+              if (z.tag) quests.onInteract(z.tag);
+              if (ok) {
+                store.addHearts(1);
+                store.setDaily("saadiyat_glow");
+              }
+              uiEvents.emit("dialogue", "Saadiyat", ok ? ["The reveal mirror turns. Tiny sparkle. Big glow.", "She looks so pretty."] : ["No appointment today. Just a slow Saadiyat walk and the same glow anyway."]);
             },
           });
           break;
@@ -684,7 +857,11 @@ export class WorldScene extends Phaser.Scene {
             (title.toLowerCase().includes("fountain") && this.textures.exists("o_fountain") ? "o_fountain" : undefined) ||
             (loc.landmark && this.textures.exists(loc.landmark) ? loc.landmark : undefined) ||
             (this.textures.exists("o_fountain") ? "o_fountain" : "ui_heart");
-          const buddyId = store.state.lastPassenger ?? "moomoo";
+          const buddyId = photoTag === "bigben" ? "fadwa" : (store.state.lastPassenger ?? "moomoo");
+          if (photoTag === "bigben") {
+            store.unlockCompanion("fadwa");
+            store.setActiveCompanion("fadwa");
+          }
           uiEvents.emit("minigame", {
             kind: "photo",
             title: title,
@@ -768,44 +945,10 @@ export class WorldScene extends Phaser.Scene {
 
   private useOffice(tag?: string) {
     if (tag !== "adnoc_hq") return;
-    const engineerStep = quests.currentStep("q_adnoc_engineer")?.target;
-    if (engineerStep === "adnoc_lab") {
-      uiEvents.emit("minigame", {
-        kind: "lab",
-        title: "ADNOC HQ · SAMPLE CHECK",
-        hint: "Balance the tiny blue samples. Calm hands, clear notes, chemical-engineer energy.",
-        taps: 12,
-        skipLabel: "Submit notes",
-        onDone: () => {
-          quests.onInteract("adnoc_lab");
-          store.advanceTime();
-          uiEvents.emit("dialogue", "Alya", ["Clean results. Take these to the recruiter."]);
-        },
-      });
-      return;
-    }
-    const ceoStep = quests.currentStep("q_adnoc_ceo")?.target;
-    if (ceoStep === "adnoc_boardroom") {
-      uiEvents.emit("minigame", {
-        kind: "pitch",
-        title: "BLUE BOARDROOM PITCH",
-        hint: "Tap through the slides: safer systems, smarter labs, and a very compelling snack budget.",
-        taps: 14,
-        skipLabel: "Present",
-        onDone: () => {
-          quests.onInteract("adnoc_boardroom");
-          uiEvents.emit("dialogue", "Boardroom", ["The board has never seen a slide about snacks this persuasive."]);
-        },
-      });
-      return;
-    }
-    if (ceoStep === "adnoc_rooftop") {
-      const done = quests.onInteract("adnoc_rooftop");
-      uiEvents.emit("dialogue", "ADNOC HQ rooftop", ["The city looks very blue from up here.", done?.complete ?? "One more big step."]);
-      return;
-    }
-    const title = store.state.career === "ceo" ? "CEO Juju" : store.state.career === "chemical_engineer" ? "Chemical Engineer Juju" : "Future Chemical Engineer Juju";
-    uiEvents.emit("dialogue", "ADNOC HQ", [`${title}. The petrol station is for refuelling; this is where the big ideas happen.`]);
+    if (quests.currentStep("q_adnoc_engineer")?.target === "adnoc_hq") quests.onInteract("adnoc_hq");
+    store.setInJeep(false);
+    uiEvents.emit("sceneReset");
+    this.scene.start(SceneKeys.AdnocHQ, { floor: "ground" });
   }
 
   private enterMall(mallId: "dubai_mall" | "dubai_hills_mall" | "yas_mall") {
@@ -1008,14 +1151,17 @@ export class WorldScene extends Phaser.Scene {
   private onShutdown() {
     if (this.ideaDialogueHandler) uiEvents.off("dialogueClosed", this.ideaDialogueHandler);
     if (this.transformDialogueHandler) uiEvents.off("dialogueClosed", this.transformDialogueHandler);
+    if (this.storyDialogueHandler) uiEvents.off("dialogueClosed", this.storyDialogueHandler);
     this.ideaDialogueHandler = undefined;
     this.transformDialogueHandler = undefined;
+    this.storyDialogueHandler = undefined;
     this.groundLayer?.destroy();
     this.groundLayer = undefined;
     this.rideJeepShadow?.destroy();
     this.parkedJeepShadow?.destroy();
     this.companionNpc?.destroy();
     this.companionNpc = undefined;
+    this.companionInteractable = undefined;
     minimap.on = false;
     this.closeDriveMenu();
     uiEvents.off("action", this.tryInteract, this);
@@ -1076,13 +1222,19 @@ export class WorldScene extends Phaser.Scene {
       }
       this.companionNpc.faceTowards(this.player.x, this.player.y);
       this.companionNpc.update(time);
+      if (this.companionInteractable) {
+        this.companionInteractable.x = this.companionNpc.x;
+        this.companionInteractable.y = this.companionNpc.y;
+      }
     }
 
     if (!this.driving && !this.transitioning) {
       let best: Interactable | null = null;
       let bestD = Infinity;
+      const canTalkToCompanion = !!this.companionNpc && quests.activeQuests().some((q) => q.step.type === "talk" && q.step.target === this.companionNpc?.def.id);
       for (const it of this.interactables) {
         if (it === this.jeepSpot && time < this.jeepReadyAt) continue;
+        if (it === this.companionInteractable && !canTalkToCompanion) continue;
         const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y);
         if (d <= it.radius && d < bestD) {
           best = it;

@@ -332,6 +332,7 @@ class Store extends Phaser.Events.EventEmitter {
   // ---- furniture ----
   placeFurniture(f: PlacedFurniture) {
     this.state.furniture.push(f);
+    this.emit("furniturePlaced", f);
     this.save();
   }
 
@@ -433,6 +434,15 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   // ---- companions ----
+  unlockCompanion(id: string) {
+    if (this.state.unlockedCompanions.includes(id)) return false;
+    this.state.unlockedCompanions.push(id);
+    this.emit("companionUnlocked", id);
+    this.emit("toast", `${npcName(id)} can now travel with Juju`, "#ff8fae");
+    this.save();
+    return true;
+  }
+
   setActiveCompanion(id?: string) {
     if (id && !this.state.unlockedCompanions.includes(id)) return false;
     this.state.activeCompanionId = id;

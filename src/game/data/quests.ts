@@ -1,4 +1,6 @@
 // ---------------------------------------------------------------------------
+
+import type { AdnocRank } from "./adnoc";
 // Cute little side quests. Each quest is a list of steps that complete in
 // order. EDIT ME to invent your own real-life adventures together.
 //
@@ -50,6 +52,9 @@ export interface QuestDef {
   rewardItem?: string;
   rewardCareer?: "chemical_engineer" | "ceo";
   requiresQuests?: string[];
+  requiresAdnocRank?: AdnocRank;
+  requiresAdnocXp?: number;
+  requiresAdnocWorkdays?: number;
 }
 
 export const QUESTS: QuestDef[] = [
@@ -60,8 +65,14 @@ export const QUESTS: QuestDef[] = [
     intro: "ADNOC HQ called, habibti. They need a chemical engineer with a calm head and your very specific kind of brilliance.",
     steps: [
       { type: "visit", target: "abudhabi_city", hint: "Travel to Abu Dhabi City and find ADNOC HQ" },
-      { type: "interact", target: "adnoc_lab", hint: "Complete the sample check at ADNOC HQ" },
-      { type: "talk", target: "adnoc_recruiter", hint: "Tell the recruiter the results" },
+      { type: "interact", target: "adnoc_hq", hint: "Enter ADNOC HQ for Juju's first day" },
+      { type: "talk", target: "adnoc_reception", hint: "Report to reception with a confident department" },
+      { type: "playMinigame", target: "adnoc_badge_photo", hint: "Survive the employee badge camera" },
+      { type: "interact", target: "adnoc_engineering_floor", hint: "Use the elevator and find Engineering" },
+      { type: "interact", target: "adnoc_desk", hint: "Find Juju's hilariously empty desk" },
+      { type: "playMinigame", target: "adnoc_sample_sort", hint: "Sort the fictional samples in the lab" },
+      { type: "interact", target: "adnoc_results", hint: "Carry the results to Alya" },
+      { type: "talk", target: "adnoc_manager", hint: "Give Alya the report" },
     ],
     complete: "Badge printed. Lab coat fitted. Chemical Engineer Juju has officially entered the chat.",
     rewardHearts: 4,
@@ -74,9 +85,9 @@ export const QUESTS: QuestDef[] = [
     giver: "baba",
     intro: "Why are you looking at my wallet like that? ...Juju. Fine. Take the card, but only for something sensible.",
     steps: [
-      { type: "interact", target: "take_baba_card", hint: "Pick up Baba's card near Yas Magnolias" },
+      { type: "interact", target: "take_baba_card", hint: "Let Baba very reluctantly hand over his card" },
       { type: "interact", target: "enter_mall", hint: "Take Baba's card to Dubai Mall, Dubai Hills Mall, or Yas Mall" },
-      { type: "interact", target: "mall_fashion", hint: "Reach the fashion area" },
+      { type: "interact", target: "mall_fashion", hint: "Choose the first sensible shopping look" },
     ],
     complete: "One tiny bag is acceptable. The second quest is absolutely not my idea.",
     rewardHearts: 2,
@@ -90,7 +101,8 @@ export const QUESTS: QuestDef[] = [
     giver: "moomoo",
     intro: "Grab us two coffees from Dubai Mall — that's Downtown, under the Burj — then bring them all the way back here to Silicon Oasis 🤍",
     steps: [
-      { type: "interact", target: "dubai_mall", hint: "Get coffee at Dubai Mall (Downtown)" },
+      { type: "interact", target: "dubai_mall", hint: "Reach Dubai Mall in Downtown" },
+      { type: "playMinigame", target: "mall_coffee_pair", hint: "Make two coffees at Fountain Coffee" },
       { type: "talk", target: "moomoo", hint: "Bring the coffee back to Silicon Oasis" },
     ],
     complete: "Perfect. Two coffees, and a whole little world just for us.",
@@ -108,6 +120,7 @@ export const QUESTS: QuestDef[] = [
     intro: "Would you pick me 3 flowers from the garden, habibti?",
     steps: [
       { type: "collect", target: "flower", count: 3, hint: "Pick flowers around Damac Lagoons" },
+      { type: "playMinigame", target: "bouquet", hint: "Arrange Mama's bouquet and choose a ribbon" },
       { type: "talk", target: "mama", hint: "Give the flowers to Mama" },
     ],
     complete: "Oh they're beautiful! You always know how to make me smile.",
@@ -116,7 +129,6 @@ export const QUESTS: QuestDef[] = [
     rewardNpc: "mama",
     rewardRel: 8,
     rewardMemory: "mem_mama_flowers",
-    rewardItem: "bouquet",
   },
   {
     id: "q_baba_spree",
@@ -140,7 +152,8 @@ export const QUESTS: QuestDef[] = [
     intro: "Your Downtown apartment — The Residences, Tower 8, 1701 — I left something by the door. Go see?",
     steps: [
       { type: "visit", target: "dubai_downtown", hint: "Go to Downtown Dubai" },
-      { type: "interact", target: "cafe", hint: "Stop by Dubai Mall while you're there" },
+      { type: "interact", target: "residences_t8", hint: "Enter The Residences, Tower 8" },
+      { type: "interact", target: "apartment_1701_package", hint: "Ride to 17 and find apartment 1701" },
     ],
     complete: "Home is wherever you are. Even on the 17th floor.",
     rewardHearts: 2,
@@ -156,7 +169,7 @@ export const QUESTS: QuestDef[] = [
     intro: "Fadwa misses you. Fly over to London — she's in the West End, not by Big Ben.",
     steps: [
       { type: "visit", target: "london", hint: "Fly to London" },
-      { type: "talk", target: "fadwa", hint: "Find Fadwa in the West End" },
+      { type: "talk", target: "fadwa", hint: "Follow the sister clues and find Fadwa in the West End" },
     ],
     complete: "Sister time is the best time. London's always better with family.",
     rewardHearts: 3,
@@ -169,6 +182,7 @@ export const QUESTS: QuestDef[] = [
     id: "q_westminster",
     title: "Big Ben with Fadwa",
     giver: "fadwa",
+    requiresQuests: ["q_london"],
     intro: "Walk west to Westminster with me — I want a photo in front of Big Ben.",
     steps: [
       { type: "visit", target: "london_westminster", hint: "Walk west to Westminster" },
@@ -191,7 +205,7 @@ export const QUESTS: QuestDef[] = [
     steps: [
       { type: "talk", target: "rhiannon", hint: "Find Rhiannon in Old Town" },
       { type: "visit", target: "edinburgh_dean", hint: "Walk west to Dean Village" },
-      { type: "interact", target: "well_court", hint: "Climb the stairs at 18 Well Court (or skip)" },
+      { type: "playMinigame", target: "well_court_race", hint: "Race the girls up 18 Well Court's stairs" },
     ],
     complete: "Reunited! Royal Mile stroll and cuppas, just like old times.",
     rewardHearts: 2,
@@ -208,6 +222,7 @@ export const QUESTS: QuestDef[] = [
     steps: [
       { type: "visit", target: "germany", hint: "Travel to Frankfurt" },
       { type: "talk", target: "nour", hint: "Find Nour's flat" },
+      { type: "playMinigame", target: "nour_snacks", hint: "Catch Nour's flying snacks (optional)" },
     ],
     complete: "He's so happy you came. Family, no matter the distance 🤍",
     rewardHearts: 3,
@@ -224,6 +239,7 @@ export const QUESTS: QuestDef[] = [
     steps: [
       { type: "visit", target: "leicester", hint: "Travel to Oadby" },
       { type: "talk", target: "chloe", hint: "Find Chloe" },
+      { type: "playMinigame", target: "chloe_thesis", hint: "Chase down Chloe's escaped thesis pages" },
     ],
     complete: "She screamed. In a good way. Tea was, in fact, on her.",
     rewardHearts: 2,
@@ -254,6 +270,7 @@ export const QUESTS: QuestDef[] = [
     steps: [
       { type: "visit", target: "abudhabi_hudayriyat", hint: "Drive to Hudayriyat" },
       { type: "interact", target: "hudayriyat_trucks", hint: "Eat at the food trucks" },
+      { type: "playMinigame", target: "fry_thief", hint: "Defend the fries from one ambitious seagull" },
     ],
     complete: "Best drive. Best trucks. Best you.",
     rewardHearts: 2,
@@ -314,6 +331,7 @@ export const QUESTS: QuestDef[] = [
     id: "q_coffee_run",
     title: "His order",
     giver: "moomoo",
+    requiresQuests: ["q_date"],
     intro: "You already know. Two coffees. Make them properly this time — I'll taste the difference.",
     steps: [
       { type: "playMinigame", target: "coffee", hint: "Make coffee at Saddle or any cafe" },
@@ -351,6 +369,99 @@ export const QUESTS: QuestDef[] = [
     rewardRel: 12,
   },
   {
+    id: "q_adnoc_pressure_problem",
+    title: "The Pressure Problem",
+    giver: "adnoc_recruiter",
+    requiresQuests: ["q_adnoc_engineer"],
+    requiresAdnocRank: "chemical_engineer",
+    requiresAdnocXp: 30,
+    requiresAdnocWorkdays: 2,
+    intro: "Something in Operations is making a noise that definitely should not make a noise. Please bring your calm head.",
+    steps: [
+      { type: "interact", target: "adnoc_pressure_alarm", hint: "Answer the Operations Floor alarm" },
+      { type: "playMinigame", target: "adnoc_pressure_pipe", hint: "Route the blinking fictional pipe network" },
+      { type: "playMinigame", target: "adnoc_pressure_valves", hint: "Race through the valve sequence" },
+      { type: "playMinigame", target: "adnoc_pressure_console", hint: "Hit the final emergency console" },
+    ],
+    complete: "Everything is quiet. Except one tiny psssss. Senior Engineer Juju handled that too.",
+    rewardHearts: 4,
+    rewardCoins: 30,
+  },
+  {
+    id: "q_adnoc_paperclip_incident",
+    title: "The Paperclip Incident",
+    giver: "adnoc_recruiter",
+    requiresQuests: ["q_adnoc_pressure_problem"],
+    requiresAdnocRank: "senior_engineer",
+    requiresAdnocXp: 70,
+    requiresAdnocWorkdays: 4,
+    intro: "Rami has presented your report as 'our report.' Also, he has weaponised one paperclip. This has become an HR-shaped cartoon.",
+    steps: [
+      { type: "interact", target: "adnoc_paperclip_start", hint: "Confront the Credit Stealer near the cubicles" },
+      { type: "playMinigame", target: "adnoc_paperclip_boss", hint: "Deflate Rami's ego with harmless paperclips" },
+      { type: "playMinigame", target: "adnoc_rival_problem", hint: "Fix the work Rami never understood" },
+      { type: "interact", target: "adnoc_move_plant", hint: "Move the tiny plant to Juju's new team-lead desk" },
+    ],
+    complete: "His position was open for almost four seconds. Team Lead Juju has the desk—and the plant.",
+    rewardHearts: 5,
+    rewardCoins: 38,
+  },
+  {
+    id: "q_adnoc_team_lead",
+    title: "Team Lead for a Day",
+    giver: "adnoc_recruiter",
+    requiresQuests: ["q_adnoc_paperclip_incident"],
+    requiresAdnocRank: "team_lead",
+    requiresAdnocXp: 100,
+    requiresAdnocWorkdays: 5,
+    intro: "Four people need help, the printer is blinking, and a meeting has achieved sentience. Welcome to leadership.",
+    steps: [
+      { type: "interact", target: "adnoc_team_lead_start", hint: "Start the team-lead rush" },
+      { type: "playMinigame", target: "adnoc_team_lead_tasks", hint: "Solve four team problems before the meeting grows" },
+    ],
+    complete: "The team survived, morale survived, and the printer is considering its choices. Engineering Manager Juju.",
+    rewardHearts: 5,
+    rewardCoins: 45,
+  },
+  {
+    id: "q_adnoc_control_room",
+    title: "The Control Room Gauntlet",
+    giver: "adnoc_recruiter",
+    requiresQuests: ["q_adnoc_team_lead"],
+    requiresAdnocRank: "engineering_manager",
+    requiresAdnocXp: 145,
+    requiresAdnocWorkdays: 7,
+    intro: "Several completely fictional systems are cascading. Operations has asked whether you can do the impossible before lunch.",
+    steps: [
+      { type: "interact", target: "adnoc_control_start", hint: "Enter the maintenance corridor" },
+      { type: "playMinigame", target: "adnoc_steam_corridor", hint: "Dodge the corridor's dramatic steam bursts" },
+      { type: "playMinigame", target: "adnoc_control_circuits", hint: "Repair three abstract circuit routes" },
+      { type: "playMinigame", target: "adnoc_control_memory", hint: "Repeat the control-room light sequence" },
+      { type: "playMinigame", target: "adnoc_console_race", hint: "Race to the final locked console" },
+    ],
+    complete: "The countdown stopped. The coffee machine produced one perfect cup. Director Juju accepts both outcomes.",
+    rewardHearts: 6,
+    rewardCoins: 58,
+  },
+  {
+    id: "q_adnoc_director",
+    title: "Director's Rounds",
+    giver: "adnoc_recruiter",
+    requiresQuests: ["q_adnoc_control_room"],
+    requiresAdnocRank: "director",
+    requiresAdnocXp: 175,
+    requiresAdnocWorkdays: 8,
+    intro: "Executive access granted. Please inspect the building and try not to let anyone say 'Director Juju' too seriously.",
+    steps: [
+      { type: "interact", target: "adnoc_director_start", hint: "Begin the Director's HQ inspection" },
+      { type: "playMinigame", target: "adnoc_director_inspection", hint: "Solve the employee requests around HQ" },
+      { type: "interact", target: "adnoc_director_briefing", hint: "Deliver the Director's briefing" },
+    ],
+    complete: "The board noticed. Unfortunately, this means there will be a board meeting.",
+    rewardHearts: 4,
+    rewardCoins: 55,
+  },
+  {
     id: "q_home_refresh",
     title: "Make It Yours",
     giver: "adnoc_recruiter",
@@ -360,6 +471,7 @@ export const QUESTS: QuestDef[] = [
       { type: "buyItem", target: "f_sofa", hint: "Buy a sofa for your home" },
       { type: "buyItem", target: "f_plant", hint: "Buy a plant for your home" },
       { type: "decorate", target: "home", hint: "Place your new pieces while editing your home" },
+      { type: "interact", target: "home_enjoy", hint: "Sit on the sofa or water the plant, then enjoy the room" },
     ],
     complete: "There. It looks lived in now. It looks like you.",
     rewardHearts: 3,
@@ -368,15 +480,23 @@ export const QUESTS: QuestDef[] = [
   },
   {
     id: "q_adnoc_ceo",
-    title: "CEO, Apparently",
+    title: "The Final Promotion",
     giver: "adnoc_recruiter",
-    requiresQuests: ["q_adnoc_engineer", "q_family_jewel_heist"],
-    intro: "The board saw your lab work, your calm under pressure, and... the pirate story. They would like you to present one very serious plan.",
+    requiresQuests: ["q_adnoc_director"],
+    requiresAdnocRank: "director",
+    requiresAdnocXp: 200,
+    requiresAdnocWorkdays: 9,
+    intro: "The board would like one serious presentation. Nobody mention the printer battle unless it helps.",
     steps: [
-      { type: "interact", target: "adnoc_boardroom", hint: "Give your big blue boardroom presentation" },
+      { type: "interact", target: "adnoc_final_promotion", hint: "Take the executive elevator" },
+      { type: "interact", target: "adnoc_boardroom_walk", hint: "Walk to the boardroom presentation area" },
+      { type: "playMinigame", target: "adnoc_board_info", hint: "Collect the missing presentation information" },
+      { type: "playMinigame", target: "adnoc_board_questions", hint: "Survive the board's question gauntlet" },
+      { type: "playMinigame", target: "adnoc_ceo_crisis", hint: "Pass the final career crisis" },
+      { type: "interact", target: "adnoc_board_return", hint: "Return to the waiting board" },
       { type: "interact", target: "adnoc_rooftop", hint: "Take the CEO victory lap on the rooftop" },
     ],
-    complete: "Congratulations, CEO Juju. The board has agreed the company should have more snacks and fewer meetings.",
+    complete: "CEO Juju has the big office, the original tiny plant, and authority to cancel half the meetings.",
     rewardHearts: 8,
     rewardCoins: 100,
     rewardCareer: "ceo",

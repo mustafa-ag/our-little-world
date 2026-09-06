@@ -32,6 +32,7 @@ export class HouseScene extends Phaser.Scene {
   private editing = false;
   private placed: { img: Phaser.GameObjects.Image; data: PlacedFurniture; shadow?: VisualShadowHandle }[] = [];
   private drag?: { img: Phaser.GameObjects.Image; data: PlacedFurniture; shadow?: VisualShadowHandle };
+  private deliveryBoxes?: Phaser.GameObjects.Container;
 
   constructor() {
     super(SceneKeys.House);
@@ -107,6 +108,11 @@ export class HouseScene extends Phaser.Scene {
       this.drag.shadow?.setContactPoint(gx, gy);
       this.drag.data.x = gx;
       this.drag.data.y = gy;
+      const furnitureIt = this.drag.img.getData("furnitureInteract") as Interactable | undefined;
+      if (furnitureIt) {
+        furnitureIt.x = gx;
+        furnitureIt.y = gy - 5;
+      }
     });
     this.input.on("pointerup", () => {
       if (this.drag) {
@@ -115,6 +121,8 @@ export class HouseScene extends Phaser.Scene {
       }
     });
     for (const f of store.state.furniture) this.spawnPlaced(f);
+    store.on("furniturePlaced", this.onFurniturePlaced, this);
+    this.buildDeliveryBoxes();
 
     const note = homeComment();
     if (note && store.getRelationship("moomoo") >= 10) {
@@ -156,6 +164,7 @@ export class HouseScene extends Phaser.Scene {
       this.scale.off("resize", this.applyZoom, this);
       this.input.off("pointermove");
       this.input.off("pointerup");
+      store.off("furniturePlaced", this.onFurniturePlaced, this);
     });
   }
 
@@ -176,6 +185,59 @@ export class HouseScene extends Phaser.Scene {
       this.drag = { img, data: f, shadow };
     });
     this.placed.push({ img, data: f, shadow });
+    if (f.tex === "f_sofa") {
+      const it = this.addFurnitureInteract(f.x, f.y - 5, "Sit on the sofa", () => this.enjoyHome("sofa", img));
+      img.setData("furnitureInteract", it);
+    }
+    if (f.tex === "f_plant") {
+      const it = this.addFurnitureInteract(f.x, f.y - 4, "Water the plant", () => this.enjoyHome("plant", img));
+      img.setData("furnitureInteract", it);
+    }
+  }
+
+  private onFurniturePlaced(f: PlacedFurniture) {
+    if (!this.sys.isActive()) return;
+    this.spawnPlaced(f);
+    this.buildDeliveryBoxes();
+  }
+
+  private buildDeliveryBoxes() {
+    if (this.deliveryBoxes || store.hasFlag("home_delivery_unboxed")) return;
+    if (!store.state.furniture.some((f) => f.tex === "f_sofa") || !store.state.furniture.some((f) => f.tex === "f_plant")) return;
+    const x = TILE * 9;
+    const y = TILE * 9.2;
+    const big = this.add.rectangle(-18, 0, 38, 34, 0xc98d55).setStrokeStyle(3, 0x7a5238);
+    const small = this.add.rectangle(23, 7, 28, 25, 0xdca66f).setStrokeStyle(3, 0x7a5238);
+    const tape = this.add.rectangle(-18, 0, 6, 34, 0xf4d39a);
+    const label = this.add.text(0, -28, "JUJU'S NEW THINGS", { fontFamily: "monospace", fontSize: "8px", color: "#3a2b3a", backgroundColor: "#fff4e6", padding: { x: 4, y: 2 }, resolution: 2 }).setOrigin(0.5);
+    this.deliveryBoxes = this.add.container(x, y, [big, small, tape, label]).setDepth(y + 2);
+    const unboxIt = this.addFurnitureInteract(x, y, 38, "Unbox the deliveries", () => {
+      if (!this.deliveryBoxes) return;
+      store.setFlag("home_delivery_unboxed");
+      const box = this.deliveryBoxes;
+      this.deliveryBoxes = undefined;
+      this.interactables = this.interactables.filter((it) => it !== unboxIt);
+      this.tweens.add({ targets: box, y: y - 14, scale: 1.18, alpha: 0, angle: 4, duration: 480, ease: "Back.in", onComplete: () => box.destroy(true) });
+      store.toast("Sofa and plant unboxed ✦", "#7be0a3");
+    });
+  }
+
+  private enjoyHome(kind: "sofa" | "plant", img: Phaser.GameObjects.Image) {
+    if (kind === "sofa") {
+      this.player.setPosition(img.x, img.y - 5);
+      this.player.move(0, 0);
+      this.player.setScale(1.05);
+      this.tweens.add({ targets: this.player, y: this.player.y + 3, duration: 260, ease: "Sine.out" });
+    } else {
+      const water = this.add.text(this.player.x, this.player.y - 20, "⋰ ⋰  ♡", { fontFamily: "monospace", fontSize: "13px", color: "#63c6e8", stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 8);
+      this.tweens.add({ targets: water, x: img.x, y: img.y - 15, alpha: 0, duration: 800, onComplete: () => water.destroy() });
+      this.tweens.add({ targets: img, scaleX: 1.12, scaleY: 1.12, duration: 200, yoyo: true, repeat: 2, ease: "Sine.inOut" });
+    }
+    const done = quests.onInteract("home_enjoy");
+    store.setDaily(`home_${kind}`);
+    uiEvents.emit("dialogue", "Home", kind === "sofa"
+      ? ["Juju sinks into the sofa. Nothing needs solving for a minute.", "The room is quiet. The plant is green. It feels like hers.", done?.complete ?? "Home."]
+      : ["A little water. One new leaf. The whole room seems to exhale.", "Nothing dramatic happens—and that is exactly the point.", done?.complete ?? "Home."]);
   }
 
   private drawMemoryCorner(worldW: number, brown: boolean) {
@@ -258,8 +320,13 @@ export class HouseScene extends Phaser.Scene {
     ]);
   }
 
-  private addFurnitureInteract(x: number, y: number, prompt: string, trigger: () => void) {
-    this.interactables.push({ x, y, radius: 22, prompt, trigger });
+  private addFurnitureInteract(x: number, y: number, promptOrRadius: string | number, promptOrTrigger: string | (() => void), maybeTrigger?: () => void) {
+    const radius = typeof promptOrRadius === "number" ? promptOrRadius : 22;
+    const prompt = typeof promptOrRadius === "number" ? promptOrTrigger as string : promptOrRadius;
+    const trigger = typeof promptOrRadius === "number" ? maybeTrigger! : promptOrTrigger as () => void;
+    const it = { x, y, radius, prompt, trigger };
+    this.interactables.push(it);
+    return it;
   }
 
   private buildCollision() {

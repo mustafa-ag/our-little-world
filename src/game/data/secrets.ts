@@ -13,6 +13,7 @@ export interface SecretDef {
 }
 
 export const SECRETS: SecretDef[] = [
+  { id: "note_apartment_1701", locationId: "dubai_downtown", title: "Note from 1701", hint: "Home is wherever you are—even on the 17th floor.", kind: "note", tx: 132, ty: 46, item: "note", memory: "mem_downtown" },
   { id: "sec_downtown_heart", locationId: "dubai_downtown", title: "Fountain heart", hint: "Near the water.", kind: "heart", tx: 58, ty: 50, item: "heart_fragment" },
   { id: "sec_hills_flower", locationId: "dubai_hills", title: "Hill flower", hint: "Off the boulevard.", kind: "flower", tx: 22, ty: 18, item: "flower" },
   { id: "sec_damac_note", locationId: "dubai_damac", title: "Mama's note", hint: "By the garden.", kind: "note", tx: 20, ty: 30, item: "note" },

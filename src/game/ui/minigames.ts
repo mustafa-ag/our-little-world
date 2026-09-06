@@ -3,7 +3,7 @@ import { controls, uiEvents } from "../systems/controls";
 
 const FONT = "monospace";
 
-export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick";
+export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo";
 
 export interface MiniSpec {
   kind: MiniKind;
@@ -19,6 +19,7 @@ export interface MiniSpec {
 }
 
 export function openActivity(scene: Phaser.Scene, spec: MiniSpec): Phaser.GameObjects.Container {
+  if (spec.kind === "salon") return salonGame(scene, spec);
   if (spec.kind === "coffee") return coffeeGame(scene, spec);
   if (spec.kind === "bouquet") return bouquetGame(scene, spec);
   if (spec.kind === "photo") return photoGame(scene, spec);
@@ -27,7 +28,53 @@ export function openActivity(scene: Phaser.Scene, spec: MiniSpec): Phaser.GameOb
   if (spec.kind === "shopping") return shoppingGame(scene, spec);
   if (spec.kind === "lockpick") return lockpickGame(scene, spec);
   if (spec.kind === "safe") return safeGame(scene, spec);
+  if (spec.kind === "badge_photo") return badgePhotoGame(scene, spec);
   return tapGame(scene, spec);
+}
+
+function badgePhotoGame(scene: Phaser.Scene, spec: MiniSpec) {
+  const { items, px, py, w, width } = panel(scene, Math.min(scene.scale.gameSize.width - 28, 370), 370);
+  items.push(...titleHint(scene, spec, width / 2, py + 14, w - 34));
+  const poses = [
+    { face: ":)", label: "REASONABLE SMILE", good: true },
+    { face: ":|", label: "SERIOUS ENGINEER", good: true },
+    { face: ":O", label: "BADGE PANIC", good: false },
+    { face: ":?", label: "SUSPICIOUS OF CAMERA", good: false },
+    { face: "-_-", label: "FIRST-DAY NAP", good: false },
+  ];
+  let pose = 0;
+  let finished = false;
+  const frame = scene.add.graphics();
+  frame.fillStyle(0x2f6fd0, 1).fillRoundedRect(width / 2 - 92, py + 84, 184, 154, 10);
+  frame.fillStyle(0xdff3ff, 1).fillRoundedRect(width / 2 - 78, py + 98, 156, 112, 6);
+  frame.fillStyle(0xfff4e6, 1).fillRect(width / 2 - 70, py + 216, 140, 14);
+  const face = scene.add.text(width / 2, py + 151, poses[0].face, { fontFamily: FONT, fontSize: "45px", color: "#3a2b3a", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+  const label = scene.add.text(width / 2, py + 252, poses[0].label, { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", align: "center", resolution: 2 }).setOrigin(0.5);
+  const result = scene.add.text(width / 2, py + 281, "Wait for something vaguely professional.", { fontFamily: FONT, fontSize: "10px", color: "#8a6b58", align: "center", resolution: 2 }).setOrigin(0.5);
+  items.push(frame, face, label, result);
+  const cycle = scene.time.addEvent({ delay: 520, loop: true, callback: () => {
+    if (finished) return;
+    pose = (pose + 1) % poses.length;
+    face.setText(poses[pose].face).setScale(0.78);
+    label.setText(poses[pose].label);
+    scene.tweens.add({ targets: face, scale: 1, duration: 120, ease: "Back.out" });
+  } });
+  const snap = () => {
+    if (finished) return;
+    finished = true;
+    cycle.remove();
+    const good = poses[pose].good;
+    result.setColor(good ? "#57a56d" : "#e46d94").setText(good ? "CLICK! A surprisingly usable photograph." : "CLICK! Officially ridiculous. Approved anyway.");
+    const flash = scene.add.rectangle(width / 2, py + 155, 170, 130, 0xffffff, 0.9);
+    container.add(flash);
+    scene.tweens.add({ targets: flash, alpha: 0, duration: 260 });
+    scene.time.delayedCall(700, () => spec.onDone(good));
+  };
+  items.push(btn(scene, width / 2, py + 328, "TAKE BADGE PHOTO", "#2f6fd0", snap));
+  const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  container.once(Phaser.GameObjects.Events.DESTROY, () => cycle.remove());
+  bindAction(scene, container, snap);
+  return container;
 }
 
 function bindAction(scene: Phaser.Scene, container: Phaser.GameObjects.Container, action: () => void) {
@@ -45,10 +92,13 @@ function bindAction(scene: Phaser.Scene, container: Phaser.GameObjects.Container
 function stairsGame(scene: Phaser.Scene, spec: MiniSpec) {
   const { items, px, py, w, width } = panel(scene, Math.min(scene.scale.gameSize.width - 32, 360), 366);
   items.push(...titleHint(scene, spec, width / 2, py + 14, w - 32));
-  const need = spec.taps ?? 20;
+  const need = Math.max(6, Math.round((spec.taps ?? 20) / 2));
   let progress = 0;
-  let seconds = 13;
+  let seconds = 18;
   let finished = false;
+  let phase = 0;
+  let marker = 0;
+  let assist = false;
   const stairs = scene.add.graphics();
   const steps = 7;
   for (let i = 0; i < steps; i++) {
@@ -70,11 +120,15 @@ function stairsGame(scene: Phaser.Scene, spec: MiniSpec) {
     const ratio = progress / need;
     her.setPosition(px + 54 + ratio * (w - 110), py + 230 - ratio * 112);
     her.play(`char_her-${progress % 2 ? "walk-up" : "idle-up"}`, true);
-    timer.setText(`TIME ${seconds.toFixed(1)}`);
-    status.setText(`${progress} / ${need} STEPS`);
+    timer.setText(`RACE ${seconds.toFixed(1)}s`);
+    status.setText(`${progress} / ${need} LANDINGS`);
     bar.clear();
-    bar.fillStyle(0xe8dcc8, 1).fillRoundedRect(px + 26, py + 310, w - 52, 12, 5);
-    bar.fillStyle(0xe46d94, 1).fillRoundedRect(px + 26, py + 310, Math.max(3, (w - 52) * ratio), 12, 5);
+    const trackX = px + 26;
+    const trackW = w - 52;
+    const zoneW = assist ? 84 : 58;
+    bar.fillStyle(0x3a2b3a, 1).fillRoundedRect(trackX, py + 310, trackW, 14, 6);
+    bar.fillStyle(0x7be0a3, 1).fillRoundedRect(trackX + trackW / 2 - zoneW / 2, py + 312, zoneW, 10, 5);
+    bar.fillStyle(0xffffff, 1).fillRect(trackX + marker * trackW - 3, py + 304, 6, 26);
   };
   const finish = () => {
     if (finished) return;
@@ -84,28 +138,34 @@ function stairsGame(scene: Phaser.Scene, spec: MiniSpec) {
     scene.tweens.add({ targets: her, y: her.y - 8, duration: 110, yoyo: true, repeat: 2 });
     scene.time.delayedCall(450, () => spec.onDone(true));
   };
-  const retry = () => {
-    if (finished) return;
-    progress = 0;
-    seconds = 13;
-    puff.setText("slid down. again! again!");
-    draw();
-  };
   const action = () => {
     if (finished) return;
-    progress += 1;
-    puff.setText(progress % 6 === 0 ? "why are there so many" : progress > need - 5 ? "almost there" : "huff");
+    const half = (assist ? 84 : 58) / (w - 52) / 2;
+    if (Math.abs(marker - 0.5) <= half) {
+      progress += 1;
+      phase += 0.35;
+      puff.setColor("#57a56d").setText(progress > need - 3 ? "TOP FLOOR ENERGY" : progress % 3 === 0 ? "the girls: WAIT FOR US" : "perfect landing!");
+      scene.cameras.main.shake(35, 0.0015);
+    } else {
+      puff.setColor("#e46d94").setText("missed the landing — no fall, try the next glow");
+    }
     draw();
     if (progress >= need) finish();
   };
-  const button = btn(scene, width / 2, py + 344, "CLIMB!", "#2f6fd0", action);
+  const button = btn(scene, width / 2, py + 344, "STEP IN THE LIGHT", "#2f6fd0", action);
   items.push(button);
   const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
-  const tick = scene.time.addEvent({ delay: 100, loop: true, callback: () => {
+  const tick = scene.time.addEvent({ delay: 50, loop: true, callback: () => {
     if (finished) return;
-    seconds = Math.max(0, seconds - 0.1);
-    if (seconds <= 0) retry();
-    else draw();
+    seconds = Math.max(0, seconds - 0.05);
+    phase += assist ? 0.035 : 0.052;
+    marker = (Math.sin(phase) + 1) / 2;
+    if (seconds <= 0 && !assist) {
+      assist = true;
+      seconds = 10;
+      puff.setColor("#a06d5b").setText("Rhiannon holds the door. The timing zone gets kinder.");
+    } else if (seconds <= 0 && assist) finish();
+    draw();
   } });
   container.once(Phaser.GameObjects.Events.DESTROY, () => tick.remove());
   bindAction(scene, container, action);
@@ -466,61 +526,135 @@ function showdownGame(scene: Phaser.Scene, spec: MiniSpec) {
 }
 
 function coffeeGame(scene: Phaser.Scene, spec: MiniSpec) {
-  const { items, py, w, h, width } = panel(scene, Math.min(scene.scale.gameSize.width - 36, 360), 340);
+  const { items, px, py, w, h, width } = panel(scene, Math.min(scene.scale.gameSize.width - 36, 380), 390);
   items.push(...titleHint(scene, spec, width / 2, py + 14, w - 36));
-  const steps = ["Cup", "Espresso", "Milk", "Lid"];
-  let next = 0;
-  let brewing = false;
+  const stages = ["ESPRESSO", "MILK", "SUGAR 1", "SUGAR 2", "LID"];
+  let cupNo = 1;
+  let stage = 0;
+  let phase = 0;
+  let marker = 0;
+  let quality = 0;
+  let finished = false;
   const status = scene.add
-    .text(width / 2, py + 78, "Build it in order.", { fontFamily: FONT, fontSize: "13px", color: "#3a2b3a", resolution: 2 })
+    .text(width / 2, py + 78, "Cup 1 · time the espresso.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 })
     .setOrigin(0.5);
   items.push(status);
-  const machine = scene.add.rectangle(width / 2, py + 108, 104, 36, 0x3a2b3a).setStrokeStyle(2, 0xcaa27a);
-  const nozzle = scene.add.rectangle(width / 2, py + 132, 8, 12, 0x6f5b4c);
-  const cup = scene.add.rectangle(width / 2, py + 150, 52, 58, 0xf4e8d4).setStrokeStyle(3, 0x3a2b3a);
-  const coffee = scene.add.rectangle(width / 2, py + 165, 38, 0, 0x5a3a22).setOrigin(0.5, 1);
-  const foam = scene.add.rectangle(width / 2, py + 158, 34, 0, 0xfff4e6).setOrigin(0.5, 1);
-  const stream = scene.add.rectangle(width / 2, py + 142, 5, 0, 0x5a3a22).setOrigin(0.5, 0);
-  const steam = scene.add.text(width / 2, py + 112, "~ ~", { fontFamily: FONT, fontSize: "12px", color: "#fff", resolution: 2 }).setOrigin(0.5).setAlpha(0);
-  items.push(machine, nozzle, cup, coffee, foam, stream, steam);
-  steps.forEach((label, i) => {
-    const b = btn(scene, width / 2 - 120 + (i % 2) * 240, py + 210 + Math.floor(i / 2) * 36, label, "#e46d94", () => {
-      if (brewing) return;
-      if (i !== next) {
-        status.setText("Not yet — " + steps[next] + " first.");
-        return;
-      }
-      brewing = true;
-      b.setAlpha(0.45);
-      status.setText(i === 0 ? "Picking the cup..." : `${label} pouring...`);
-      if (i === 0) {
-        cup.setX(width / 2 - 48);
-        scene.tweens.add({ targets: cup, x: width / 2, duration: 360, ease: "Back.out" });
-      } else if (i === 1) {
-        stream.setFillStyle(0x5a3a22).setSize(5, 0);
-        scene.tweens.add({ targets: stream, displayHeight: 30, duration: 180, yoyo: true, repeat: 2 });
-        scene.tweens.add({ targets: coffee, displayHeight: 22, duration: 620, ease: "Sine.inOut" });
-      } else if (i === 2) {
-        stream.setFillStyle(0xfff4e6).setSize(5, 0);
-        scene.tweens.add({ targets: stream, displayHeight: 26, duration: 160, yoyo: true, repeat: 2 });
-        scene.tweens.add({ targets: foam, displayHeight: 9, duration: 580, ease: "Sine.inOut" });
-      } else {
-        const lid = scene.add.ellipse(width / 2, py + 137, 48, 10, 0xe46d94).setAlpha(0).setScale(1.4);
-        items.push(lid);
-        scene.tweens.add({ targets: lid, alpha: 1, scaleX: 1, scaleY: 1, duration: 360, ease: "Back.out" });
-      }
-      scene.tweens.add({ targets: steam, alpha: 0.8, y: py + 96, duration: 450, yoyo: true, repeat: 1 });
-      scene.time.delayedCall(680, () => {
-        next += 1;
-        brewing = false;
-        status.setText(next >= steps.length ? "Perfect. That's the order." : `${label} in. Next: ${steps[next]}`);
-        if (next >= steps.length) scene.time.delayedCall(420, () => spec.onDone(true));
-      });
-    });
-    items.push(b);
+  const machine = scene.add.rectangle(width / 2, py + 118, 126, 42, 0x3a2b3a).setStrokeStyle(3, 0xcaa27a);
+  const nozzle = scene.add.rectangle(width / 2, py + 150, 8, 22, 0x6f5b4c);
+  const cups = [-42, 42].map((dx, i) => {
+    const body = scene.add.rectangle(width / 2 + dx, py + 196, 56, 62, 0xf4e8d4).setStrokeStyle(3, 0x3a2b3a);
+    const fill = scene.add.rectangle(width / 2 + dx, py + 216, 42, 0, 0x6b4327).setOrigin(0.5, 1);
+    const label = scene.add.text(width / 2 + dx, py + 198, `${i + 1}`, { fontFamily: FONT, fontSize: "12px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    items.push(body, fill, label);
+    return { body, fill, label };
   });
+  const steam = scene.add.text(width / 2, py + 142, "~  ~", { fontFamily: FONT, fontSize: "12px", color: "#fff", resolution: 2 }).setOrigin(0.5).setAlpha(0);
+  const gauge = scene.add.graphics();
+  const ingredients = scene.add.text(width / 2, py + 258, "CUP 1   ·   CUP 2", { fontFamily: FONT, fontSize: "11px", color: "#8a6b58", resolution: 2 }).setOrigin(0.5);
+  items.push(machine, nozzle, steam, gauge, ingredients);
+  const draw = () => {
+    const tx = px + 32;
+    const tw = w - 64;
+    gauge.clear();
+    gauge.fillStyle(0x3a2b3a, 1).fillRoundedRect(tx, py + 286, tw, 17, 7);
+    gauge.fillStyle(0x7be0a3, 1).fillRoundedRect(tx + tw / 2 - 34, py + 288, 68, 13, 6);
+    gauge.fillStyle(0xffffff, 1).fillRect(tx + marker * tw - 3, py + 280, 6, 29);
+  };
+  const action = () => {
+    if (finished) return;
+    const good = Math.abs(marker - 0.5) < 0.13;
+    if (good) quality += 1;
+    const current = stages[stage];
+    const currentCup = cups[cupNo - 1];
+    status.setColor(good ? "#57a56d" : "#e46d94").setText(good ? `${current}: perfect timing.` : `${current}: a little splashy. Still delicious.`);
+    if (current === "ESPRESSO") scene.tweens.add({ targets: currentCup.fill, displayHeight: 23, duration: 280 });
+    if (current === "MILK") scene.tweens.add({ targets: currentCup.fill, displayHeight: 37, duration: 280 });
+    if (current.startsWith("SUGAR")) {
+      const sugar = scene.add.text(width / 2, py + 150, "✦", { fontFamily: FONT, fontSize: "13px", color: "#fff", resolution: 2 }).setOrigin(0.5);
+      container.add(sugar);
+      scene.tweens.add({ targets: sugar, x: currentCup.body.x, y: py + 195, alpha: 0, duration: 320, onComplete: () => sugar.destroy() });
+    }
+    if (current === "LID") {
+      const lid = scene.add.ellipse(currentCup.body.x, py + 168, 52, 11, 0xe46d94).setScale(1.35);
+      container.add(lid);
+      scene.tweens.add({ targets: lid, scale: 1, duration: 260, ease: "Back.out" });
+    }
+    scene.tweens.add({ targets: steam, alpha: 0.9, y: py + 126, duration: 220, yoyo: true });
+    stage += 1;
+    phase += 0.7;
+    if (stage >= stages.length) {
+      if (cupNo === 1) {
+        cupNo = 2;
+        stage = 0;
+        scene.time.delayedCall(430, () => status.setColor("#3a2b3a").setText("Cup 1 ready. Cup 2 · same exact order."));
+      } else {
+        finished = true;
+        tick.remove();
+        scene.time.delayedCall(520, () => {
+          status.setColor("#57a56d").setText(quality >= 7 ? "Two perfect coffees. Two sugars each." : "Two charmingly handmade coffees. Order remembered.");
+          scene.time.delayedCall(520, () => spec.onDone(true));
+        });
+      }
+    } else scene.time.delayedCall(360, () => status.setColor("#3a2b3a").setText(`Cup ${cupNo} · next: ${stages[stage]}`));
+  };
+  items.push(btn(scene, width / 2, py + 333, "POUR IN THE GREEN ZONE", "#2f6fd0", action));
   items.push(btn(scene, width / 2, py + h - 26, spec.skipLabel ?? "Cancel", "#8a7a6a", () => spec.onDone(false)));
-  return scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  const tick = scene.time.addEvent({ delay: 35, loop: true, callback: () => { if (!finished) { phase += 0.065; marker = (Math.sin(phase) + 1) / 2; draw(); } } });
+  container.once(Phaser.GameObjects.Events.DESTROY, () => tick.remove());
+  bindAction(scene, container, action);
+  draw();
+  return container;
+}
+
+function salonGame(scene: Phaser.Scene, spec: MiniSpec) {
+  const { items, px, py, w, h, width } = panel(scene, Math.min(scene.scale.gameSize.width - 34, 370), 370);
+  items.push(...titleHint(scene, spec, width / 2, py + 14, w - 34));
+  let mode: "nails" | "brows" | undefined;
+  let progress = 0;
+  let phase = 0;
+  let marker = 0;
+  let finished = false;
+  const status = scene.add.text(width / 2, py + 82, "Choose today's glow.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 }).setOrigin(0.5);
+  const mirror = scene.add.ellipse(width / 2, py + 172, 102, 126, 0xdff3ff).setStrokeStyle(5, 0xf4c95d);
+  const face = scene.add.text(width / 2, py + 172, "◡", { fontFamily: FONT, fontSize: "38px", color: "#3a2b3a", resolution: 2 }).setOrigin(0.5);
+  const gauge = scene.add.graphics();
+  items.push(status, mirror, face, gauge);
+  const choose = (next: "nails" | "brows") => { mode = next; progress = 0; status.setText(`${next === "nails" ? "Nail" : "Brow"} timing · hit 5 green moments.`); };
+  items.push(btn(scene, width / 2 - 72, py + 112, "NAILS", "#e46d94", () => choose("nails")));
+  items.push(btn(scene, width / 2 + 72, py + 112, "BROWS", "#7e64a8", () => choose("brows")));
+  const draw = () => {
+    const tx = px + 30;
+    const tw = w - 60;
+    gauge.clear();
+    gauge.fillStyle(0x3a2b3a, 1).fillRoundedRect(tx, py + 252, tw, 16, 7);
+    gauge.fillStyle(mode === "brows" ? 0xa98bc7 : 0x7be0a3, 1).fillRoundedRect(tx + tw * 0.5 - 35, py + 254, 70, 12, 6);
+    gauge.fillStyle(0xffffff, 1).fillRect(tx + marker * tw - 3, py + 246, 6, 28);
+  };
+  const action = () => {
+    if (!mode || finished) { if (!mode) status.setText("Pick nails or brows first."); return; }
+    if (Math.abs(marker - 0.5) < 0.14) {
+      progress += 1;
+      status.setColor("#57a56d").setText(`${mode === "nails" ? "Polish" : "Shape"} ${progress}/5 · sparkle!`);
+      face.setText(progress % 2 ? "◠" : "◡");
+      scene.cameras.main.shake(30, 0.001);
+    } else status.setColor("#e46d94").setText("Tiny wobble. No problem—wait for the glow.");
+    if (progress >= 5) {
+      finished = true;
+      tick.remove();
+      scene.tweens.add({ targets: [mirror, face], scale: 1.12, duration: 220, yoyo: true, repeat: 1, ease: "Back.out" });
+      status.setColor("#57a56d").setText(`${mode === "nails" ? "Nails" : "Brows"} reveal: flawless little glow.`);
+      scene.time.delayedCall(720, () => spec.onDone(true));
+    }
+  };
+  items.push(btn(scene, width / 2, py + 301, "STYLE IN THE GREEN ZONE", "#2f6fd0", action));
+  items.push(btn(scene, width / 2, py + h - 23, spec.skipLabel ?? "Skip today", "#8a7a6a", () => spec.onDone(false)));
+  const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  const tick = scene.time.addEvent({ delay: 35, loop: true, callback: () => { if (!finished) { phase += 0.07; marker = (Math.sin(phase) + 1) / 2; draw(); } } });
+  container.once(Phaser.GameObjects.Events.DESTROY, () => tick.remove());
+  bindAction(scene, container, action);
+  draw();
+  return container;
 }
 
 function bouquetGame(scene: Phaser.Scene, spec: MiniSpec) {
@@ -533,6 +667,8 @@ function bouquetGame(scene: Phaser.Scene, spec: MiniSpec) {
     .text(width / 2, py + 78, "Pick 3 flowers, then a ribbon.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 })
     .setOrigin(0.5);
   items.push(status);
+  const preview = scene.add.container(width / 2, py + 168);
+  items.push(preview);
   flowers.forEach((f, i) => {
     const x = width / 2 - 120 + (i % 5) * 60;
     const b = btn(scene, x, py + 130, f, "#f4a6c0", () => {
@@ -540,6 +676,10 @@ function bouquetGame(scene: Phaser.Scene, spec: MiniSpec) {
       picked.push(f);
       b.setAlpha(0.45);
       status.setText(`${picked.length}/3 · ${picked.join(", ")}`);
+      const colors = [0xf4a6c0, 0xf4c95d, 0xfff9ef, 0xe46d94, 0xa98bc7];
+      const bloom = scene.add.circle((picked.length - 2) * 20, -picked.length * 3, 12, colors[i]).setStrokeStyle(2, 0xffffff);
+      preview.add(bloom);
+      scene.tweens.add({ targets: bloom, scale: { from: 0.25, to: 1 }, angle: 18, duration: 240, ease: "Back.out" });
     });
     items.push(b);
   });
@@ -592,6 +732,9 @@ function photoGame(scene: Phaser.Scene, spec: MiniSpec) {
     ? scene.add.sprite(vx + 18, vy + 28, buddyKey, 0).setScale(2)
     : scene.add.image(vx + 18, vy + 28, buddyKey).setScale(1.6);
   items.push(her, buddy);
+  const bigBen = spec.title.toLowerCase().includes("ben") || spec.photoBuddy === "char_fadwa";
+  const pigeon = bigBen ? scene.add.text(vx - 110, vy - 28, "<(' )", { fontFamily: FONT, fontSize: "15px", color: "#f4f4f4", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 }).setOrigin(0.5) : undefined;
+  if (pigeon) items.push(pigeon);
 
   const frame = scene.add.rectangle(vx, vy, vw, vh, 0x000000, 0).setStrokeStyle(3, 0xe46d94);
   items.push(frame);
@@ -614,25 +757,38 @@ function photoGame(scene: Phaser.Scene, spec: MiniSpec) {
     repeat: -1,
     ease: "Sine.inOut",
   });
+  const birdTw = pigeon ? scene.tweens.add({ targets: pigeon, x: vx + 110, y: "+=18", duration: 1550, yoyo: true, repeat: -1, ease: "Sine.inOut" }) : undefined;
+  let snapping = false;
 
   const snap = () => {
-    tw.stop();
+    if (snapping) return;
+    snapping = true;
+    tw.pause();
+    birdTw?.pause();
     const mid = (her.x + buddy.x) / 2;
     const aligned = Math.abs(mid - vx) < 18;
+    const photobombed = !!pigeon && Math.abs(pigeon.x - vx) < 48;
     const flash = scene.add.rectangle(width / 2, scene.scale.gameSize.height / 2, width, scene.scale.gameSize.height, 0xffffff, 0.85).setScrollFactor(0).setDepth(90);
     scene.tweens.add({ targets: flash, alpha: 0, duration: 280, onComplete: () => flash.destroy() });
-    status.setText(aligned ? "That's the one." : "A little crooked. Still keeping it.");
-    scene.time.delayedCall(360, () => spec.onDone(true));
+    if (aligned && !photobombed) {
+      status.setColor("#57a56d").setText(bigBen ? "That's the one. Fadwa approves. Pigeon absent." : "That's the one.");
+      scene.time.delayedCall(480, () => spec.onDone(true));
+    } else {
+      status.setColor("#e46d94").setText(photobombed ? "PIGEON PHOTOBOMB. Fadwa demands a retry." : "Almost! Shuffle back into the centre and retry.");
+      scene.time.delayedCall(520, () => { snapping = false; tw.resume(); birdTw?.resume(); });
+    }
   };
   items.push(btn(scene, width / 2, py + 278, "Capture", "#2f6fd0", snap));
   items.push(
     btn(scene, width / 2, py + h - 26, spec.skipLabel ?? "Cancel", "#8a7a6a", () => {
       tw.stop();
+      birdTw?.stop();
       spec.onDone(false);
     }),
   );
   const c = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
-  c.once(Phaser.GameObjects.Events.DESTROY, () => tw.stop());
+  c.once(Phaser.GameObjects.Events.DESTROY, () => { tw.stop(); birdTw?.stop(); });
+  bindAction(scene, c, snap);
   return c;
 }
 

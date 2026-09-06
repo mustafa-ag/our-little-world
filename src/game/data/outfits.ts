@@ -28,4 +28,7 @@ export const OUTFIT_UNLOCKS: OutfitUnlock[] = [
   { id: "sparkle_set", label: "Sparkle Set", hint: "Win Baba's shopping spree.", questDone: "q_baba_spree" },
   { id: "weekend_jacket", label: "Weekend Jacket", hint: "Win Baba's shopping spree.", questDone: "q_baba_spree" },
   { id: "pirate_chic", label: "Pirate Chic", hint: "Finish the family jewel heist.", questDone: "q_family_jewel_heist" },
+  { id: "engineer_blue", label: "Engineering Blue", hint: "Complete Juju's first day at ADNOC HQ.", questDone: "q_adnoc_engineer" },
+  { id: "executive_blue", label: "Executive Blue", hint: "Become Engineering Director.", flag: "adnoc_director_promoted" },
+  { id: "ceo_blue", label: "CEO Blue", hint: "Complete the final ADNOC promotion.", questDone: "q_adnoc_ceo" },
 ];

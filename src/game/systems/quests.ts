@@ -1,4 +1,5 @@
 import { QUESTS, questById, type QuestDef, type StepType } from "../data/quests";
+import { adnocRankAtLeast } from "../data/adnoc";
 import type { QuestProgress } from "./save";
 import { store } from "./store";
 import { tryDeliverMessages } from "./phone";
@@ -46,7 +47,30 @@ export function currentStep(id: string) {
 }
 
 function prerequisitesMet(def: QuestDef) {
-  return (def.requiresQuests ?? []).every((id) => statusOf(id) === "done");
+  if (!(def.requiresQuests ?? []).every((id) => statusOf(id) === "done")) return false;
+  if (def.requiresAdnocRank && !adnocRankAtLeast(store.state.adnocRank, def.requiresAdnocRank)) return false;
+  if (def.requiresAdnocXp && store.state.adnocXp < def.requiresAdnocXp) return false;
+  if (def.requiresAdnocWorkdays && store.state.adnocWorkdays < def.requiresAdnocWorkdays) return false;
+  return true;
+}
+
+export function canStartQuest(id: string) {
+  const def = questById(id);
+  return !!def && statusOf(id) === "available" && prerequisitesMet(def);
+}
+
+/** Start one known quest explicitly, without accepting a different quest from the same giver. */
+export function startQuest(id: string) {
+  const def = questById(id);
+  if (!def || !canStartQuest(id) || activeQuests().length >= MAX_ACTIVE_QUESTS) return undefined;
+  const p = ensure(id);
+  p.status = "active";
+  p.step = 0;
+  p.progress = 0;
+  store.emit("questUpdated");
+  store.save();
+  store.toast(`New quest: ${def.title}`, "#f4c95d");
+  return def;
 }
 
 export function activeQuests(): ActiveQuest[] {
@@ -77,11 +101,14 @@ function completeQuest(def: QuestDef, p: QuestProgress) {
   store.addHearts(def.rewardHearts);
   store.addCoins(def.rewardCoins);
   grantExtras(def);
+  store.emit("questCompleted", def);
   store.emit("questUpdated");
   store.save();
 }
 
 function advance(def: QuestDef, p: QuestProgress) {
+  const finishedStep = def.steps[p.step];
+  if (finishedStep) store.emit("questStepComplete", def, finishedStep);
   p.step += 1;
   p.progress = 0;
   if (p.step >= def.steps.length) {
@@ -149,13 +176,9 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
   if (activeQuests().length < MAX_ACTIVE_QUESTS) {
     for (const def of QUESTS) {
       if (def.giver !== npcId) continue;
-      const p = ensure(def.id);
-      if (p.status === "available" && prerequisitesMet(def)) {
-        p.status = "active";
-        p.step = 0;
-        p.progress = 0;
-        store.emit("questUpdated");
-        store.save();
+      if (statusOf(def.id) === "available" && prerequisitesMet(def)) {
+        const accepted = startQuest(def.id);
+        if (!accepted) continue;
         if (def.id === "q_family_jewel_heist") {
           result.lines.push(
             "Fadwa still has my gold bangles...",
@@ -165,7 +188,6 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
           );
         } else result.lines.push(def.intro);
         result.acceptedQuest = def;
-        store.toast(`New quest: ${def.title}`, "#f4c95d");
         break;
       }
     }

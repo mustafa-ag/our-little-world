@@ -11,6 +11,7 @@ import { openActivity, type MiniSpec } from "../ui/minigames";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
 import * as quests from "../systems/quests";
+import type { QuestDef, QuestStep } from "../data/quests";
 
 const FONT = "monospace";
 
@@ -92,6 +93,7 @@ export class UIScene extends Phaser.Scene {
   private localLegend!: Phaser.GameObjects.Text;
   private localPins: Phaser.GameObjects.Text[] = [];
   private dedicatedHud = false;
+  private questCelebration?: Phaser.GameObjects.Container;
 
   constructor() {
     super({ key: SceneKeys.UI, active: false });
@@ -160,6 +162,8 @@ export class UIScene extends Phaser.Scene {
     store.on("hearts", (v: number) => this.heartText.setText(`${v}`));
     store.on("coins", (v: number) => this.coinText.setText(`${v}`));
     store.on("questUpdated", () => this.refreshQuests());
+    store.on("questStepComplete", (def: QuestDef, step: QuestStep) => this.showObjectiveComplete(def, step));
+    store.on("questCompleted", (def: QuestDef) => this.showQuestComplete(def));
     store.on("toast", (t: string, c: string) => this.showToast(t, c));
     store.on("time", () => this.clockText.setText(store.clockLabel()));
     store.on("newDay", () => this.clockText.setText(store.clockLabel()));
@@ -1006,148 +1010,14 @@ export class UIScene extends Phaser.Scene {
     this.miniGameOpen = true;
     controls.locked = true;
 
-    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo" || spec.kind === "showdown" || spec.kind === "stairs" || spec.kind === "shopping" || spec.kind === "safe" || spec.kind === "lockpick") {
-      const wrap: MiniSpec = {
-        ...spec,
-        onDone: (ok) => {
-          this.closeMiniGame(true);
-          spec.onDone(ok);
-        },
-      };
-      this.miniGame = openActivity(this, wrap);
-      return;
-    }
-
-    const { width, height } = this.scale.gameSize;
-    const panelW = Math.min(width - 40, 340);
-    const panelH = spec.kind === "salon" ? 320 : 280;
-    const need = spec.taps ?? 10;
-    let progress = 0;
-    let mode = spec.kind === "salon" ? "" : "climb";
-
-    const items: Phaser.GameObjects.GameObject[] = [];
-    const bgCatch = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
-    const panel = this.add.graphics();
-    const px = (width - panelW) / 2;
-    const py = (height - panelH) / 2;
-    panel.fillStyle(0xfff9f0, 1).fillRoundedRect(px, py, panelW, panelH, 14);
-    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect(px, py, panelW, panelH, 14);
-    const title = this.add
-      .text(width / 2, py + 16, spec.title, { fontFamily: FONT, fontSize: "18px", color: "#e46d94", fontStyle: "bold", resolution: 2 })
-      .setOrigin(0.5, 0);
-    const hint = this.add
-      .text(width / 2, py + 44, spec.hint, {
-        fontFamily: FONT,
-        fontSize: "12px",
-        color: "#3a2b3a",
-        align: "center",
-        wordWrap: { width: panelW - 36 },
-        resolution: 2,
-      })
-      .setOrigin(0.5, 0);
-    items.push(bgCatch, panel, title, hint);
-
-    const barG = this.add.graphics();
-    items.push(barG);
-    const status = this.add
-      .text(width / 2, py + (spec.kind === "salon" ? 168 : 130), "", {
-        fontFamily: FONT,
-        fontSize: "13px",
-        color: "#3a2b3a",
-        resolution: 2,
-      })
-      .setOrigin(0.5);
-    items.push(status);
-
-    const drawBar = () => {
-      barG.clear();
-      const bw = panelW - 48;
-      const bx = px + 24;
-      const by = py + (spec.kind === "salon" ? 148 : 110);
-      barG.fillStyle(0xe8dcc8, 1).fillRoundedRect(bx, by, bw, 14, 6);
-      barG.fillStyle(0xe46d94, 1).fillRoundedRect(bx, by, Math.max(4, (bw * progress) / need), 14, 6);
-      status.setText(mode ? `${progress} / ${need}` : "Pick one to start");
+    const wrap: MiniSpec = {
+      ...spec,
+      onDone: (ok) => {
+        this.closeMiniGame(true);
+        spec.onDone(ok);
+      },
     };
-    drawBar();
-
-    const finish = () => {
-      this.closeMiniGame(true);
-      spec.onDone();
-    };
-
-    const tap = () => {
-      if (!mode) return;
-      progress += 1;
-      drawBar();
-      if (progress >= need) finish();
-    };
-
-    if (spec.kind === "salon") {
-      const nails = this.add
-        .text(width / 2 - 60, py + 108, "Nails", {
-          fontFamily: FONT,
-          fontSize: "14px",
-          color: "#fff",
-          backgroundColor: "#e46d94",
-          padding: { x: 12, y: 6 },
-          resolution: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      const brows = this.add
-        .text(width / 2 + 60, py + 108, "Brows", {
-          fontFamily: FONT,
-          fontSize: "14px",
-          color: "#fff",
-          backgroundColor: "#7be0a3",
-          padding: { x: 12, y: 6 },
-          resolution: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      nails.on("pointerdown", () => {
-        mode = "nails";
-        drawBar();
-      });
-      brows.on("pointerdown", () => {
-        mode = "brows";
-        drawBar();
-      });
-      items.push(nails, brows);
-    }
-
-    const tapBtn = this.add
-      .text(width / 2, py + panelH - 78, "Tap", {
-        fontFamily: FONT,
-        fontSize: "16px",
-        color: "#fff",
-        backgroundColor: "#2f6fd0",
-        padding: { x: 18, y: 8 },
-        resolution: 2,
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    tapBtn.on("pointerdown", tap);
-    items.push(tapBtn);
-
-    const skip = this.add
-      .text(width / 2, py + panelH - 28, spec.skipLabel ?? "Skip", {
-        fontFamily: FONT,
-        fontSize: "13px",
-        color: "#fff",
-        backgroundColor: "#8a7a6a",
-        padding: { x: 12, y: 5 },
-        resolution: 2,
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    skip.on("pointerdown", finish);
-    items.push(skip);
-
-    this.miniGame = this.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
-    // The shared action button and keyboard should advance simple activities too.
-    uiEvents.on("minigameAction", tap);
-    this.miniGame.once(Phaser.GameObjects.Events.DESTROY, () => uiEvents.off("minigameAction", tap));
+    this.miniGame = openActivity(this, wrap);
   }
 
   private closeMiniGame(unlock: boolean) {
@@ -1378,6 +1248,40 @@ export class UIScene extends Phaser.Scene {
     this.tweens.add({ targets: t, y: t.y - 26, alpha: 0, duration: 1300, ease: "Cubic.out", onComplete: () => t.destroy() });
   }
 
+  private showObjectiveComplete(def: QuestDef, step: QuestStep) {
+    if (this.questCelebration?.active) return;
+    const { width, height } = this.scale.gameSize;
+    const box = this.add.rectangle(0, 0, Math.min(width - 32, 390), 66, 0x2b2233, 0.94).setStrokeStyle(2, 0x7be0a3);
+    const check = this.add.text(-box.width / 2 + 22, 0, "✓", { fontFamily: FONT, fontSize: "24px", color: "#7be0a3", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    const title = this.add.text(-box.width / 2 + 43, -15, "OBJECTIVE COMPLETE", { fontFamily: FONT, fontSize: "10px", color: "#7be0a3", fontStyle: "bold", resolution: 2 });
+    const line = this.add.text(-box.width / 2 + 43, 3, step.hint, { fontFamily: FONT, fontSize: "11px", color: "#fff4e6", wordWrap: { width: box.width - 58 }, resolution: 2 });
+    const c = this.add.container(width / 2, height * 0.2 - 12, [box, check, title, line]).setScrollFactor(0).setDepth(180).setAlpha(0).setScale(0.92);
+    this.tweens.add({ targets: c, alpha: 1, scale: 1, y: height * 0.2, duration: 220, ease: "Back.out", hold: 950, yoyo: true, onComplete: () => c.destroy() });
+    this.tweens.add({ targets: check, angle: 10, duration: 120, yoyo: true, repeat: 1 });
+    void def;
+  }
+
+  private showQuestComplete(def: QuestDef) {
+    this.questCelebration?.destroy(true);
+    const { width, height } = this.scale.gameSize;
+    const shade = this.add.rectangle(0, 0, width, height, 0x2b2233, 0.34).setOrigin(0);
+    const panelW = Math.min(width - 34, 430);
+    const panel = this.add.rectangle(width / 2, height * 0.36, panelW, 142, 0xfff9f0, 0.98).setStrokeStyle(4, 0xf4c95d);
+    const crown = this.add.text(width / 2, height * 0.36 - 51, "♥  ✦  ♥", { fontFamily: FONT, fontSize: "19px", color: "#e46d94", resolution: 2 }).setOrigin(0.5);
+    const kicker = this.add.text(width / 2, height * 0.36 - 20, "QUEST COMPLETE", { fontFamily: FONT, fontSize: "11px", color: "#2f6fd0", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    const title = this.add.text(width / 2, height * 0.36 + 4, def.title, { fontFamily: FONT, fontSize: "20px", color: "#3a2b3a", fontStyle: "bold", align: "center", wordWrap: { width: panelW - 34 }, resolution: 2 }).setOrigin(0.5);
+    const reward = this.add.text(width / 2, height * 0.36 + 41, `+${def.rewardHearts} hearts${def.rewardCoins ? `  ·  +${def.rewardCoins} coins` : ""}`, { fontFamily: FONT, fontSize: "12px", color: "#e46d94", resolution: 2 }).setOrigin(0.5);
+    const bits: Phaser.GameObjects.Text[] = [];
+    for (let i = 0; i < 18; i += 1) {
+      const bit = this.add.text(Phaser.Math.Between(20, Math.max(21, width - 20)), height * 0.28, i % 3 === 0 ? "♥" : "✦", { fontFamily: FONT, fontSize: `${Phaser.Math.Between(9, 17)}px`, color: i % 2 ? "#f4c95d" : "#ff8fae", resolution: 2 }).setOrigin(0.5);
+      bits.push(bit);
+      this.tweens.add({ targets: bit, x: bit.x + Phaser.Math.Between(-45, 45), y: height * 0.66 + Phaser.Math.Between(-35, 80), angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: Phaser.Math.Between(1800, 2600), ease: "Quad.in" });
+    }
+    this.questCelebration = this.add.container(0, 0, [shade, panel, crown, kicker, title, reward, ...bits]).setScrollFactor(0).setDepth(190).setAlpha(0).setScale(0.94);
+    this.tweens.add({ targets: this.questCelebration, alpha: 1, scale: 1, duration: 260, ease: "Back.out", hold: 2200, yoyo: true, onComplete: () => { this.questCelebration?.destroy(true); this.questCelebration = undefined; } });
+    this.cameras.main.shake(120, 0.002);
+  }
+
   private showLocationTitle(name: string, sub: string) {
     const { width, height } = this.scale.gameSize;
     const c = this.add.container(width / 2, height * 0.4).setScrollFactor(0).setDepth(70).setAlpha(0);
@@ -1389,7 +1293,7 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity);
   }
   private walkableScene() {
     const m = this.scene.manager;
@@ -1472,8 +1376,10 @@ export class UIScene extends Phaser.Scene {
     const gp = this.gameplayActive();
     const modal = this.anyModal();
     const driving = this.scene.manager.isActive(SceneKeys.Driving);
-    const dedicated = this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist);
+    const questActivity = this.scene.manager.isActive(SceneKeys.QuestActivity);
+    const dedicated = this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || questActivity;
     this.setDedicatedHud(dedicated);
+    this.dedicatedStatus.setY(questActivity ? 24 : 64);
     this.dedicatedStatus.setVisible(dedicated && this.dedicatedStatusActive && !modal);
 
     const showTouch = gp && (!modal || this.miniGameOpen);

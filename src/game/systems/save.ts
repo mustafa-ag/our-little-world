@@ -1,6 +1,8 @@
 // Persistent save data (localStorage). Everything the game needs to
 // remember between visits lives here.
 
+import { ADNOC_RANKS, ADNOC_WORK_TASKS, type AdnocRank, type AdnocWorkTaskId } from "../data/adnoc";
+
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
 export type Career = "explorer" | "chemical_engineer" | "ceo";
 
@@ -15,6 +17,15 @@ export interface QuestProgress {
   status: "available" | "active" | "done";
   step: number;
   progress: number; // count for the current collect step
+}
+
+export interface AdnocWorkdayState {
+  id: string;
+  day: number;
+  tasks: AdnocWorkTaskId[];
+  index: number;
+  stars: number;
+  paid: boolean;
 }
 
 export interface PhoneMessage {
@@ -48,6 +59,14 @@ export interface GameState {
   coins: number;
   fuel: number;
   career: Career;
+  adnocRank: AdnocRank;
+  adnocXp: number;
+  adnocWorkdays: number;
+  adnocCareerStats: Record<string, number>;
+  adnocLastPaidDay: number;
+  adnocLastTasks: AdnocWorkTaskId[];
+  adnocBadgePhoto: number;
+  adnocWorkday?: AdnocWorkdayState;
   outfit: string;
   currentLocation: string;
   /** True while she's in the Jeep — survives map / district travel. */
@@ -84,7 +103,7 @@ const SAVE_KEY = "ourlittleworld.save.v3";
 const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
 const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
 export const SAVE_SLOT_COUNT = 3;
-export const VERSION = 6;
+export const VERSION = 8;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
 
@@ -109,6 +128,14 @@ export function defaultState(): GameState {
     coins: 10,
     fuel: 100,
     career: "explorer",
+    adnocRank: "visitor",
+    adnocXp: 0,
+    adnocWorkdays: 0,
+    adnocCareerStats: {},
+    adnocLastPaidDay: 0,
+    adnocLastTasks: [],
+    adnocBadgePhoto: 0,
+    adnocWorkday: undefined,
     outfit: "casual",
     currentLocation: "abudhabi_yas",
     inJeep: false,
@@ -172,7 +199,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   const tod = raw.timeOfDay;
   const timeOfDay: TimeOfDay =
     tod === "morning" || tod === "afternoon" || tod === "evening" || tod === "night" ? tod : d.timeOfDay;
-  const career: Career = raw.career === "chemical_engineer" || raw.career === "ceo" ? raw.career : d.career;
+  let career: Career = raw.career === "chemical_engineer" || raw.career === "ceo" ? raw.career : d.career;
 
   // Keep the original beta quest record, but let players who completed the
   // replaced Baba introduction enter the new mall sequence without a reset.
@@ -220,9 +247,91 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
       if (legacyStep >= 4 || inventory.grandmas_jewelry > 0) flags.heist_jewelry_claimed = true;
     }
   }
+
+  const validRanks = new Set(ADNOC_RANKS.map((entry) => entry.id));
+  let adnocRank: AdnocRank = validRanks.has(raw.adnocRank as AdnocRank)
+    ? raw.adnocRank as AdnocRank
+    : career === "ceo" ? "ceo" : career === "chemical_engineer" ? "chemical_engineer" : "visitor";
+  let adnocXp = Number.isFinite(raw.adnocXp) ? Math.max(0, Math.floor(Number(raw.adnocXp))) : 0;
+  let adnocWorkdays = Number.isFinite(raw.adnocWorkdays) ? Math.max(0, Math.floor(Number(raw.adnocWorkdays))) : 0;
+  const adnocCareerStats = numMap(raw.adnocCareerStats);
+  let adnocLastPaidDay = Number.isFinite(raw.adnocLastPaidDay) ? Math.max(0, Math.floor(Number(raw.adnocLastPaidDay))) : 0;
+  const validTasks = new Set(ADNOC_WORK_TASKS.map((task) => task.id));
+  const adnocLastTasks = Array.isArray(raw.adnocLastTasks)
+    ? raw.adnocLastTasks.filter((id): id is AdnocWorkTaskId => typeof id === "string" && validTasks.has(id as AdnocWorkTaskId)).slice(0, 3)
+    : [];
+  const rawWorkday = raw.adnocWorkday;
+  const workdayTasks = Array.isArray(rawWorkday?.tasks)
+    ? rawWorkday.tasks.filter((id): id is AdnocWorkTaskId => typeof id === "string" && validTasks.has(id as AdnocWorkTaskId)).slice(0, 3)
+    : [];
+  let adnocWorkday: AdnocWorkdayState | undefined = rawWorkday && typeof rawWorkday.id === "string" && workdayTasks.length === 3
+    ? {
+        id: rawWorkday.id,
+        day: Number.isFinite(rawWorkday.day) ? Math.max(1, Math.floor(Number(rawWorkday.day))) : d.currentDay,
+        tasks: workdayTasks,
+        index: Number.isFinite(rawWorkday.index) ? Math.min(3, Math.max(0, Math.floor(Number(rawWorkday.index)))) : 0,
+        stars: Number.isFinite(rawWorkday.stars) ? Math.min(9, Math.max(0, Math.floor(Number(rawWorkday.stars)))) : 0,
+        paid: !!rawWorkday.paid,
+      }
+    : undefined;
+
+  // v7 turns the old two-interaction ADNOC shortcut into a full career. Keep
+  // broad career values intact while placing legacy employees at a safe rank.
+  if ((raw.version ?? 0) < 7) {
+    const engineer = quests.q_adnoc_engineer;
+    if (engineer?.status === "active") {
+      const legacyStep = Math.max(0, Math.floor(engineer.step));
+      engineer.step = legacyStep === 0 ? 0 : legacyStep === 1 ? 1 : 7;
+      engineer.progress = 0;
+      // The retired quest awarded the lab result before its final recruiter
+      // conversation. Preserve that checkpoint without trapping a visitor on
+      // the locked engineering floor in the expanded HQ.
+      if (legacyStep >= 2) {
+        adnocRank = "new_hire";
+        inventory.adnoc_badge = Math.max(1, inventory.adnoc_badge ?? 0);
+      }
+    }
+    const legacyCeo = career === "ceo" || quests.q_adnoc_ceo?.status === "done";
+    if (legacyCeo) {
+      adnocRank = "ceo";
+      adnocXp = Math.max(adnocXp, 240);
+      adnocWorkdays = Math.max(adnocWorkdays, 9);
+      career = "ceo";
+      for (const id of ["q_adnoc_engineer", "q_adnoc_pressure_problem", "q_adnoc_paperclip_incident", "q_adnoc_team_lead", "q_adnoc_control_room", "q_adnoc_director", "q_adnoc_ceo"])
+        quests[id] = { status: "done", step: 99, progress: 0 };
+    } else if (career === "chemical_engineer" || engineer?.status === "done") {
+      adnocRank = "chemical_engineer";
+      adnocXp = Math.max(adnocXp, 15);
+      career = "chemical_engineer";
+      if (quests.q_adnoc_ceo?.status === "active") quests.q_adnoc_ceo = { status: "available", step: 0, progress: 0 };
+    }
+    adnocLastPaidDay = 0;
+    adnocWorkday = undefined;
+  }
+
+  // v8 expands the cozy quest chains without invalidating completed stories.
+  // The old index for every retained objective is intentionally preserved;
+  // new activities are inserted after the closest completed checkpoint.
+  if ((raw.version ?? 0) < 8) {
+    const expandedAtSameCheckpoint = ["q_date", "q_flowers", "q_residences", "q_nour", "q_chloe", "q_hudayriyat", "q_home_refresh"];
+    for (const id of expandedAtSameCheckpoint) {
+      const progress = quests[id];
+      if (!progress || progress.status !== "active") continue;
+      progress.step = Math.max(0, Math.floor(progress.step));
+      progress.progress = Math.max(0, Math.floor(progress.progress));
+    }
+    const edi = quests.q_edinburgh;
+    if (edi?.status === "active" && edi.step >= 2) {
+      edi.step = 2;
+      edi.progress = 0;
+    }
+  }
   delete quests.q_pirate_keepsakes;
   delete flags.pirate_juju;
   delete inventory.family_keepsakes;
+
+  const unlockedCompanions = Array.isArray(raw.unlockedCompanions) ? uniq(raw.unlockedCompanions) : [];
+  if (quests.q_london?.status === "done" && !unlockedCompanions.includes("fadwa")) unlockedCompanions.push("fadwa");
 
   return {
     ...d,
@@ -233,6 +342,14 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     coins: Number.isFinite(raw.coins) ? Number(raw.coins) : d.coins,
     fuel: Number.isFinite(raw.fuel) ? Math.min(100, Math.max(0, Math.round(Number(raw.fuel)))) : d.fuel,
     career,
+    adnocRank,
+    adnocXp,
+    adnocWorkdays,
+    adnocCareerStats,
+    adnocLastPaidDay,
+    adnocLastTasks,
+    adnocBadgePhoto: Number.isFinite(raw.adnocBadgePhoto) ? Math.min(4, Math.max(0, Math.floor(Number(raw.adnocBadgePhoto)))) : 0,
+    adnocWorkday,
     outfit: typeof raw.outfit === "string" ? raw.outfit : d.outfit,
     currentLocation,
     inJeep: !!raw.inJeep,
@@ -248,7 +365,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     memories,
     photos,
     keepsakes: Array.isArray(raw.keepsakes) ? uniq(raw.keepsakes) : [],
-    unlockedCompanions: Array.isArray(raw.unlockedCompanions) ? uniq(raw.unlockedCompanions) : [],
+    unlockedCompanions,
     activeCompanionId: typeof raw.activeCompanionId === "string" ? raw.activeCompanionId : undefined,
     discoveredNotes: Array.isArray(raw.discoveredNotes) ? uniq(raw.discoveredNotes) : [],
     currentDay: Number.isFinite(raw.currentDay) && (raw.currentDay as number) > 0 ? Math.floor(raw.currentDay as number) : d.currentDay,

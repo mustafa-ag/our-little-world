@@ -191,23 +191,25 @@ export class MallScene extends Phaser.Scene {
     if (kind === "fashion") {
       const cardQuest = quests.currentStep("q_baba_card");
       if (cardQuest?.target === "mall_fashion") {
-        const done = quests.onInteract("mall_fashion");
-        uiEvents.emit("dialogue", label, ["One very sensible bag. Baba will never notice.", done ? done.complete : "Fashion emergency handled."]);
+        uiEvents.emit("openFoodOrder", {
+          title: "Choose the first look",
+          subtitle: "A tiny fashion decision before the shopping situation escalates.",
+          items: [
+            { id: "elegant", name: "Elegant", description: "The ‘Baba, this was sensible’ option.", price: 0 },
+            { id: "summer", name: "Summer", description: "Bright, easy, immediately holiday-coded.", price: 0 },
+            { id: "sporty", name: "Sporty", description: "Ready to sprint away from the receipt.", price: 0 },
+          ],
+          onOrder: (outfitId: string) => {
+            store.setOutfit(outfitId);
+            const done = quests.onInteract("mall_fashion");
+            uiEvents.emit("dialogue", label, [`${outfitId[0].toUpperCase()}${outfitId.slice(1)} it is.`, "One very sensible look. Baba will absolutely notice.", done?.complete ?? "Fashion decision secured."]);
+          },
+        });
         return;
       }
       if (quests.currentStep("q_baba_spree")?.target === "shopping_spree") {
-        uiEvents.emit("minigame", {
-          kind: "shopping",
-          title: "SHOPPING SPREE",
-          hint: "Tap fast. Baba's card is fictional. The joy is real.",
-          onDone: () => {
-            const done = quests.onMinigame("shopping_spree");
-            ["mall_dress", "sparkle_set", "weekend_jacket"].forEach((id) => store.unlockOutfit(id));
-            ["handbag", "necklace", "earrings", "bangle"].forEach((id) => store.unlockAccessory(id));
-            store.setAccessory("handbag");
-            uiEvents.emit("dialogue", label, ["Eight bags. Four accessories. Zero coins spent.", done?.complete ?? "Shopping complete."]);
-          },
-        });
+        uiEvents.emit("sceneReset");
+        this.scene.start(SceneKeys.QuestActivity, { activity: "shopping_spree", mallId: this.config.id });
         return;
       }
       uiEvents.emit("dialogue", label, ["Cute tops, jackets, shoes, and a mirror that says yes."]);
@@ -218,10 +220,12 @@ export class MallScene extends Phaser.Scene {
       return;
     }
     if (kind === "cafe") {
-      uiEvents.emit("minigame", { kind: "coffee", title: label, hint: "Cup, espresso, milk, lid.", onDone: (ok?: boolean) => {
+      const pair = quests.currentStep("q_date")?.target === "mall_coffee_pair";
+      uiEvents.emit("minigame", { kind: "coffee", title: label, hint: pair ? "Make two cups: espresso, milk, two sugars, lid." : "Espresso, milk, sugar, lid. You know the order.", onDone: (ok?: boolean) => {
         if (!ok) return;
         store.addItem("coffee");
-        quests.onMinigame("coffee");
+        quests.onMinigame(pair ? "mall_coffee_pair" : "coffee");
+        uiEvents.emit("dialogue", label, [pair ? "Two warm cups, two sugars each. Carry them carefully back to Moomoo." : "His exact order. Naturally."]);
       } });
       return;
     }
