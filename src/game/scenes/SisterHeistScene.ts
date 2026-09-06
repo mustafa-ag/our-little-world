@@ -40,6 +40,7 @@ export class SisterHeistScene extends Phaser.Scene {
   private fadwaFacing = -Math.PI / 2;
   private caughtCooldown = 0;
   private roomSafe?: Phaser.GameObjects.Container;
+  private caughtOverlay?: Phaser.GameObjects.Container;
   private pendingDialogueHandler?: () => void;
   private broadcastStatus = "";
   private statusColor = "#fff4e6";
@@ -60,6 +61,7 @@ export class SisterHeistScene extends Phaser.Scene {
     this.cone = undefined;
     this.extraCone = undefined;
     this.roomSafe = undefined;
+    this.caughtOverlay = undefined;
     this.broadcastStatus = "";
     this.caughtCooldown = 0;
     controls.locked = false;
@@ -357,22 +359,63 @@ export class SisterHeistScene extends Phaser.Scene {
     this.mode = "caught";
     this.caughtCooldown = this.time.now + 1200;
     store.incrementStat("heist_fadwa_alerts");
+    controls.locked = true;
     this.player.move(0, 0);
     this.cameras.main.shake(150, 0.007);
-    const resume = () => {
-      if (!this.sys.isActive()) return;
-      const point = escaping ? new Phaser.Math.Vector2(730, 110) : this.savedCheckpoint();
-      this.player.setPosition(point.x, point.y);
-      this.checkpoint.copy(point);
-      this.mode = escaping ? "escape" : "stealth";
-      controls.locked = false;
-    };
-    this.afterDialogue(resume);
+    this.afterDialogue(() => this.showCaughtRestart(escaping));
     if (escaping) {
       uiEvents.emit("dialogue", "Fadwa", ["IS THAT GRANDMA'S JEWELRY?", "Juju: No.", "Parrot: JEWELRY!", "Back to the room door. I cannot believe this."]);
     } else {
       uiEvents.emit("dialogue", "Fadwa", ["Juju...", "Why are you dressed like a pirate?", "Please return to your last extremely stealthy checkpoint."]);
     }
+  }
+
+  private showCaughtRestart(escaping: boolean) {
+    if (!this.sys.isActive() || this.mode !== "caught" || this.caughtOverlay) return;
+    const { width, height } = this.scale.gameSize;
+    const hudScale = 1 / this.cameras.main.zoom;
+    this.cameras.main.stopFollow();
+    const center = this.cameras.main.getWorldPoint(width / 2, height / 2);
+    const shade = this.add.rectangle(0, 0, width, height, 0x2b2233, 0.7).setOrigin(0.5);
+    const panel = this.add.rectangle(0, 0, 310, 176, 0xfff4e6, 1).setStrokeStyle(5, 0xe46d94);
+    const title = this.add.text(0, -57, "FADWA CAUGHT YOU!", {
+      fontFamily: "monospace",
+      fontSize: "21px",
+      color: "#9d315d",
+      fontStyle: "bold",
+      resolution: 2,
+    }).setOrigin(0.5);
+    const detail = this.add.text(0, -19, escaping ? "The jewelry is safe. Try the escape again." : "Your latest checkpoint is safe.", {
+      fontFamily: "monospace",
+      fontSize: "11px",
+      color: "#443240",
+      align: "center",
+      resolution: 2,
+    }).setOrigin(0.5);
+    const button = this.add.rectangle(0, 44, 250, 54, 0xe46d94, 1).setStrokeStyle(3, 0x9d315d).setInteractive({ useHandCursor: true });
+    const buttonText = this.add.text(0, 44, "RESTART FROM CHECKPOINT", {
+      fontFamily: "monospace",
+      fontSize: "13px",
+      color: "#fff4e6",
+      fontStyle: "bold",
+      resolution: 2,
+    }).setOrigin(0.5);
+    button.on("pointerover", () => button.setFillStyle(0xf07da1));
+    button.on("pointerout", () => button.setFillStyle(0xe46d94));
+    button.on("pointerup", () => this.restartFromCaught());
+    this.caughtOverlay = this.add.container(center.x, center.y, [shade, panel, title, detail, button, buttonText])
+      .setScale(hudScale)
+      .setDepth(250);
+    this.setStatus("CAUGHT · RESTART FROM CHECKPOINT", "#ff8fae");
+  }
+
+  private restartFromCaught() {
+    if (this.mode !== "caught" || !this.caughtOverlay || !this.sys.isActive()) return;
+    this.caughtOverlay.disableInteractive();
+    controls.locked = false;
+    controls.moveX = 0;
+    controls.moveY = 0;
+    this.scene.restart();
   }
 
   private enterFadwasRoom() {
@@ -554,7 +597,11 @@ export class SisterHeistScene extends Phaser.Scene {
   }
 
   private tryInteract() {
-    if (controls.locked || this.mode === "caught" || this.mode === "victory" || !this.current || this.time.now - this.lastInteract < 220) return;
+    if (this.mode === "caught") {
+      this.restartFromCaught();
+      return;
+    }
+    if (controls.locked || this.mode === "victory" || !this.current || this.time.now - this.lastInteract < 220) return;
     this.lastInteract = this.time.now;
     this.current.trigger();
   }
@@ -596,7 +643,12 @@ export class SisterHeistScene extends Phaser.Scene {
   private movePlayer() {
     let vx = 0;
     let vy = 0;
-    if (!controls.locked && this.mode !== "caught" && this.mode !== "victory") {
+    if (this.mode === "caught") {
+      if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E)) this.restartFromCaught();
+      this.player.move(0, 0);
+      return;
+    }
+    if (!controls.locked && this.mode !== "victory") {
       if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
       if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
       if (this.cursors.up.isDown || this.keys.W.isDown) vy -= 1;
