@@ -380,6 +380,7 @@ class Store extends Phaser.Events.EventEmitter {
     this.state.currentDay += 1;
     this.state.timeOfDay = "morning";
     this.state.dailyFlags = {};
+    this.state.dailyWorldEvents = [];
     this.emit("time", this.state.timeOfDay);
     this.emit("newDay", this.state.currentDay);
     this.save();
@@ -459,7 +460,11 @@ class Store extends Phaser.Events.EventEmitter {
   // ---- photos & notes ----
   capturePhoto(photo: SavedPhoto) {
     if (this.state.photos[photo.id]) return false;
+    // Metadata-only Polaroids are tiny, but a cap keeps decade-long saves tidy.
+    const existing = Object.values(this.state.photos).sort((a, b) => a.day - b.day);
+    if (existing.length >= 48) delete this.state.photos[existing[0].id];
     this.state.photos[photo.id] = photo;
+    this.state.stats.photos_taken = (this.state.stats.photos_taken ?? 0) + 1;
     this.emit("photo", photo.id);
     this.emit("toast", `Polaroid · ${photo.title}`, "#8ecae6");
     this.save();
@@ -486,6 +491,7 @@ class Store extends Phaser.Events.EventEmitter {
   addItem(id: string, n = 1) {
     if (!ITEMS[id] || n <= 0) return;
     this.state.inventory[id] = this.getItemQuantity(id) + n;
+    if (id === "coffee") this.state.stats.coffees_made = (this.state.stats.coffees_made ?? 0) + n;
     const def = itemById(id);
     this.emit("inventory", id, this.state.inventory[id]);
     this.emit("toast", `+${n} ${def?.name ?? id}`, "#fff4e6");
@@ -513,6 +519,9 @@ class Store extends Phaser.Events.EventEmitter {
     this.addRelationship(npcId, gain);
     const voice = VOICES[npcId];
     const line = voice?.gifts[itemId] ?? voice?.giftFallback[tier] ?? GIFT_GENERIC[tier];
+    if (npcId === "mama" && (itemId === "flower" || itemId === "bouquet")) {
+      this.state.stats.flowers_for_mama = (this.state.stats.flowers_for_mama ?? 0) + (itemId === "bouquet" ? 3 : 1);
+    }
     this.emit("gift", npcId, itemId, gain);
     this.save();
     return { line, gain, tier };
@@ -544,6 +553,7 @@ class Store extends Phaser.Events.EventEmitter {
   discoverSecret(id: string) {
     if (this.state.discoveredSecrets.includes(id)) return false;
     this.state.discoveredSecrets.push(id);
+    this.state.stats.secrets_found = (this.state.stats.secrets_found ?? 0) + 1;
     this.addNote(id);
     this.emit("secret", id);
     this.save();
@@ -569,6 +579,76 @@ class Store extends Phaser.Events.EventEmitter {
   markEvent(id: string) {
     this.state.eventCooldowns[id] = this.state.currentDay;
     this.save();
+  }
+
+  offerWorldEvent(id: string) {
+    if (!this.state.dailyWorldEvents.includes(id)) this.state.dailyWorldEvents.push(id);
+    this.state.eventCooldowns[id] = this.state.currentDay;
+    this.save();
+  }
+
+  completeWorldEvent(id: string) {
+    const key = `world_event_complete_${id}_${this.state.currentDay}`;
+    if (this.state.dailyFlags[key]) return false;
+    this.state.dailyFlags[key] = true;
+    this.state.flags[`world_event_done_${id}`] = true;
+    this.state.stats.random_events_completed = (this.state.stats.random_events_completed ?? 0) + 1;
+    this.emit("worldEventCompleted", id);
+    this.save();
+    return true;
+  }
+
+  setCatStage(stage: number) {
+    const next = Phaser.Math.Clamp(Math.floor(stage), 0, 4);
+    if (next <= this.state.cat.stage) return false;
+    this.state.cat.stage = next;
+    this.state.cat.lastSeenDay = this.state.currentDay;
+    this.state.cat.adopted = next >= 4;
+    this.emit("cat", this.state.cat);
+    this.save();
+    return true;
+  }
+
+  adoptCat() {
+    const changed = !this.state.cat.adopted;
+    this.state.cat.stage = 4;
+    this.state.cat.adopted = true;
+    this.state.cat.lastSeenDay = this.state.currentDay;
+    if (changed) {
+      this.state.stats.cat_adoptions = (this.state.stats.cat_adoptions ?? 0) + 1;
+      this.emit("cat", this.state.cat);
+      this.emit("toast", "NEW ROOMMATE · Mishmish", "#f4a6c0");
+    }
+    this.save();
+    return changed;
+  }
+
+  petCat() {
+    this.state.stats.cat_pets = (this.state.stats.cat_pets ?? 0) + 1;
+    this.emit("catPet", this.state.stats.cat_pets);
+    this.save();
+  }
+
+  unlockSouvenir(id: string) {
+    if (this.state.souvenirs.includes(id)) return false;
+    this.state.souvenirs.push(id);
+    if (this.state.displayedSouvenirs.length < 5) this.state.displayedSouvenirs.push(id);
+    this.emit("souvenir", id);
+    this.emit("toast", `Souvenir · ${id.replace(/^souvenir_/, "").replace(/_/g, " ")}`, "#f4c95d");
+    this.save();
+    return true;
+  }
+
+  toggleSouvenirDisplay(id: string) {
+    if (!this.state.souvenirs.includes(id)) return false;
+    const index = this.state.displayedSouvenirs.indexOf(id);
+    if (index >= 0) this.state.displayedSouvenirs.splice(index, 1);
+    else {
+      if (this.state.displayedSouvenirs.length >= 5) this.state.displayedSouvenirs.shift();
+      this.state.displayedSouvenirs.push(id);
+    }
+    this.save();
+    return index < 0;
   }
 
   incrementStat(id: string, amount = 1) {

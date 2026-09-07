@@ -7,8 +7,10 @@ export class NPC extends Phaser.Physics.Arcade.Image {
   sprite: Phaser.GameObjects.Sprite;
   private label: Phaser.GameObjects.Text;
   private talkBubble: Phaser.GameObjects.Text;
+  private activityBubble: Phaser.GameObjects.Text;
   private bob: number;
   private shadow?: VisualShadowHandle;
+  private routine?: { activity: string; radius: number; anchorX: number; anchorY: number; nextAt: number; targetX?: number; targetY?: number; hideAt?: number };
 
   constructor(scene: Phaser.Scene, def: NpcDef, lighting: LightingProfile = DEFAULT_LIGHTING_PROFILE) {
     // invisible physics anchor; the visible part is a child sprite
@@ -45,14 +47,30 @@ export class NPC extends Phaser.Physics.Arcade.Image {
       .setOrigin(0.5, 1)
       .setVisible(false);
     scene.tweens.add({ targets: this.talkBubble, y: "-=3", duration: 550, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.activityBubble = scene.add
+      .text(0, -34, "", { fontFamily: "monospace", fontSize: "12px", color: "#fff4e6", backgroundColor: "rgba(58,43,58,0.68)", padding: { x: 3, y: 2 }, resolution: 2 })
+      .setOrigin(0.5, 1)
+      .setVisible(false);
   }
 
   place(x: number, y: number) {
     this.setPosition(x, y);
+    this.syncVisuals();
+    return this;
+  }
+
+  private syncVisuals() {
+    const x = this.x;
+    const y = this.y;
     this.sprite.setPosition(x, y).setDepth(y);
     this.label.setPosition(x, y - 19).setDepth(y + 1);
     this.talkBubble.setPosition(x, y - 30).setDepth(y + 2);
+    this.activityBubble.setPosition(x, y - 30).setDepth(y + 2);
     this.shadow?.setContactPoint(x, y + 3);
+  }
+
+  startRoutine(activity: string, radius = 8) {
+    this.routine = { activity, radius, anchorX: this.x, anchorY: this.y, nextAt: this.scene.time.now + 1200 + Math.random() * 2200 };
     return this;
   }
 
@@ -70,13 +88,41 @@ export class NPC extends Phaser.Physics.Arcade.Image {
   }
 
   update(t: number) {
+    const routine = this.routine;
+    if (routine) {
+      if (routine.targetX !== undefined && routine.targetY !== undefined) {
+        this.x += (routine.targetX - this.x) * 0.025;
+        this.y += (routine.targetY - this.y) * 0.025;
+        if (Phaser.Math.Distance.Between(this.x, this.y, routine.targetX, routine.targetY) < 1) {
+          routine.targetX = undefined;
+          routine.targetY = undefined;
+        }
+      }
+      if (t >= routine.nextAt) {
+        routine.nextAt = t + 5200 + Math.random() * 4200;
+        if (routine.radius > 0 && Math.random() < 0.48) {
+          routine.targetX = routine.anchorX + Phaser.Math.Between(-routine.radius, routine.radius);
+          routine.targetY = routine.anchorY + Phaser.Math.Between(-Math.floor(routine.radius / 2), Math.floor(routine.radius / 2));
+          this.faceTowards(routine.targetX, routine.targetY);
+        } else {
+          const symbol: Record<string, string> = { coffee: "☕", tea: "♨", phone: "▯", sit: "⌑", stretch: "↟", look: "◌", chat: "…", shop: "▱", water: "⋰", computer: "▦", yawn: "z", walk: "→" };
+          this.activityBubble.setText(symbol[routine.activity] ?? "·").setVisible(true);
+          routine.hideAt = t + 1700;
+        }
+      }
+      if (routine.hideAt && t >= routine.hideAt) {
+        this.activityBubble.setVisible(false);
+        routine.hideAt = undefined;
+      }
+    }
     // gentle idle bob
+    this.syncVisuals();
     this.sprite.y = this.y + Math.sin(t / 400 + this.bob) * 0.6;
-    this.shadow?.setContactPoint(this.x, this.y + 3);
   }
 
   setTalkAvailable(on: boolean) {
     this.talkBubble.setVisible(on);
+    if (on) this.activityBubble.setVisible(false);
   }
 
   destroy(fromScene?: boolean) {
@@ -84,6 +130,7 @@ export class NPC extends Phaser.Physics.Arcade.Image {
     this.sprite.destroy();
     this.label.destroy();
     this.talkBubble.destroy();
+    this.activityBubble.destroy();
     super.destroy(fromScene);
   }
 }

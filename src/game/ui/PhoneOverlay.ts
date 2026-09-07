@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { CITIES } from "../data/locations";
+import { getLocation } from "../data/locations";
 import { MEMORIES } from "../data/memories";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
@@ -15,9 +16,12 @@ import { store } from "../systems/store";
 import { markRead } from "../systems/phone";
 import { activateFromMessage as startQuest } from "../systems/quests";
 import { controls, uiEvents } from "../systems/controls";
+import { LIFE_STATS } from "../data/stats";
+import { SOUVENIRS } from "../data/souvenirs";
+import { SceneKeys } from "../constants";
 
 const FONT = "monospace";
-export type PhoneTab = "messages" | "album" | "map" | "contacts" | "notes" | "bag" | "style" | "debug";
+export type PhoneTab = "messages" | "camera" | "album" | "stats" | "map" | "contacts" | "notes" | "bag" | "style" | "debug";
 
 export class PhoneOverlay {
   root: Phaser.GameObjects.Container;
@@ -27,6 +31,7 @@ export class PhoneOverlay {
   private badge?: Phaser.GameObjects.Text;
   private readonly debugQuestTour = new URLSearchParams(window.location.search).has("debugQuests");
   private debugQuestIndex = 0;
+  private albumFilter = "all";
 
   constructor(private scene: Phaser.Scene) {
     this.root = scene.add.container(0, 0).setScrollFactor(0).setDepth(70);
@@ -50,6 +55,10 @@ export class PhoneOverlay {
   }
 
   show(tab?: PhoneTab) {
+    if (controls.cameraMode) {
+      controls.cameraMode = false;
+      uiEvents.emit("cameraExit");
+    }
     this.open = true;
     this.tab = tab ?? this.tab;
     controls.locked = true;
@@ -106,7 +115,9 @@ export class PhoneOverlay {
 
     const tabs: { id: PhoneTab; label: string }[] = [
       { id: "messages", label: "Msgs" },
+      { id: "camera", label: "Cam" },
       { id: "album", label: "Album" },
+      { id: "stats", label: "Stats" },
       { id: "map", label: "Map" },
       { id: "contacts", label: "Ppl" },
       { id: "notes", label: "Notes" },
@@ -114,16 +125,21 @@ export class PhoneOverlay {
       { id: "style", label: "Fit" },
     ];
     if (this.debugQuestTour) tabs.push({ id: "debug", label: "Debug" });
-    const tabW = (w - 32) / tabs.length;
+    const tabCols = 5;
+    const tabW = (w - 32) / tabCols;
     tabs.forEach((t, i) => {
       const on = this.tab === t.id;
+      const col = i % tabCols;
+      const row = Math.floor(i / tabCols);
       const b = this.scene.add
-        .text(px + 16 + i * tabW, py + 64, t.label, {
+        .text(px + 16 + col * tabW, py + 64 + row * 25, t.label, {
           fontFamily: FONT,
-          fontSize: "10px",
+          fontSize: "9px",
           color: on ? "#fff" : "#3a2b3a",
           backgroundColor: on ? "#e46d94" : "#efe4d4",
-          padding: { x: 8, y: 4 },
+          padding: { x: 6, y: 4 },
+          fixedWidth: tabW - 3,
+          align: "center",
           resolution: 2,
         })
         .setInteractive({ useHandCursor: true });
@@ -135,10 +151,12 @@ export class PhoneOverlay {
       this.add(b);
     });
 
-    const innerTop = py + 96;
-    const innerH = h - 140;
+    const innerTop = py + 120;
+    const innerH = h - 164;
     if (this.tab === "messages") this.drawMessages(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "camera") this.drawCamera(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "album") this.drawAlbum(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "stats") this.drawStats(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "map") this.drawMap(px + 16, innerTop, w - 32);
     if (this.tab === "contacts") this.drawContacts(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "notes") this.drawNotes(px + 16, innerTop, w - 32, innerH);
@@ -192,35 +210,125 @@ export class PhoneOverlay {
     }
   }
 
-  private drawAlbum(x: number, y: number, w: number, maxH: number) {
-    const photos = Object.values(store.state.photos).sort((a, b) => b.day - a.day);
-    let yy = y;
-    if (!photos.length) {
-      this.add(this.scene.add.text(x, yy, "No Polaroids yet.\nFind little CAM markers and frame a moment.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", wordWrap: { width: w }, resolution: 2 }));
-      yy += 54;
+  private drawCamera(x: number, y: number, w: number, _maxH: number) {
+    this.add(this.scene.add.text(x, y, "PHONE CAMERA", { fontFamily: FONT, fontSize: "15px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    this.add(this.scene.add.text(x, y + 26, "Choose a mood, then frame the actual scene.\nMove the view with keys or joystick. Action takes it.", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", wordWrap: { width: w }, lineSpacing: 3, resolution: 2 }));
+    const poses = [
+      { id: "smile", label: "☺ Smile" },
+      { id: "peace", label: "V Peace" },
+      { id: "silly", label: ":P Silly" },
+      { id: "hug", label: "♡ Hug" },
+    ] as const;
+    poses.forEach((pose, index) => {
+      const selected = controls.cameraPose === pose.id;
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const button = this.scene.add.text(x + col * (w / 2), y + 86 + row * 42, pose.label, {
+        fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: selected ? "#e46d94" : "#8a7a6a",
+        padding: { x: 9, y: 6 }, fixedWidth: w / 2 - 8, align: "center", resolution: 2,
+      }).setInteractive({ useHandCursor: true });
+      button.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
+        event?.stopPropagation?.();
+        controls.cameraPose = pose.id;
+        this.rebuild();
+      });
+      this.add(button);
+    });
+    const start = this.scene.add.text(x + w / 2, y + 186, "OPEN CAMERA", {
+      fontFamily: FONT, fontSize: "15px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 18, y: 9 }, resolution: 2,
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    start.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
+      event?.stopPropagation?.();
+      const manager = this.scene.scene.manager;
+      if (!manager.isActive(SceneKeys.World) && !manager.isActive(SceneKeys.House)) {
+        store.toast("Camera is available while walking around.", "#a08a70");
+        return;
+      }
+      const pose = controls.cameraPose;
+      this.close();
+      controls.cameraMode = true;
+      uiEvents.emit("cameraStart", pose);
+    });
+    this.add(start);
+    this.add(this.scene.add.text(x + w / 2, y + 222, "ESC or the on-screen exit closes camera mode.\nPhotos save scene metadata—not giant image files.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", align: "center", wordWrap: { width: w }, resolution: 2 }).setOrigin(0.5, 0));
+  }
+
+  private drawStats(x: number, y: number, w: number, maxH: number) {
+    this.add(this.scene.add.text(x, y, "JUJU'S VERY SERIOUS STATS", { fontFamily: FONT, fontSize: "13px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    this.add(this.scene.add.text(x, y + 20, `Countries visited  ${store.getStat("countries_visited")}   ·   Cities  ${store.getStat("cities_visited")}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", resolution: 2 }));
+    let yy = y + 48;
+    for (const def of LIFE_STATS) {
+      if (yy > y + maxH - 18) break;
+      const value = def.id === "workdays_completed"
+        ? store.state.adnocWorkdays
+        : def.id === "promotions_earned"
+          ? store.state.adnocCareerStats.promotions_earned ?? store.getStat(def.id)
+        : store.getStat(def.id) || store.state.adnocCareerStats[def.id] || 0;
+      this.add(this.scene.add.text(x, yy, `${def.icon}  ${def.label}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", resolution: 2 }));
+      this.add(this.scene.add.text(x + w, yy, `${value}`, { fontFamily: FONT, fontSize: "11px", color: value ? "#2f6fd0" : "#a08a70", fontStyle: "bold", resolution: 2 }).setOrigin(1, 0));
+      yy += 18;
     }
-    for (const photo of photos.slice(0, 4)) {
-      if (yy > y + maxH - 52) break;
-      const card = this.scene.add.rectangle(x + w / 2, yy + 20, w, 42, 0xfffdf8).setStrokeStyle(2, 0xd9c7ab).setInteractive({ useHandCursor: true });
-      const companion = photo.companionId ? NPCS.find((npc) => npc.id === photo.companionId)?.name : undefined;
-      const label = this.scene.add.text(x + 10, yy + 5, `POLAROID  ${photo.title}\nDay ${photo.day} · ${photo.timeOfDay}${companion ? ` · ${companion}` : ""}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: w - 20 }, resolution: 2 });
+  }
+
+  private drawAlbum(x: number, y: number, w: number, maxH: number) {
+    const filters = ["all", "abudhabi", "dubai", "london", "edinburgh", "germany", "family", "friends", "career", "chaos"];
+    if (!filters.includes(this.albumFilter)) this.albumFilter = "all";
+    const filterIndex = filters.indexOf(this.albumFilter);
+    const setFilter = (offset: number) => {
+      this.albumFilter = filters[(filterIndex + offset + filters.length) % filters.length];
+      this.rebuild();
+    };
+    const left = this.scene.add.text(x, y, "‹", { fontFamily: FONT, fontSize: "18px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 7, y: 1 }, resolution: 2 }).setInteractive({ useHandCursor: true });
+    const right = this.scene.add.text(x + w, y, "›", { fontFamily: FONT, fontSize: "18px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 7, y: 1 }, resolution: 2 }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    left.on("pointerdown", () => setFilter(-1));
+    right.on("pointerdown", () => setFilter(1));
+    this.add(left); this.add(right);
+    this.add(this.scene.add.text(x + w / 2, y + 4, `SCRAPBOOK · ${this.albumFilter.toUpperCase()}`, { fontFamily: FONT, fontSize: "12px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5, 0));
+
+    const familyIds = ["mama", "baba", "fadwa", "nour", "jad", "shan"];
+    const socialCategories = (ids: string[]) => [
+      ...(ids.some((id) => familyIds.includes(id)) ? ["family"] : []),
+      ...(ids.some((id) => !familyIds.includes(id)) ? ["friends"] : []),
+    ];
+    const matches = (cityId: string, categories: string[] = []) => this.albumFilter === "all" || this.albumFilter === cityId || categories.includes(this.albumFilter);
+    const photos = Object.values(store.state.photos)
+      .filter((photo) => {
+        const people = photo.participantIds ?? (photo.companionId ? [photo.companionId] : []);
+        return matches(getLocation(photo.locationId).cityId, [...socialCategories(people), ...(photo.frame === "chaos" ? ["chaos"] : [])]);
+      })
+      .sort((a, b) => b.day - a.day);
+    let yy = y + 34;
+    for (const [index, photo] of photos.slice(0, 2).entries()) {
+      const card = this.scene.add.rectangle(x + w / 2, yy + 23, w - 6, 46, 0xfffdf8).setStrokeStyle(2, index % 2 ? 0xf4a6c0 : 0xd9c7ab).setAngle(index % 2 ? 0.45 : -0.45).setInteractive({ useHandCursor: true });
+      const participants = (photo.participantIds ?? (photo.companionId ? [photo.companionId] : []))
+        .map((id) => NPCS.find((npc) => npc.id === id)?.name ?? id).join(" + ");
+      const label = this.scene.add.text(x + 12, yy + 5, `▣  ${photo.title}${photo.surprise ? `  ·  ${photo.surprise}!` : ""}\nDay ${photo.day} · ${photo.timeOfDay} · ${photo.pose ?? "smile"}${participants ? ` · ${participants}` : ""}`, { fontFamily: FONT, fontSize: "9px", color: "#3a2b3a", wordWrap: { width: w - 24 }, resolution: 2 });
       card.on("pointerdown", (_p: Phaser.Input.Pointer, _lx: number, _ly: number, e?: Phaser.Types.Input.EventData) => {
         e?.stopPropagation?.();
-        this.showPhotoViewer(photo.title, photo.caption ?? "A little moment, kept.");
+        this.showPhotoViewer(photo.title, `${photo.caption ?? "A little moment, kept."}${photo.surprise ? `\nPhotobomb: ${photo.surprise}.` : ""}`);
       });
-      this.add(card);
-      this.add(label);
-      yy += 50;
+      this.add(card); this.add(label);
+      yy += 53;
     }
-    if (yy > y + maxH - 50) return;
-    this.add(this.scene.add.text(x, yy + 4, "MEMORY BOOK", { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
-    yy += 22;
-    for (const city of CITIES) {
-      const group = MEMORIES.filter((memory) => memory.cityId === city.id);
-      const have = group.filter((memory) => store.hasMemory(memory.id)).length;
-      if (!group.length || !have) continue;
-      this.add(this.scene.add.text(x, yy, `${city.name}  ${have}/${group.length}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", resolution: 2 }));
-      yy += 16;
+    if (!photos.length) {
+      this.add(this.scene.add.text(x, yy, "No camera Polaroids in this tab yet.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", resolution: 2 }));
+      yy += 24;
+    }
+    if (yy > y + maxH - 60) return;
+    const memories = MEMORIES.filter((memory) => matches(memory.cityId, [...socialCategories(memory.npcs), ...(memory.category ? [memory.category] : [])]));
+    const have = memories.filter((memory) => store.hasMemory(memory.id)).length;
+    this.add(this.scene.add.text(x, yy, `MEMORY PAGES  ${have}/${memories.length}   ✦ stickers included`, { fontFamily: FONT, fontSize: "10px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    yy += 18;
+    for (const memory of memories.slice(0, Math.max(1, Math.floor((y + maxH - yy) / 49)))) {
+      const unlocked = store.hasMemory(memory.id);
+      const title = unlocked ? memory.title : (memory.hiddenClue ?? "TORN EMPTY POLAROID");
+      const caption = unlocked ? (memory.caption ?? memory.description) : "??? · keep looking";
+      const card = this.scene.add.rectangle(x + w / 2, yy + 20, w - 8, memory.spread ? 44 : 40, unlocked ? 0xfff7df : 0xeee5da).setStrokeStyle(memory.spread ? 3 : 2, unlocked ? 0xf4c95d : 0xc9b9a8).setInteractive({ useHandCursor: unlocked });
+      const sticker = memory.sticker ? `[${memory.sticker}] ` : unlocked ? "♡ " : "· ";
+      const text = this.scene.add.text(x + 12, yy + 5, `${sticker}${title}\n${caption}`, { fontFamily: FONT, fontSize: "9px", color: unlocked ? "#3a2b3a" : "#8a7a6a", fontStyle: memory.spread ? "bold" : "normal", wordWrap: { width: w - 28 }, resolution: 2 });
+      if (unlocked) card.on("pointerdown", () => this.showPhotoViewer(memory.title, `${memory.description}\n\n${memory.caption ?? "kept forever"}`));
+      this.add(card); this.add(text);
+      yy += memory.spread ? 51 : 47;
     }
   }
 
@@ -315,6 +423,21 @@ export class PhoneOverlay {
 
   private drawNotes(x: number, y: number, w: number, maxH: number) {
     let yy = y;
+    this.add(this.scene.add.text(x, yy, `SOUVENIR SHELF  ${store.state.displayedSouvenirs.length}/5 displayed`, { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    yy += 21;
+    const souvenirs = SOUVENIRS.filter((souvenir) => store.state.souvenirs.includes(souvenir.id));
+    if (!souvenirs.length) {
+      this.add(this.scene.add.text(x, yy, "Travel leaves little things behind.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", resolution: 2 }));
+      yy += 22;
+    }
+    for (const souvenir of souvenirs.slice(0, 3)) {
+      const shown = store.state.displayedSouvenirs.includes(souvenir.id);
+      const row = this.scene.add.text(x, yy, `${souvenir.icon} ${souvenir.name}  ${shown ? "ON SHELF" : "STORED"}`, { fontFamily: FONT, fontSize: "9px", color: "#3a2b3a", backgroundColor: shown ? "#fff0bd" : "#eee5da", padding: { x: 5, y: 3 }, fixedWidth: w, resolution: 2 }).setInteractive({ useHandCursor: true });
+      row.on("pointerdown", () => { store.toggleSouvenirDisplay(souvenir.id); this.rebuild(); });
+      this.add(row);
+      yy += 20;
+    }
+    yy += 5;
     const discovered = SECRETS.filter((secret) => store.state.discoveredNotes.includes(secret.id));
     this.add(this.scene.add.text(x, yy, `FOUND NOTES  ${discovered.length}/${SECRETS.length}`, { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
     yy += 20;

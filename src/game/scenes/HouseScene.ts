@@ -9,6 +9,10 @@ import { homeComment } from "../systems/life";
 import * as quests from "../systems/quests";
 import type { PlacedFurniture } from "../systems/save";
 import { createVisualShadow, getVisualAssetDef, getVisualTexture, type VisualShadowHandle } from "../visual";
+import { NPC } from "../objects/NPC";
+import { NPCS } from "../data/npcs";
+import { stableDailyRoll } from "../systems/worldEvents";
+import { souvenirById } from "../data/souvenirs";
 
 interface Interactable {
   x: number;
@@ -33,6 +37,14 @@ export class HouseScene extends Phaser.Scene {
   private placed: { img: Phaser.GameObjects.Image; data: PlacedFurniture; shadow?: VisualShadowHandle }[] = [];
   private drag?: { img: Phaser.GameObjects.Image; data: PlacedFurniture; shadow?: VisualShadowHandle };
   private deliveryBoxes?: Phaser.GameObjects.Container;
+  private homeCat?: Phaser.GameObjects.Image;
+  private catInteractable?: Interactable;
+  private visitor?: NPC;
+  private visitorInteractable?: Interactable;
+  private cameraOverlay?: Phaser.GameObjects.Container;
+  private cameraOffset = new Phaser.Math.Vector2();
+  private cameraPose: "smile" | "peace" | "silly" | "hug" = "smile";
+  private lastCameraCapture = 0;
 
   constructor() {
     super(SceneKeys.House);
@@ -40,6 +52,13 @@ export class HouseScene extends Phaser.Scene {
 
   create(data: { title?: string; interior?: "cream" | "brown" } = {}) {
     this.interactables = [];
+    this.homeCat = undefined;
+    this.catInteractable = undefined;
+    this.visitor = undefined;
+    this.visitorInteractable = undefined;
+    this.cameraOverlay = undefined;
+    this.cameraOffset.set(0, 0);
+    controls.cameraMode = false;
     uiEvents.emit("prompt", null);
     const worldW = RW * TILE;
     const worldH = RH * TILE;
@@ -98,6 +117,8 @@ export class HouseScene extends Phaser.Scene {
     this.addFurnitureInteract(TILE * 14, TILE * 3.2, "Edit home", () => this.toggleEdit());
     this.addFurnitureInteract(TILE * 7.4, TILE * 2.9, "Look at photo wall", () => uiEvents.emit("openPhone", "album"));
     this.addFurnitureInteract(TILE * 11.2, TILE * 2.9, "Look at keepsakes", () => uiEvents.emit("openPhone", "notes"));
+    this.addHomeFeatures(worldW);
+    this.drawSouvenirShelf(worldW);
 
     this.placed = [];
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
@@ -151,16 +172,28 @@ export class HouseScene extends Phaser.Scene {
     this.scale.on("resize", this.applyZoom, this);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
-    this.keys = this.input.keyboard!.addKeys("W,A,S,D,SPACE,E") as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys("W,A,S,D,SPACE,E,ESC") as Record<string, Phaser.Input.Keyboard.Key>;
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("openMap", this.openMap, this);
+    uiEvents.on("cameraStart", this.startCamera, this);
+    uiEvents.on("cameraExit", this.exitCameraMode, this);
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
     uiEvents.emit("locationTitle", title, brown ? "Top floor · brown inside" : title);
+
+    if (!brown) {
+      if (store.state.cat.adopted) this.spawnHomeCat();
+      else if (store.state.cat.stage >= 3 && store.state.cat.lastSeenDay < store.state.currentDay) this.spawnAdoptionMoment();
+      this.time.delayedCall(850, () => this.maybeWelcomeVisitor());
+    }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       for (const placed of this.placed) placed.shadow?.destroy();
       uiEvents.off("action", this.tryInteract, this);
       uiEvents.off("openMap", this.openMap, this);
+      uiEvents.off("cameraStart", this.startCamera, this);
+      uiEvents.off("cameraExit", this.exitCameraMode, this);
+      this.exitCameraMode();
+      this.visitor?.destroy();
       this.scale.off("resize", this.applyZoom, this);
       this.input.off("pointermove");
       this.input.off("pointerup");
@@ -229,15 +262,52 @@ export class HouseScene extends Phaser.Scene {
       this.player.setScale(1.05);
       this.tweens.add({ targets: this.player, y: this.player.y + 3, duration: 260, ease: "Sine.out" });
     } else {
+      store.incrementStat("plant_inspections");
       const water = this.add.text(this.player.x, this.player.y - 20, "⋰ ⋰  ♡", { fontFamily: "monospace", fontSize: "13px", color: "#63c6e8", stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 8);
       this.tweens.add({ targets: water, x: img.x, y: img.y - 15, alpha: 0, duration: 800, onComplete: () => water.destroy() });
       this.tweens.add({ targets: img, scaleX: 1.12, scaleY: 1.12, duration: 200, yoyo: true, repeat: 2, ease: "Sine.inOut" });
     }
     const done = quests.onInteract("home_enjoy");
     store.setDaily(`home_${kind}`);
+    const catLine = store.state.cat.adopted ? `${store.state.cat.name} jumps up beside her, circles once, and claims most of the cushion.` : undefined;
+    const plantSecret = kind === "plant" && store.getStat("plant_inspections") === 5 ? "Plant: ...\nJuju: I know you're hiding something." : undefined;
     uiEvents.emit("dialogue", "Home", kind === "sofa"
-      ? ["Juju sinks into the sofa. Nothing needs solving for a minute.", "The room is quiet. The plant is green. It feels like hers.", done?.complete ?? "Home."]
-      : ["A little water. One new leaf. The whole room seems to exhale.", "Nothing dramatic happens—and that is exactly the point.", done?.complete ?? "Home."]);
+      ? ["Juju sinks into the sofa. Nothing needs solving for a minute.", ...(catLine ? [catLine] : []), "The room is quiet. The plant is green. It feels like hers.", done?.complete ?? "Home."]
+      : ["A little water. One new leaf. The whole room seems to exhale.", ...(plantSecret ? [plantSecret] : []), "Nothing dramatic happens—and that is exactly the point.", done?.complete ?? "Home."]);
+  }
+
+  private addHomeFeatures(worldW: number) {
+    const tv = this.add.image(TILE * 12.7, TILE * 3.35, getVisualTexture(this, "f_tv")).setOrigin(0.5, 1).setDepth(TILE * 3.35);
+    this.addFurnitureInteract(tv.x, tv.y - 4, "Watch TV", () => {
+      const programs = ["DUBAI WEATHER: HOT", "TINY HOME MAKEOVERS", "PIGEON COURT", "THE GREAT BRITISH KETTLE", "CEO OF SNACKS"];
+      let program = programs[(store.state.currentDay + store.getStat("tv_channels")) % programs.length];
+      if (store.hasMemory("mem_great_white") && program === "PIGEON COURT") program = "SHARK WEEK";
+      store.incrementStat("tv_channels");
+      uiEvents.emit("dialogue", "TV", [program, program === "SHARK WEEK" ? "Juju changes the channel immediately." : "The remote disappears beneath one cushion. As tradition demands."]);
+    });
+
+    const fridge = this.add.image(worldW - TILE * 2.2, TILE * 5.1, getVisualTexture(this, "f_fridge")).setOrigin(0.5, 1).setDepth(TILE * 5.1);
+    this.addFurnitureInteract(fridge.x, fridge.y - 6, "Get a snack", () => {
+      if (!store.hasDaily("home_snack")) {
+        store.setDaily("home_snack");
+        store.addItem("chocolate");
+      }
+      uiEvents.emit("dialogue", "Fridge", ["Snack acquired.", "No hunger meter. Just excellent timing."]);
+    });
+
+    const coffee = this.add.image(TILE * 6.1, TILE * 4.2, getVisualTexture(this, "f_table")).setOrigin(0.5, 1).setDepth(TILE * 4.2);
+    this.addFurnitureInteract(coffee.x, coffee.y - 5, "Make coffee", () => uiEvents.emit("minigame", {
+      kind: "coffee", title: "Home coffee", hint: "Cup, espresso, milk, lid. No commute required.", skipLabel: "Later",
+      onDone: (ok?: boolean) => {
+        if (!ok) return;
+        store.addItem("coffee");
+        store.incrementStat("perfect_coffees");
+        uiEvents.emit("dialogue", "Kitchen", ["Coffee made. The house smells awake."]);
+      },
+    }));
+
+    const wardrobe = this.add.text(TILE * 2.1, TILE * 7.2, "WARDROBE", { fontFamily: "monospace", fontSize: "8px", color: "#fff4e6", backgroundColor: "#a06de2", padding: { x: 5, y: 8 }, resolution: 2 }).setOrigin(0.5).setDepth(TILE * 7.2);
+    this.addFurnitureInteract(wardrobe.x, wardrobe.y, "Change outfit", () => uiEvents.emit("openWardrobe"));
   }
 
   private drawMemoryCorner(worldW: number, brown: boolean) {
@@ -276,6 +346,147 @@ export class HouseScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(Depths.overlay);
   }
 
+  private drawSouvenirShelf(worldW: number) {
+    const shown = store.state.displayedSouvenirs.map(souvenirById).filter((souvenir): souvenir is NonNullable<typeof souvenir> => !!souvenir);
+    const shelfX = worldW - TILE * 6.2;
+    const shelfY = TILE * 1.42;
+    shown.forEach((souvenir, index) => {
+      const x = shelfX - ((shown.length - 1) * 9) / 2 + index * 9;
+      const icon = this.add.text(x, shelfY, souvenir.icon, { fontFamily: "monospace", fontSize: "8px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 1, resolution: 2 }).setOrigin(0.5, 1).setDepth(Depths.overlay);
+      this.addFurnitureInteract(icon.x, TILE * 2.55, 13, `Remember ${souvenir.name}`, () => uiEvents.emit("dialogue", souvenir.name, [souvenir.caption]));
+    });
+    this.addFurnitureInteract(shelfX, TILE * 2.85, 24, "Arrange souvenir shelf", () => {
+      const owned = store.state.souvenirs.map(souvenirById).filter((souvenir): souvenir is NonNullable<typeof souvenir> => !!souvenir);
+      if (!owned.length) {
+        uiEvents.emit("dialogue", "Souvenir shelf", ["Empty for now. Every city has something small to bring home."]);
+        return;
+      }
+      uiEvents.emit("choice", {
+        title: "Souvenir shelf",
+        prompt: "Choose one to display or put away. Up to five fit without shelf engineering.",
+        choices: owned.slice(0, 4).map((souvenir) => ({ id: souvenir.id, label: `${store.state.displayedSouvenirs.includes(souvenir.id) ? "✓" : "+"} ${souvenir.name}` })),
+        onChoose: (id: string) => {
+          const displayed = store.toggleSouvenirDisplay(id);
+          store.toast(displayed ? "Placed on the shelf" : "Put safely away", "#f4c95d");
+          uiEvents.emit("dialogue", souvenirById(id)?.name ?? "Souvenir", [souvenirById(id)?.caption ?? "A little trip, kept.", "The shelf will look right next time you enter the room."]);
+        },
+      });
+    });
+  }
+
+  private spawnAdoptionMoment() {
+    const x = TILE * 10.8;
+    const y = TILE * 10.6;
+    const cat = this.add.image(x, y, getVisualTexture(this, "o_cat")).setOrigin(0.5, 1).setDepth(y).setScale(0.92);
+    this.tweens.add({ targets: cat, y: y - 2, duration: 760, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const it = this.addFurnitureInteract(x, y, 24, "Let the familiar cat in", () => {
+      if (!store.adoptCat()) return;
+      store.unlockMemory("mem_cat_roommate");
+      tryDeliverMessages({ limit: 1 });
+      this.interactables = this.interactables.filter((candidate) => candidate !== it);
+      const banner = this.add.text((RW * TILE) / 2, TILE * 5.4, "NEW ROOMMATE", { fontFamily: "monospace", fontSize: "24px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 5, resolution: 2 }).setOrigin(0.5).setDepth(900).setScale(0.4);
+      this.tweens.add({ targets: banner, scale: 1, y: banner.y - 10, duration: 420, ease: "Back.out", hold: 1200, yoyo: true, onComplete: () => banner.destroy() });
+      this.tweens.add({ targets: cat, x: TILE * 9.2, y: TILE * 7.4, duration: 900, ease: "Sine.inOut", onComplete: () => {
+        cat.destroy();
+        this.spawnHomeCat();
+      } });
+      uiEvents.emit("dialogue", store.state.cat.name, ["The cat sits by the door like she has an appointment.", "Juju opens it.", "Mishmish walks in, checks the sofa, and does not ask permission again."]);
+    });
+  }
+
+  private spawnHomeCat() {
+    if (this.homeCat?.active) return;
+    const sofa = this.placed.find((placed) => placed.data.tex === "f_sofa")?.img;
+    const x = sofa?.x ?? TILE * 9.2;
+    const y = sofa ? sofa.y - 9 : TILE * 7.4;
+    this.homeCat = this.add.image(x, y, getVisualTexture(this, "o_cat")).setOrigin(0.5, 1).setDepth(y + 2).setScale(0.9);
+    this.catInteractable = this.addFurnitureInteract(x, y, 22, `Pet ${store.state.cat.name}`, () => {
+      store.petCat();
+      this.tweens.add({ targets: this.homeCat, scaleX: 1.08, scaleY: 1.08, duration: 150, yoyo: true, repeat: 2 });
+      uiEvents.emit("dialogue", store.state.cat.name, [store.getStat("cat_pets") % 4 === 0 ? "Purrrrr. This interaction has been approved." : "...", "Juju: You live here. You could at least say hello."]);
+    });
+    const spots = [
+      { x: TILE * 6.5, y: TILE * 7.6 }, { x: TILE * 12.5, y: TILE * 7.8 }, { x: TILE * 4.2, y: TILE * 6.1 }, { x: TILE * 9.3, y: TILE * 4.8 },
+    ];
+    this.time.addEvent({ delay: 6200, loop: true, callback: () => {
+      if (!this.homeCat?.active || controls.cameraMode) return;
+      const target = spots[Math.floor(stableDailyRoll(`cat-spot-${this.time.now}`) * spots.length) % spots.length];
+      this.tweens.add({ targets: this.homeCat, x: target.x, y: target.y, duration: 1400, ease: "Sine.inOut", onUpdate: () => this.homeCat?.setDepth((this.homeCat.y ?? target.y) + 2) });
+    } });
+    if (!store.hasDaily("cat_knock_gag") && stableDailyRoll("cat-knock-gag") < 0.18) {
+      store.setDaily("cat_knock_gag");
+      this.time.delayedCall(3500, () => {
+        if (!this.homeCat?.active) return;
+        const thing = this.add.text(this.homeCat.x + 14, this.homeCat.y - 15, "▯", { fontFamily: "monospace", fontSize: "12px", color: "#f4c95d", resolution: 2 }).setDepth(this.homeCat.y + 4);
+        this.tweens.add({ targets: thing, y: thing.y + 22, angle: 90, duration: 420, ease: "Bounce.out" });
+        uiEvents.emit("dialogue", "Juju", ["Why.", "Mishmish: ..."]);
+      });
+    }
+  }
+
+  private maybeWelcomeVisitor() {
+    if (!this.sys.isActive() || store.hasDaily("home_visitor") || controls.locked) return;
+    const debug = new URLSearchParams(window.location.search).has("lifeDebug");
+    if (!debug && stableDailyRoll("home-visitor-roll") >= 0.36) return;
+    const eligible = ["moomoo", "mama", "fadwa", "chloe"].filter((id) => {
+      if (!debug && store.getRelationship(id) < 15) return false;
+      if (id === "fadwa" && store.state.quests.q_london?.status !== "done") return false;
+      if (id === "chloe" && store.state.quests.q_chloe?.status !== "done") return false;
+      return true;
+    });
+    const id = eligible[Math.floor(stableDailyRoll("home-visitor-choice") * eligible.length)];
+    const def = NPCS.find((npc) => npc.id === id);
+    if (!def) return;
+    store.setDaily("home_visitor");
+    this.visitor = new NPC(this, def);
+    this.visitor.place(TILE * 9, TILE * 10.2).startRoutine(id === "chloe" ? "computer" : id === "mama" ? "tea" : "sit", 10);
+    this.visitorInteractable = this.addFurnitureInteract(this.visitor.x, this.visitor.y, 28, `Hang out with ${def.name}`, () => this.openVisitorHangout(id));
+    if (id === "mama") store.addItem("chocolate");
+    const arrivals: Record<string, string[]> = {
+      fadwa: ["Fadwa opens the door and immediately walks in.", "Juju: Hello?", "Fadwa: I know where the sofa is."],
+      mama: ["Mama arrives carrying food and exactly three questions about whether Juju has eaten."],
+      moomoo: ["Moomoo has selected movie night without consulting the schedule."],
+      chloe: ["Chloe opens her laptop.", "Juju: No PhD.", "Chloe closes it by approximately one centimetre."],
+    };
+    const catLine = store.state.cat.adopted ? `${def.name} meets ${store.state.cat.name}. ${store.state.cat.name} performs a complete background check.` : undefined;
+    uiEvents.emit("dialogue", def.name, [...(arrivals[id] ?? ["Surprise visit."]), ...(catLine ? [catLine] : [])]);
+  }
+
+  private openVisitorHangout(npcId: string) {
+    const name = NPCS.find((npc) => npc.id === npcId)?.name ?? npcId;
+    uiEvents.emit("choice", {
+      title: `${name} is here`,
+      prompt: "Keep it short, cozy, and completely optional.",
+      choices: [
+        { id: "coffee", label: "Make coffee" },
+        { id: "movie", label: "Pick a movie" },
+        { id: "gossip", label: "Gossip" },
+        { id: "cards", label: "Play cards", description: "No wagers. Maximum bragging." },
+      ],
+      onChoose: (activity: string) => {
+        if (activity === "coffee" || activity === "cards") {
+          uiEvents.emit("minigame", { kind: "timing", title: activity === "coffee" ? "Two home coffees" : "Friendly cards", hint: activity === "coffee" ? "Match three easy moments." : "Catch three card-flip moments. No money anywhere.", taps: 3, onDone: () => this.finishVisitorHangout(npcId, activity) });
+        } else this.finishVisitorHangout(npcId, activity);
+      },
+    });
+  }
+
+  private finishVisitorHangout(npcId: string, activity: string) {
+    const name = NPCS.find((npc) => npc.id === npcId)?.name ?? npcId;
+    if (!store.hasDaily(`home_hangout_${npcId}`)) {
+      store.setDaily(`home_hangout_${npcId}`);
+      store.addRelationship(npcId, 2);
+      store.incrementStat("home_hangouts");
+    }
+    const lines: Record<string, string[]> = {
+      coffee: ["Two cups. One sofa. The timing is somehow perfect."],
+      movie: ["They choose a movie in forty seconds and discuss the choice for twelve minutes.", stableDailyRoll(`visitor-nap-${npcId}`) < 0.35 ? `${name} falls asleep before the second act.` : "Someone steals the remote. Nobody admits it."],
+      gossip: ["The gossip begins with 'do not tell anyone' and immediately becomes architectural."],
+      cards: ["No money. No wagers. Just an unreasonable amount of bragging over one tiny card."],
+    };
+    uiEvents.emit("dialogue", name, [...(lines[activity] ?? ["A small evening. A good one."]), "Drinks made. Feet up. The world can wait outside."]);
+  }
+
   private toggleEdit() {
     this.editing = !this.editing;
     controls.locked = this.editing;
@@ -285,6 +496,69 @@ export class HouseScene extends Phaser.Scene {
       this.maybeStoreNearest();
       quests.onDecorate("home");
     }
+  }
+
+  private startCamera(pose: "smile" | "peace" | "silly" | "hug" = "smile") {
+    if (!this.sys.isActive() || this.editing) {
+      controls.cameraMode = false;
+      return;
+    }
+    this.exitCameraMode();
+    controls.cameraMode = true;
+    controls.locked = false;
+    this.cameraPose = pose;
+    this.cameraOffset.set(0, 0);
+    if (this.visitor) {
+      this.visitor.startRoutine("look", 0).faceTowards(this.player.x, this.player.y);
+      this.tweens.add({ targets: this.visitor, x: this.player.x + 18, y: this.player.y + 3, duration: 420, ease: "Sine.inOut" });
+    }
+    this.currentPrompt = null;
+    uiEvents.emit("prompt", null);
+    const { width, height } = this.scale.gameSize;
+    const frame = this.add.graphics().setScrollFactor(0).setDepth(70000);
+    frame.lineStyle(4, 0xffffff, 0.9).strokeRoundedRect(24, 54, width - 48, height - 140, 12);
+    const title = this.add.text(34, 66, `HOME CAMERA · ${pose.toUpperCase()}`, { fontFamily: "monospace", fontSize: "11px", color: "#fff", backgroundColor: "rgba(43,34,51,0.75)", padding: { x: 7, y: 4 }, resolution: 2 }).setScrollFactor(0).setDepth(70001);
+    const hint = this.add.text(width / 2, height - 73, "MOVE VIEW · ACTION TO TAKE PHOTO", { fontFamily: "monospace", fontSize: "11px", color: "#fff", backgroundColor: "rgba(43,34,51,0.78)", padding: { x: 8, y: 4 }, resolution: 2 }).setOrigin(0.5).setScrollFactor(0).setDepth(70001);
+    const exit = this.add.text(width - 34, 66, "EXIT", { fontFamily: "monospace", fontSize: "11px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 9, y: 5 }, resolution: 2 }).setOrigin(1, 0).setScrollFactor(0).setDepth(70002).setInteractive({ useHandCursor: true });
+    exit.on("pointerdown", () => this.exitCameraMode());
+    this.cameraOverlay = this.add.container(0, 0, [frame, title, hint, exit]).setScrollFactor(0).setDepth(70000);
+  }
+
+  private exitCameraMode() {
+    controls.cameraMode = false;
+    this.cameraOverlay?.destroy(true);
+    this.cameraOverlay = undefined;
+    this.cameraOffset.set(0, 0);
+    this.cameras?.main?.setFollowOffset(0, 0);
+  }
+
+  private takeHomePhoto() {
+    if (!controls.cameraMode || this.time.now - this.lastCameraCapture < 700) return;
+    this.lastCameraCapture = this.time.now;
+    const index = store.getStat("photos_taken") + 1;
+    const visitorId = this.visitor?.def.id;
+    const catInFrame = !!this.homeCat?.active && stableDailyRoll(`home-camera-cat-${index}`) < 0.32;
+    const surprise = catInFrame ? "cat" : visitorId && stableDailyRoll(`home-camera-pose-${index}`) < 0.1 ? "weird_pose" : undefined;
+    const location = getLocation(store.state.currentLocation);
+    store.capturePhoto({
+      id: `camera_home_${store.state.currentDay}_${index}`,
+      title: visitorId ? `At home with ${NPCS.find((npc) => npc.id === visitorId)?.name ?? visitorId}` : store.state.cat.adopted ? `Home with ${store.state.cat.name}` : "A quiet room",
+      locationId: location.id,
+      day: store.state.currentDay,
+      timeOfDay: store.state.timeOfDay,
+      companionId: visitorId,
+      participantIds: visitorId ? [visitorId] : [],
+      pose: this.cameraPose,
+      surprise,
+      frame: surprise ? "chaos" : visitorId ? "hearts" : "classic",
+      caption: catInFrame ? `${store.state.cat.name} entered the frame at the exact correct second.` : "The sofa, the shelf, the ordinary little life. Kept.",
+    });
+    if (this.cameraPose === "hug" && visitorId && store.getRelationship(visitorId) >= 35) store.incrementStat("npc_hugs");
+    const { width, height } = this.scale.gameSize;
+    const flash = this.add.rectangle(0, 0, width, height, 0xffffff, 0.92).setOrigin(0).setScrollFactor(0).setDepth(70020);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 260, onComplete: () => flash.destroy() });
+    store.toast(surprise ? `Saved · ${surprise} photobomb` : "Saved to scrapbook", "#8ecae6");
+    tryDeliverMessages({ limit: 1 });
   }
 
   private maybeStoreNearest() {
@@ -367,6 +641,10 @@ export class HouseScene extends Phaser.Scene {
   }
 
   private tryInteract() {
+    if (controls.cameraMode) {
+      this.takeHomePhoto();
+      return;
+    }
     if (controls.locked) return;
     const now = this.time.now;
     if (now - this.lastInteract < 250) return;
@@ -380,7 +658,21 @@ export class HouseScene extends Phaser.Scene {
     if (!this.player) return;
     let vx = 0;
     let vy = 0;
-    if (!controls.locked) {
+    if (controls.cameraMode) {
+      if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
+      if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
+      if (this.cursors.up.isDown || this.keys.W.isDown) vy -= 1;
+      if (this.cursors.down.isDown || this.keys.S.isDown) vy += 1;
+      vx += controls.moveX;
+      vy += controls.moveY;
+      this.cameraOffset.x = Phaser.Math.Clamp(this.cameraOffset.x + vx * 1.8, -76, 76);
+      this.cameraOffset.y = Phaser.Math.Clamp(this.cameraOffset.y + vy * 1.5, -48, 48);
+      this.cameras.main.setFollowOffset(-this.cameraOffset.x, -this.cameraOffset.y);
+      if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E)) this.takeHomePhoto();
+      if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.exitCameraMode();
+      vx = 0;
+      vy = 0;
+    } else if (!controls.locked) {
       if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
       if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
       if (this.cursors.up.isDown || this.keys.W.isDown) vy -= 1;
@@ -398,9 +690,21 @@ export class HouseScene extends Phaser.Scene {
     const walkingSpeed = store.state.outfit === "red_bottom_boots" ? this.player.speed * 1.65 : this.player.speed;
     this.player.move(vx * walkingSpeed, vy * walkingSpeed);
 
+    if (this.visitor) {
+      this.visitor.update(this.time.now);
+      if (this.visitorInteractable) {
+        this.visitorInteractable.x = this.visitor.x;
+        this.visitorInteractable.y = this.visitor.y;
+      }
+    }
+    if (this.homeCat && this.catInteractable) {
+      this.catInteractable.x = this.homeCat.x;
+      this.catInteractable.y = this.homeCat.y;
+    }
+
     let best: Interactable | null = null;
     let bestD = Infinity;
-    for (const it of this.interactables) {
+    for (const it of controls.cameraMode ? [] : this.interactables) {
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, it.x, it.y);
       if (d <= it.radius && d < bestD) {
         best = it;

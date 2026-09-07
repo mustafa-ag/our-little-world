@@ -7,13 +7,15 @@ export const controls = {
   moveX: 0,
   moveY: 0,
   locked: false, // true while a dialogue/menu is open -> freeze movement
+  cameraMode: false,
+  cameraPose: "smile" as "smile" | "peace" | "silly" | "hug",
 };
 
 // Global UI event bus (button presses, dialogue requests, menu toggles).
 export const uiEvents = new Phaser.Events.EventEmitter();
 
 export interface MiniGameSpec {
-  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo";
+  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo" | "timing";
   title: string;
   hint: string;
   taps?: number;
@@ -32,9 +34,17 @@ export interface FoodOrderSpec {
   onOrder: (itemId: string) => void;
 }
 
+export interface ChoiceSpec {
+  title: string;
+  prompt: string;
+  choices: { id: string; label: string; description?: string }[];
+  onChoose: (id: string) => void;
+}
+
 export function resetControls() {
   controls.moveX = 0;
   controls.moveY = 0;
+  controls.cameraMode = false;
 }
 
 export type MiniKind = "npc" | "landmark" | "home" | "exit" | "shop" | "jeep";

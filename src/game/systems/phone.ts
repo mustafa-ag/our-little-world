@@ -19,6 +19,12 @@ function unlocked(def: MessageDef) {
     const loc = getLocation(store.state.currentLocation);
     if (loc.cityId !== u.city) return false;
   }
+  if (u.eventDone && !store.hasFlag(`world_event_done_${u.eventDone}`)) return false;
+  if (u.stat && store.getStat(u.stat.id) < u.stat.min) return false;
+  if (u.career && store.state.career !== u.career) return false;
+  if (u.outfit && store.state.outfit !== u.outfit) return false;
+  if (u.time && store.state.timeOfDay !== u.time) return false;
+  if (u.catStage !== undefined && store.state.cat.stage < u.catStage) return false;
   return true;
 }
 

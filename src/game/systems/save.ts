@@ -49,7 +49,20 @@ export interface SavedPhoto {
   day: number;
   timeOfDay: TimeOfDay;
   companionId?: string;
+  /** Small reconstruction hints only; the save never contains an image blob. */
+  participantIds?: string[];
+  pose?: "smile" | "peace" | "silly" | "hug";
+  surprise?: "pigeon" | "cat" | "bus" | "weird_pose";
+  frame?: "classic" | "hearts" | "city" | "chaos";
   caption?: string;
+}
+
+export interface CatProgress {
+  /** 0 unseen, 1 spotted, 2 fed, 3 befriended, 4 adopted. */
+  stage: number;
+  name: string;
+  lastSeenDay: number;
+  adopted: boolean;
 }
 
 export interface GameState {
@@ -89,6 +102,8 @@ export interface GameState {
   currentDay: number;
   timeOfDay: TimeOfDay;
   eventCooldowns: Record<string, number>;
+  /** IDs already offered today. Reset by sleep; prevents reload/event fishing. */
+  dailyWorldEvents: string[];
   stats: Record<string, number>;
   discoveredSecrets: string[];
   unlockedOutfits: string[];
@@ -96,6 +111,9 @@ export interface GameState {
   equippedAccessory?: string;
   dailyFlags: Record<string, boolean>;
   lastPassenger?: string;
+  cat: CatProgress;
+  souvenirs: string[];
+  displayedSouvenirs: string[];
 }
 
 /** Legacy single-save key. It remains mirrored so existing installs never lose progress. */
@@ -103,7 +121,7 @@ const SAVE_KEY = "ourlittleworld.save.v3";
 const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
 const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
 export const SAVE_SLOT_COUNT = 3;
-export const VERSION = 8;
+export const VERSION = 9;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
 
@@ -156,12 +174,16 @@ export function defaultState(): GameState {
     currentDay: 1,
     timeOfDay: "morning",
     eventCooldowns: {},
+    dailyWorldEvents: [],
     stats: {},
     discoveredSecrets: [],
     unlockedOutfits: [...STARTER_OUTFITS],
     unlockedAccessories: [],
     equippedAccessory: undefined,
     dailyFlags: {},
+    cat: { stage: 0, name: "Mishmish", lastSeenDay: 0, adopted: false },
+    souvenirs: [],
+    displayedSouvenirs: [],
   };
 }
 
@@ -226,6 +248,10 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
         day: Number.isFinite(p.day) ? Math.max(1, Math.floor(Number(p.day))) : d.currentDay,
         timeOfDay: p.timeOfDay === "afternoon" || p.timeOfDay === "evening" || p.timeOfDay === "night" ? p.timeOfDay : "morning",
         companionId: typeof p.companionId === "string" ? p.companionId : undefined,
+        participantIds: Array.isArray(p.participantIds) ? uniq(p.participantIds) : undefined,
+        pose: p.pose === "peace" || p.pose === "silly" || p.pose === "hug" ? p.pose : "smile",
+        surprise: p.surprise === "pigeon" || p.surprise === "cat" || p.surprise === "bus" || p.surprise === "weird_pose" ? p.surprise : undefined,
+        frame: p.frame === "hearts" || p.frame === "city" || p.frame === "chaos" ? p.frame : "classic",
         caption: typeof p.caption === "string" ? p.caption : undefined,
       };
     }
@@ -333,6 +359,19 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   const unlockedCompanions = Array.isArray(raw.unlockedCompanions) ? uniq(raw.unlockedCompanions) : [];
   if (quests.q_london?.status === "done" && !unlockedCompanions.includes("fadwa")) unlockedCompanions.push("fadwa");
 
+  const rawCat = raw.cat as Partial<CatProgress> | undefined;
+  const catStage = Number.isFinite(rawCat?.stage) ? Math.min(4, Math.max(0, Math.floor(Number(rawCat?.stage)))) : 0;
+  const cat: CatProgress = {
+    stage: rawCat?.adopted ? 4 : catStage,
+    name: typeof rawCat?.name === "string" && rawCat.name.trim() ? rawCat.name.trim().slice(0, 18) : "Mishmish",
+    lastSeenDay: Number.isFinite(rawCat?.lastSeenDay) ? Math.max(0, Math.floor(Number(rawCat?.lastSeenDay))) : 0,
+    adopted: !!rawCat?.adopted || catStage >= 4,
+  };
+  const souvenirs = Array.isArray(raw.souvenirs) ? uniq(raw.souvenirs) : [];
+  const displayedSouvenirs = Array.isArray(raw.displayedSouvenirs)
+    ? uniq(raw.displayedSouvenirs).filter((id) => souvenirs.includes(id)).slice(0, 5)
+    : souvenirs.slice(0, 5);
+
   return {
     ...d,
     ...raw,
@@ -371,6 +410,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     currentDay: Number.isFinite(raw.currentDay) && (raw.currentDay as number) > 0 ? Math.floor(raw.currentDay as number) : d.currentDay,
     timeOfDay,
     eventCooldowns: numMap(raw.eventCooldowns),
+    dailyWorldEvents: Array.isArray(raw.dailyWorldEvents) ? uniq(raw.dailyWorldEvents).slice(0, 2) : [],
     stats: numMap(raw.stats),
     discoveredSecrets: Array.isArray(raw.discoveredSecrets) ? uniq(raw.discoveredSecrets) : [],
     unlockedOutfits: uniq([...(raw.unlockedOutfits ?? []), ...STARTER_OUTFITS]),
@@ -378,6 +418,9 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     equippedAccessory: typeof raw.equippedAccessory === "string" ? raw.equippedAccessory : undefined,
     dailyFlags: raw.dailyFlags && typeof raw.dailyFlags === "object" ? { ...raw.dailyFlags } : {},
     lastPassenger: typeof raw.lastPassenger === "string" ? raw.lastPassenger : undefined,
+    cat,
+    souvenirs,
+    displayedSouvenirs,
   };
 }
 

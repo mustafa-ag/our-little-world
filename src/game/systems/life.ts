@@ -1,5 +1,5 @@
 import { NPCS, type NpcDef } from "../data/npcs";
-import { SCHEDULES, weekdayIndex } from "../data/schedules";
+import { scheduleFor, weekdayIndex } from "../data/schedules";
 import { VOICES, bandFor, pickLine } from "../data/relationships";
 import { HOME_COMMENTS } from "../data/relationships";
 import { TILE } from "../constants";
@@ -9,17 +9,25 @@ export function npcWhere(npc: NpcDef) {
   const day = store.state.currentDay;
   const time = store.state.timeOfDay;
   const wd = weekdayIndex(day);
-  const hit = SCHEDULES.find((r) => {
-    if (r.npcId !== npc.id) return false;
-    if (r.weekdays && !r.weekdays.includes(wd)) return false;
-    if (r.time && r.time !== time) return false;
-    return true;
-  });
+  const hit = scheduleFor(npc.id, day, time);
   if (!hit) {
     if (npc.id === "baba" && wd > 1) return { location: npc.location, tx: npc.tx, ty: npc.ty, present: false };
     return { location: npc.location, tx: npc.tx, ty: npc.ty, present: true };
   }
   return { location: hit.location, tx: hit.tx ?? npc.tx, ty: hit.ty ?? npc.ty, present: true };
+}
+
+export function npcActivity(npcId: string) {
+  const rule = scheduleFor(npcId, store.state.currentDay, store.state.timeOfDay);
+  return { activity: rule?.activity ?? "look", roamRadius: rule?.roamRadius ?? 8 };
+}
+
+export function npcApproachEmote(npcId: string) {
+  const relationship = store.getRelationship(npcId);
+  if (relationship >= 75) return { text: "♥", color: "#ffdbe7" };
+  if (relationship >= 35) return { text: "☺", color: "#ffe08a" };
+  if (relationship >= 10 || ["mama", "baba", "moomoo", "fadwa"].includes(npcId)) return { text: "!", color: "#fff4e6" };
+  return { text: "...", color: "#d8cfe0" };
 }
 
 export function npcInLocation(locationId: string): NpcDef[] {

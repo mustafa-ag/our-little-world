@@ -1,3 +1,5 @@
+import type { Career, TimeOfDay } from "../systems/save";
+
 export interface MessageUnlock {
   minDay?: number;
   onWake?: boolean;
@@ -8,6 +10,12 @@ export interface MessageUnlock {
   relationship?: { npc: string; min: number };
   memory?: string;
   flag?: string;
+  eventDone?: string;
+  stat?: { id: string; min: number };
+  career?: Career;
+  outfit?: string;
+  time?: TimeOfDay;
+  catStage?: number;
 }
 
 export interface MessageDef {
@@ -126,6 +134,84 @@ export const MESSAGES: MessageDef[] = [
     body: "Executive Floor. One serious presentation. Slide 14 may not be only shawarma.",
     questId: "q_adnoc_ceo",
     unlock: { flag: "adnoc_ceo_ready" },
+  },
+  {
+    id: "msg_after_pirate_fadwa",
+    sender: "fadwa",
+    body: "Why did Mama just tell me you came to London on a pirate ship. Transportation.",
+    unlock: { questDone: "q_family_jewel_heist" },
+  },
+  {
+    id: "msg_after_shark_moomoo",
+    sender: "moomoo",
+    body: "You fought WHAT? I need you to start telling me these things before the shark part.",
+    unlock: { memory: "mem_great_white" },
+  },
+  {
+    id: "msg_ceo_baba",
+    sender: "baba",
+    body: "Mashallah. Proud of you, CEO Juju.",
+    unlock: { career: "ceo" },
+  },
+  {
+    id: "msg_ceo_baba_discount",
+    sender: "baba",
+    body: "Do you get discounts?",
+    unlock: { questDone: "q_adnoc_ceo", minDay: 2 },
+  },
+  {
+    id: "msg_spree_baba",
+    sender: "baba",
+    body: "Juju.",
+    unlock: { questDone: "q_baba_spree" },
+  },
+  {
+    id: "msg_rain_rhiannon",
+    sender: "rhiannon",
+    body: "My umbrella is still broken. The weather has shown no remorse.",
+    unlock: { eventDone: "world_rain" },
+  },
+  {
+    id: "msg_chloe_page47",
+    sender: "chloe",
+    body: "Page 47 survived. Academia continues for reasons nobody can explain.",
+    unlock: { questDone: "q_chloe" },
+  },
+  {
+    id: "msg_seagull_moomoo",
+    sender: "moomoo",
+    body: "He took my fry. Juju: our fry.",
+    unlock: { questDone: "q_hudayriyat" },
+  },
+  {
+    id: "msg_cat_mama",
+    sender: "mama",
+    body: "I heard there is a cat. I am bringing food. For you also, obviously.",
+    unlock: { catStage: 4 },
+  },
+  {
+    id: "msg_phd_emergency",
+    sender: "chloe",
+    body: "PhD emergency. Not a real emergency. Coffee-shaped. Are you free?",
+    unlock: { relationship: { npc: "chloe", min: 35 } },
+  },
+  {
+    id: "msg_ceo_outside_work",
+    sender: "moomoo",
+    body: "are you wearing CEO clothes for coffee. meeting? no? perfect.",
+    unlock: { outfit: "ceo_blue" },
+  },
+  {
+    id: "msg_first_camera",
+    sender: "fadwa",
+    body: "Send the photo immediately. I need to inspect everyone's pose.",
+    unlock: { stat: { id: "photos_taken", min: 1 } },
+  },
+  {
+    id: "msg_lost_phone_owner",
+    sender: "baba",
+    body: "Good you returned that phone. Now please answer yours when Mama calls.",
+    unlock: { eventDone: "world_lost_phone" },
   },
 ];
 

@@ -9,15 +9,17 @@ import { store } from "../systems/store";
 import { controls, uiEvents, minimap } from "../systems/controls";
 import * as quests from "../systems/quests";
 import { fillCityMinimap } from "../systems/minimapAtlas";
-import { npcInLocation, npcWorldPos, linesFor, worldTint, skyHex, homeComment } from "../systems/life";
+import { npcInLocation, npcWorldPos, linesFor, worldTint, skyHex, homeComment, npcActivity, npcApproachEmote } from "../systems/life";
 import { tryDeliverMessages } from "../systems/phone";
-import { pickEncounter, applyEncounter } from "../systems/encounters";
 import { secretsFor } from "../data/secrets";
 import { photoSpotsFor } from "../data/photos";
 import { capturePhoto, photoSpotReady } from "../systems/photos";
 import { companionComment, canCompanionTravel } from "../systems/companions";
 import { outfitReaction } from "../systems/outfitReactions";
 import { reunionBounce, worldEmote, worldSparkles } from "../systems/questJuice";
+import { beginWorldEvent, finishWorldEvent, pickWorldEvent, stableDailyRoll, touristChoices } from "../systems/worldEvents";
+import type { WorldEventDefinition } from "../data/worldEvents";
+import { recordCityVisit } from "../systems/lifeProgress";
 import { buildHdGround, createVisualShadow, getVisualAssetDef, getVisualTexture, getWorldVisualTheme, type HdGroundLayer, type VisualShadowHandle, type WorldVisualTheme } from "../visual";
 
 interface Interactable {
@@ -66,6 +68,15 @@ export class WorldScene extends Phaser.Scene {
   private ideaDialogueHandler?: () => void;
   private transformDialogueHandler?: () => void;
   private storyDialogueHandler?: () => void;
+  private approachReacted = new Set<string>();
+  private ambientObjects: Phaser.GameObjects.GameObject[] = [];
+  private ambientInteractables: Interactable[] = [];
+  private movingAmbient: { object: Phaser.GameObjects.Container | Phaser.GameObjects.Text | Phaser.GameObjects.Image; interactable: Interactable }[] = [];
+  private activeWorldEvent?: WorldEventDefinition;
+  private cameraOverlay?: Phaser.GameObjects.Container;
+  private cameraOffset = new Phaser.Math.Vector2();
+  private cameraPose: "smile" | "peace" | "silly" | "hug" = "smile";
+  private lastCameraCapture = 0;
 
   constructor() {
     super(SceneKeys.World);
@@ -92,6 +103,14 @@ export class WorldScene extends Phaser.Scene {
     this.questArrowLabel = undefined;
     this.companionNpc = undefined;
     this.companionInteractable = undefined;
+    this.approachReacted.clear();
+    this.ambientObjects = [];
+    this.ambientInteractables = [];
+    this.movingAmbient = [];
+    this.activeWorldEvent = undefined;
+    this.cameraOverlay = undefined;
+    this.cameraOffset.set(0, 0);
+    controls.cameraMode = false;
     this.arriveAt = this.time.now + 600;
     controls.locked = false;
     controls.moveX = 0;
@@ -109,6 +128,7 @@ export class WorldScene extends Phaser.Scene {
     store.setLocation(def.id);
     store.unlockLocation(def.cityId);
     store.unlockLocation(def.id);
+    recordCityVisit(def.cityId);
 
     const world = generateWorld(this, def);
     this.worldW = world.w * TILE;
@@ -158,6 +178,7 @@ export class WorldScene extends Phaser.Scene {
     this.placeFollowJeep(spawn.x, spawn.y, data.driving ?? store.state.inJeep);
     this.placeSecrets();
     this.placePhotoSpots();
+    this.addCityAmbience(def.cityId);
 
     this.setupMinimap(def);
 
@@ -167,12 +188,14 @@ export class WorldScene extends Phaser.Scene {
 
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
-      this.keys = this.input.keyboard.addKeys("W,A,S,D,SPACE,E") as Record<string, Phaser.Input.Keyboard.Key>;
+      this.keys = this.input.keyboard.addKeys("W,A,S,D,SPACE,E,ESC") as Record<string, Phaser.Input.Keyboard.Key>;
     }
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("openMap", this.openMap, this);
     uiEvents.on("questFocus", this.focusQuest, this);
     uiEvents.on("companionChanged", this.refreshCompanion, this);
+    uiEvents.on("cameraStart", this.startCamera, this);
+    uiEvents.on("cameraExit", this.exitCamera, this);
     store.on("questUpdated", this.refreshQuestGuide, this);
 
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
@@ -196,9 +219,9 @@ export class WorldScene extends Phaser.Scene {
         this.scene.start(SceneKeys.PirateVoyage);
       });
     }
-    this.time.delayedCall(700, () => {
+    this.time.delayedCall(900, () => {
       if (!this.sys.isActive() || this.transitioning) return;
-      this.maybeEncounter();
+      this.maybeStartWorldEvent();
     });
     this.time.delayedCall(1250, () => this.maybeCompanionComment());
 
@@ -296,6 +319,8 @@ export class WorldScene extends Phaser.Scene {
       placed.add(def.id);
       const npc = new NPC(this, def, this.visualTheme.lighting);
       npc.place(x, y);
+      const routine = npcActivity(def.id);
+      npc.startRoutine(routine.activity, routine.roamRadius);
       this.npcs.push(npc);
       this.interactables.push({
         x,
@@ -1105,6 +1130,28 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private addCityAmbience(cityId: string) {
+    const flavor: Record<string, { icon: string; color: string }[]> = {
+      abudhabi: [{ icon: "☕", color: "#f4c95d" }, { icon: "▦", color: "#2f6fd0" }, { icon: "≈", color: "#8ecae6" }],
+      dubai: [{ icon: "☕", color: "#e46d94" }, { icon: "▰", color: "#f4c95d" }, { icon: "=^.^=", color: "#fff4e6" }],
+      london: [{ icon: "▰", color: "#d84652" }, { icon: "⌁", color: "#fff4e6" }, { icon: "☂", color: "#8ecae6" }],
+      edinburgh: [{ icon: "☂", color: "#8ecae6" }, { icon: "⌁", color: "#fff4e6" }, { icon: "≈", color: "#a6c8dc" }],
+      leicester: [{ icon: "▤", color: "#fff4e6" }, { icon: "☕", color: "#e46d94" }, { icon: "z", color: "#8ecae6" }],
+      germany: [{ icon: "○-○", color: "#7be0a3" }, { icon: "☕", color: "#f4c95d" }, { icon: "▰", color: "#8ecae6" }],
+    };
+    const entries = flavor[cityId] ?? flavor.abudhabi;
+    const positions = [
+      { x: this.worldW * 0.18, y: this.worldH * 0.24 },
+      { x: this.worldW * 0.78, y: this.worldH * 0.36 },
+      { x: this.worldW * 0.62, y: this.worldH * 0.76 },
+    ];
+    entries.forEach((entry, index) => {
+      const pos = positions[index];
+      const life = this.add.text(pos.x, pos.y, entry.icon, { fontFamily: "monospace", fontSize: "11px", color: entry.color, backgroundColor: "rgba(58,43,58,0.45)", padding: { x: 3, y: 2 }, resolution: 2 }).setOrigin(0.5).setDepth(pos.y + 1).setAlpha(0.72);
+      this.tweens.add({ targets: life, x: life.x + (index % 2 ? -34 : 34), y: life.y + (index === 2 ? -8 : 8), alpha: 0.42, duration: 5200 + index * 900, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    });
+  }
+
   /** Theme selection is global and data-driven; it never changes worldgen or gameplay state. */
   private applyVisualTheme() {
     const { width, height } = this.scale.gameSize;
@@ -1122,7 +1169,90 @@ export class WorldScene extends Phaser.Scene {
     this.themeWash?.setSize(width, height);
   }
 
+  private startCamera(pose: "smile" | "peace" | "silly" | "hug" = "smile") {
+    if (!this.sys.isActive() || this.driving || this.transitioning) {
+      controls.cameraMode = false;
+      store.toast("Park the Jeep before opening the camera.", "#a08a70");
+      return;
+    }
+    this.exitCamera();
+    controls.cameraMode = true;
+    controls.locked = false;
+    this.cameraPose = pose;
+    this.cameraOffset.set(0, 0);
+    this.player.move(0, 0);
+    const poser = this.npcs
+      .filter((npc) => Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y) < 96)
+      .sort((a, b) => Phaser.Math.Distance.Between(this.player.x, this.player.y, a.x, a.y) - Phaser.Math.Distance.Between(this.player.x, this.player.y, b.x, b.y))[0];
+    if (poser) {
+      poser.startRoutine("look", 0).faceTowards(this.player.x, this.player.y);
+      this.tweens.add({ targets: poser, x: this.player.x + 18, y: this.player.y + 3, duration: 420, ease: "Sine.inOut" });
+      worldEmote(this, poser.x, poser.y - 34, pose === "silly" ? ":P" : pose === "hug" ? "♥" : "!", pose === "hug" ? "#ffdbe7" : "#ffe08a");
+    }
+    this.currentPrompt = null;
+    uiEvents.emit("prompt", null);
+    const { width, height } = this.scale.gameSize;
+    const frame = this.add.graphics().setScrollFactor(0).setDepth(70000);
+    frame.lineStyle(4, 0xffffff, 0.88).strokeRoundedRect(24, 54, width - 48, height - 140, 12);
+    frame.lineStyle(2, 0xffffff, 0.5).lineBetween(width / 2 - 10, height / 2, width / 2 + 10, height / 2).lineBetween(width / 2, height / 2 - 10, width / 2, height / 2 + 10);
+    const title = this.add.text(34, 66, `CAMERA · ${pose.toUpperCase()}`, { fontFamily: "monospace", fontSize: "12px", color: "#fff", backgroundColor: "rgba(43,34,51,0.72)", padding: { x: 7, y: 4 }, resolution: 2 }).setScrollFactor(0).setDepth(70001);
+    const hint = this.add.text(width / 2, height - 73, "MOVE VIEW · ACTION TO TAKE PHOTO", { fontFamily: "monospace", fontSize: "11px", color: "#fff", backgroundColor: "rgba(43,34,51,0.78)", padding: { x: 8, y: 4 }, resolution: 2 }).setOrigin(0.5).setScrollFactor(0).setDepth(70001);
+    const exit = this.add.text(width - 34, 66, "EXIT", { fontFamily: "monospace", fontSize: "11px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 9, y: 5 }, resolution: 2 }).setOrigin(1, 0).setScrollFactor(0).setDepth(70002).setInteractive({ useHandCursor: true });
+    exit.on("pointerdown", () => this.exitCamera());
+    this.cameraOverlay = this.add.container(0, 0, [frame, title, hint, exit]).setScrollFactor(0).setDepth(70000);
+  }
+
+  private exitCamera() {
+    controls.cameraMode = false;
+    this.cameraOverlay?.destroy(true);
+    this.cameraOverlay = undefined;
+    this.cameraOffset.set(0, 0);
+    this.cameras?.main?.setFollowOffset(0, 0);
+  }
+
+  private takeCameraPhoto() {
+    if (!controls.cameraMode || this.time.now - this.lastCameraCapture < 700) return;
+    this.lastCameraCapture = this.time.now;
+    const nearby = this.npcs
+      .filter((npc) => Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y) < 92)
+      .map((npc) => npc.def.id);
+    if (this.companionNpc && !nearby.includes(this.companionNpc.def.id)) nearby.push(this.companionNpc.def.id);
+    const index = store.getStat("photos_taken") + 1;
+    const location = getLocation(this.locationId);
+    const roll = stableDailyRoll(`camera:${this.locationId}:${index}`);
+    const surprise = roll < 0.06
+      ? location.cityId === "london" || location.cityId === "edinburgh" ? "pigeon" : store.state.cat.adopted ? "cat" : location.cityId === "dubai" ? "bus" : "weird_pose"
+      : undefined;
+    const together = nearby.length ? ` with ${nearby.map((id) => NPCS.find((npc) => npc.id === id)?.name ?? id).join(" + ")}` : "";
+    const id = `camera_${store.state.currentDay}_${this.locationId}_${index}`;
+    const saved = store.capturePhoto({
+      id,
+      title: `${location.name}${together}`,
+      locationId: this.locationId,
+      day: store.state.currentDay,
+      timeOfDay: store.state.timeOfDay,
+      companionId: nearby[0],
+      participantIds: nearby,
+      pose: this.cameraPose,
+      surprise,
+      frame: surprise ? "chaos" : nearby.length ? "hearts" : "city",
+      caption: surprise ? `${this.cameraPose}. Perfect light. Unexpected ${surprise}. Kept anyway.` : `${this.cameraPose} pose. ${location.name}. A little day worth keeping.`,
+    });
+    if (!saved) return;
+    if (this.cameraPose === "hug" && nearby[0] && store.getRelationship(nearby[0]) >= 35) store.incrementStat("npc_hugs");
+    if (surprise === "pigeon") store.incrementStat("pigeons_encountered");
+    const { width, height } = this.scale.gameSize;
+    const flash = this.add.rectangle(0, 0, width, height, 0xffffff, 0.92).setOrigin(0).setScrollFactor(0).setDepth(70020);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 260, onComplete: () => flash.destroy() });
+    store.toast(surprise ? `Saved · ${surprise} photobomb` : "Saved to scrapbook", "#8ecae6");
+    tryDeliverMessages({ limit: 1 });
+  }
+
   private tryInteract() {
+    if (controls.cameraMode) {
+      this.takeCameraPhoto();
+      return;
+    }
     if (this.driveMenu) {
       this.closeDriveMenu();
       return;
@@ -1133,6 +1263,13 @@ export class WorldScene extends Phaser.Scene {
     if (this.driving) {
       if (now < this.jeepReadyAt) return;
       this.lastInteract = now;
+      const nearbyNpc = this.npcs.find((npc) => Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y) < 82);
+      if (nearbyNpc) {
+        store.incrementStat("jeep_honks");
+        worldEmote(this, nearbyNpc.x, nearbyNpc.y - 34, nearbyNpc.def.id === "baba" ? "!" : "?", "#ffe08a");
+        store.toast(nearbyNpc.def.id === "baba" ? "HONK · Baba is not impressed." : "HONK · tiny wave acquired.", "#f4c95d");
+        return;
+      }
       this.hopOut();
       return;
     }
@@ -1149,6 +1286,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private onShutdown() {
+    this.exitCamera();
+    this.clearWorldEvent();
     if (this.ideaDialogueHandler) uiEvents.off("dialogueClosed", this.ideaDialogueHandler);
     if (this.transformDialogueHandler) uiEvents.off("dialogueClosed", this.transformDialogueHandler);
     if (this.storyDialogueHandler) uiEvents.off("dialogueClosed", this.storyDialogueHandler);
@@ -1168,6 +1307,8 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.off("openMap", this.openMap, this);
     uiEvents.off("questFocus", this.focusQuest, this);
     uiEvents.off("companionChanged", this.refreshCompanion, this);
+    uiEvents.off("cameraStart", this.startCamera, this);
+    uiEvents.off("cameraExit", this.exitCamera, this);
     store.off("questUpdated", this.refreshQuestGuide, this);
     this.scale.off("resize", this.applyZoom, this);
   }
@@ -1178,7 +1319,21 @@ export class WorldScene extends Phaser.Scene {
 
     let vx = 0;
     let vy = 0;
-    if (!controls.locked && !this.transitioning) {
+    if (controls.cameraMode && this.keys) {
+      if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
+      if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
+      if (this.cursors.up.isDown || this.keys.W.isDown) vy -= 1;
+      if (this.cursors.down.isDown || this.keys.S.isDown) vy += 1;
+      vx += controls.moveX;
+      vy += controls.moveY;
+      this.cameraOffset.x = Phaser.Math.Clamp(this.cameraOffset.x + vx * 1.8, -90, 90);
+      this.cameraOffset.y = Phaser.Math.Clamp(this.cameraOffset.y + vy * 1.5, -58, 58);
+      this.cameras.main.setFollowOffset(-this.cameraOffset.x, -this.cameraOffset.y);
+      if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E)) this.takeCameraPhoto();
+      if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.exitCamera();
+      vx = 0;
+      vy = 0;
+    } else if (!controls.locked && !this.transitioning) {
       if (this.cursors && this.keys) {
         if (this.cursors.left.isDown || this.keys.A.isDown) vx -= 1;
         if (this.cursors.right.isDown || this.keys.D.isDown) vx += 1;
@@ -1206,7 +1361,25 @@ export class WorldScene extends Phaser.Scene {
       this.rideJeepShadow?.setContactPoint(this.player.x, this.player.y);
     }
 
-    for (const npc of this.npcs) npc.update(time);
+    for (const npc of this.npcs) {
+      npc.update(time);
+      const interactable = this.interactables.find((candidate) => candidate.npc === npc);
+      if (interactable) {
+        interactable.x = npc.x;
+        interactable.y = npc.y;
+      }
+      if (!this.driving && !controls.cameraMode && !this.approachReacted.has(npc.def.id) && Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y) < 62) {
+        this.approachReacted.add(npc.def.id);
+        const reaction = npcApproachEmote(npc.def.id);
+        worldEmote(this, npc.x, npc.y - 32, reaction.text, reaction.color);
+        if (store.getRelationship(npc.def.id) >= 10) this.tweens.add({ targets: npc.sprite, scaleX: 1.34, scaleY: 1.34, duration: 150, yoyo: true, repeat: 1, ease: "Sine.inOut" });
+      }
+    }
+
+    for (const moving of this.movingAmbient) {
+      moving.interactable.x = moving.object.x;
+      moving.interactable.y = moving.object.y;
+    }
 
     if (this.companionNpc) {
       const targetX = this.player.x - 18;
@@ -1228,7 +1401,7 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
-    if (!this.driving && !this.transitioning) {
+    if (!this.driving && !this.transitioning && !controls.cameraMode) {
       let best: Interactable | null = null;
       let bestD = Infinity;
       const canTalkToCompanion = !!this.companionNpc && quests.activeQuests().some((q) => q.step.type === "talk" && q.step.target === this.companionNpc?.def.id);
@@ -1254,7 +1427,7 @@ export class WorldScene extends Phaser.Scene {
       this.followingCat.setDepth(this.followingCat.y);
     }
 
-    if (!this.transitioning && !controls.locked) {
+    if (!this.transitioning && !controls.locked && !controls.cameraMode) {
       this.timeAcc += this.game.loop.delta;
       if (this.timeAcc > 90000) {
         this.timeAcc = 0;
@@ -1344,13 +1517,199 @@ export class WorldScene extends Phaser.Scene {
     store.toast("A cat decided to follow you", "#f4a6c0");
   }
 
-  private maybeEncounter() {
-    const e = pickEncounter(this.locationId);
-    if (!e) return;
-    applyEncounter(e);
-    if (e.kind === "cat") this.spawnCat(this.player.x + 20, this.player.y);
-    if (e.kind === "rain") this.timeWash?.setFillStyle(0x88a0c0, 0.22);
-    uiEvents.emit("dialogue", e.title, e.lines);
+  private maybeStartWorldEvent() {
+    if (controls.locked || this.driving || this.transitioning || this.activeWorldEvent) {
+      // A save can reopen in the Jeep, or the player can have the phone open
+      // when the first daily roll fires. Try again once the world is walkable
+      // so those perfectly normal states do not silently erase today's life.
+      if (!this.transitioning && !this.activeWorldEvent) {
+        this.time.delayedCall(2200, () => {
+          if (this.sys.isActive()) this.maybeStartWorldEvent();
+        });
+      }
+      return;
+    }
+    const majorHeist = quests.statusOf("q_family_jewel_heist") === "active";
+    const adnocSceneSetup = this.locationId === "abudhabi_city" && quests.activeQuests().some((quest) => quest.def.id.startsWith("q_adnoc_"));
+    if (majorHeist || adnocSceneSetup) return;
+    const event = pickWorldEvent(this.locationId);
+    if (!event) return;
+    beginWorldEvent(event);
+    this.activeWorldEvent = event;
+    if (event.kind === "rain") {
+      this.spawnRainEvent(event);
+      return;
+    }
+    const anchor = this.findAmbientAnchor();
+    if (event.kind === "lost_bag") {
+      this.spawnLostBag(event, anchor.x, anchor.y);
+      return;
+    }
+    const marker = this.makeAmbientMarker(event, anchor.x, anchor.y, () => this.triggerWorldEvent(event));
+    if (["balloon", "runaway_cart", "loose_dog"].includes(event.kind)) {
+      const dx = event.kind === "balloon" ? 65 : event.kind === "runaway_cart" ? 110 : 78;
+      const dy = event.kind === "runaway_cart" ? 55 : event.kind === "loose_dog" ? -22 : -14;
+      this.tweens.add({ targets: marker.container, x: Phaser.Math.Clamp(anchor.x + dx, 45, this.worldW - 45), y: Phaser.Math.Clamp(anchor.y + dy, 55, this.worldH - 55), duration: event.kind === "runaway_cart" ? 7600 : 3600, yoyo: event.kind !== "runaway_cart", repeat: event.kind === "runaway_cart" ? 0 : -1, ease: "Sine.inOut" });
+      this.movingAmbient.push({ object: marker.container, interactable: marker.interactable });
+    }
+    if (event.kind === "lost_phone") {
+      const buzz = this.add.text(anchor.x, anchor.y - 42, "BZZ", { fontFamily: "monospace", fontSize: "10px", color: "#ffe08a", stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(anchor.y + 20);
+      this.ambientObjects.push(buzz);
+      this.tweens.add({ targets: buzz, x: "+=5", duration: 90, yoyo: true, repeat: -1, hold: 650 });
+    }
+    if (event.kind === "runaway_cart") {
+      this.time.delayedCall(7900, () => {
+        if (this.activeWorldEvent?.id !== event.id) return;
+        store.toast("BONK · the boxes wobble. Nobody is hurt.", "#f4c95d");
+        this.clearWorldEvent();
+      });
+    }
+  }
+
+  private findAmbientAnchor() {
+    const candidates = [
+      { x: this.player.x + 105, y: this.player.y + 30 },
+      { x: this.player.x - 105, y: this.player.y - 25 },
+      { x: this.player.x + 45, y: this.player.y - 100 },
+      { x: this.player.x - 50, y: this.player.y + 100 },
+    ];
+    const safe = candidates
+      .map((point) => ({ x: Phaser.Math.Clamp(point.x, 50, this.worldW - 50), y: Phaser.Math.Clamp(point.y, 65, this.worldH - 55) }))
+      .find((point) => this.interactables.every((it) => Phaser.Math.Distance.Between(point.x, point.y, it.x, it.y) > 72));
+    return safe ?? { x: Phaser.Math.Clamp(this.player.x + 82, 50, this.worldW - 50), y: Phaser.Math.Clamp(this.player.y + 64, 65, this.worldH - 55) };
+  }
+
+  private makeAmbientMarker(event: WorldEventDefinition, x: number, y: number, trigger: () => void) {
+    const shadow = this.add.ellipse(0, 4, 30, 10, 0x221b28, 0.22);
+    const bubble = this.add.circle(0, -12, 18, event.kind.startsWith("cat") ? 0xf4a6c0 : 0xfff4e6, 0.96).setStrokeStyle(2, 0x3a2b3a);
+    const icon = this.add.text(0, -12, event.icon, { fontFamily: "monospace", fontSize: event.icon.length > 2 ? "10px" : "18px", color: "#3a2b3a", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    const label = this.add.text(0, 12, event.title, { fontFamily: "monospace", fontSize: "8px", color: "#fff", backgroundColor: "rgba(58,43,58,0.78)", padding: { x: 4, y: 2 }, resolution: 2 }).setOrigin(0.5, 0);
+    const container = this.add.container(x, y, [shadow, bubble, icon, label]).setDepth(y + 8);
+    this.tweens.add({ targets: bubble, scale: 1.08, duration: 620, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    const interactable: Interactable = { x, y, radius: 34, prompt: event.prompt, trigger };
+    this.interactables.push(interactable);
+    this.ambientInteractables.push(interactable);
+    this.ambientObjects.push(container);
+    return { container, icon, interactable };
+  }
+
+  private spawnLostBag(event: WorldEventDefinition, x: number, y: number) {
+    const bag = this.makeAmbientMarker(event, x, y, () => store.toast("Four little things escaped. Catch each one.", "#f4c95d"));
+    bag.interactable.prompt = "Inspect the torn bag";
+    let collected = 0;
+    const offsets = [{ x: -34, y: 20 }, { x: 32, y: 28 }, { x: -12, y: 48 }, { x: 55, y: 52 }];
+    offsets.forEach((offset, index) => {
+      const item = this.add.text(x + offset.x, y + offset.y, ["●", "◆", "▰", "○"][index], { fontFamily: "monospace", fontSize: "14px", color: ["#e46d94", "#2f6fd0", "#f4c95d", "#7be0a3"][index], stroke: "#3a2b3a", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(y + offset.y + 4);
+      this.ambientObjects.push(item);
+      if (index === 3) this.tweens.add({ targets: item, x: item.x + 35, duration: 1600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+      const it: Interactable = { x: item.x, y: item.y, radius: 23, prompt: `Pick up item ${index + 1}/4`, trigger: () => {
+        if (!item.active) return;
+        collected += 1;
+        item.destroy();
+        this.interactables = this.interactables.filter((candidate) => candidate !== it);
+        this.ambientInteractables = this.ambientInteractables.filter((candidate) => candidate !== it);
+        if (collected >= 4) this.finishActiveWorldEvent(event);
+        else store.toast(`${collected}/4 things rescued`, "#7be0a3");
+      } };
+      this.interactables.push(it);
+      this.ambientInteractables.push(it);
+      if (index === 3) this.movingAmbient.push({ object: item, interactable: it });
+    });
+  }
+
+  private triggerWorldEvent(event: WorldEventDefinition) {
+    if (event.kind === "tourist") {
+      const choices = touristChoices(getLocation(this.locationId).cityId);
+      uiEvents.emit("choice", {
+        title: event.title,
+        prompt: "Which way should they go? Wrong answers are allowed. Geography will recover.",
+        choices: choices.map((choice, index) => ({ id: `${index}`, label: choice.label })),
+        onChoose: (id: string) => {
+          if (choices[Number(id)]?.correct) this.finishActiveWorldEvent(event);
+          else uiEvents.emit("dialogue", "Tourist", ["They walk three steps, stop, and come back.", "Are you sure?"]);
+        },
+      });
+      return;
+    }
+    if (event.kind === "street_dance") {
+      uiEvents.emit("choice", {
+        title: event.title,
+        prompt: "A performer catches Juju watching.",
+        choices: [{ id: "dance", label: "Dance", description: "Catch three bright beats." }, { id: "watch", label: "Watch", description: "Stay for the tiny finale." }],
+        onChoose: (id: string) => {
+          if (id === "watch") this.finishActiveWorldEvent(event, ["The last move lands. Juju claps first; the crowd follows."]);
+          else uiEvents.emit("minigame", { kind: "timing", title: "Join the dance", hint: "Hit three glowing beats. Missing is only funny.", taps: 3, onDone: () => this.finishActiveWorldEvent(event) });
+        },
+      });
+      return;
+    }
+    if (["vehicle_start", "coffee_spill", "delivery_boxes"].includes(event.kind)) {
+      const title = event.kind === "vehicle_start" ? "TRY AGAIN" : event.kind === "coffee_spill" ? "Napkin rescue" : "WOBBLE METER";
+      const hint = event.kind === "vehicle_start" ? "Hit all three timing zones to start the very fictional vehicle." : event.kind === "coffee_spill" ? "Catch two bright moments. No stain anxiety." : "Balance the top box through three gentle corrections.";
+      uiEvents.emit("minigame", { kind: "timing", title, hint, taps: event.kind === "coffee_spill" ? 2 : 3, onDone: () => this.finishActiveWorldEvent(event) });
+      return;
+    }
+    if (event.kind === "cat_box") {
+      this.finishActiveWorldEvent(event);
+      return;
+    }
+    if (event.kind === "cat_snack") {
+      this.finishActiveWorldEvent(event);
+      return;
+    }
+    if (event.kind === "cat_friend") {
+      const x = this.ambientObjects.find((object): object is Phaser.GameObjects.Container => object instanceof Phaser.GameObjects.Container)?.x ?? this.player.x + 20;
+      this.spawnCat(x, this.player.y + 4);
+      this.time.delayedCall(15000, () => { this.followingCat?.destroy(); this.followingCat = undefined; });
+      this.finishActiveWorldEvent(event);
+      return;
+    }
+    this.finishActiveWorldEvent(event);
+  }
+
+  private finishActiveWorldEvent(event: WorldEventDefinition, lines = event.completionLines) {
+    if (this.activeWorldEvent?.id !== event.id) return;
+    const x = this.ambientObjects.find((object): object is Phaser.GameObjects.Container => object instanceof Phaser.GameObjects.Container)?.x ?? this.player.x;
+    const y = this.ambientObjects.find((object): object is Phaser.GameObjects.Container => object instanceof Phaser.GameObjects.Container)?.y ?? this.player.y;
+    finishWorldEvent(event);
+    worldSparkles(this, x, y - 12, event.kind.startsWith("cat") ? "♥" : "✦");
+    this.clearWorldEvent();
+    uiEvents.emit("dialogue", event.title, lines);
+  }
+
+  private spawnRainEvent(event: WorldEventDefinition) {
+    this.timeWash?.setFillStyle(0x6e86a8, 0.24);
+    for (let i = 0; i < 34; i += 1) {
+      const drop = this.add.text(Phaser.Math.Between(0, this.scale.gameSize.width), Phaser.Math.Between(-30, this.scale.gameSize.height), "|", { fontFamily: "monospace", fontSize: "10px", color: "#dff3ff", resolution: 2 }).setScrollFactor(0).setDepth(60).setAlpha(0.72);
+      this.ambientObjects.push(drop);
+      this.tweens.add({ targets: drop, x: drop.x - 55, y: this.scale.gameSize.height + 40, duration: Phaser.Math.Between(1200, 2100), delay: Phaser.Math.Between(0, 1000), repeat: 6 });
+    }
+    this.npcs.slice(0, 5).forEach((npc, index) => {
+      const umbrella = this.add.text(npc.x, npc.y - 38, "☂", { fontFamily: "monospace", fontSize: "22px", color: index === 0 ? "#e46d94" : "#8ecae6", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 }).setOrigin(0.5).setDepth(npc.y + 5);
+      this.ambientObjects.push(umbrella);
+      if (index === 0) this.tweens.add({ targets: umbrella, angle: 180, duration: 700, delay: 1900, yoyo: true, repeat: 1 });
+    });
+    store.toast("Rain! Umbrellas are making decisions.", "#bfe6ff");
+    this.time.delayedCall(10500, () => {
+      if (this.activeWorldEvent?.id !== event.id) return;
+      finishWorldEvent(event);
+      this.clearWorldEvent();
+      this.applyAtmosphere();
+      store.toast("The rain wanders off.", "#bfe6ff");
+    });
+  }
+
+  private clearWorldEvent() {
+    for (const it of this.ambientInteractables) this.interactables = this.interactables.filter((candidate) => candidate !== it);
+    for (const object of this.ambientObjects) if (object.active) object.destroy();
+    this.ambientObjects = [];
+    this.ambientInteractables = [];
+    this.movingAmbient = [];
+    this.activeWorldEvent = undefined;
+    if (this.currentPrompt && !this.interactables.includes(this.currentPrompt)) {
+      this.currentPrompt = null;
+      uiEvents.emit("prompt", null);
+    }
   }
 
   private checkMapEdge() {

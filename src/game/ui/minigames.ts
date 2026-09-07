@@ -3,7 +3,7 @@ import { controls, uiEvents } from "../systems/controls";
 
 const FONT = "monospace";
 
-export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo";
+export type MiniKind = "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo" | "timing";
 
 export interface MiniSpec {
   kind: MiniKind;
@@ -29,6 +29,7 @@ export function openActivity(scene: Phaser.Scene, spec: MiniSpec): Phaser.GameOb
   if (spec.kind === "lockpick") return lockpickGame(scene, spec);
   if (spec.kind === "safe") return safeGame(scene, spec);
   if (spec.kind === "badge_photo") return badgePhotoGame(scene, spec);
+  if (spec.kind === "timing") return timingGame(scene, spec);
   return tapGame(scene, spec);
 }
 
@@ -87,6 +88,65 @@ function bindAction(scene: Phaser.Scene, container: Phaser.GameObjects.Container
     scene.input.keyboard?.off("keydown", keyHandler);
     uiEvents.off("minigameAction", action);
   });
+}
+
+function timingGame(scene: Phaser.Scene, spec: MiniSpec) {
+  const { items, px, py, w, width } = panel(scene, Math.min(scene.scale.gameSize.width - 30, 370), 330);
+  items.push(...titleHint(scene, spec, width / 2, py + 14, w - 34));
+  const trackX = px + 32;
+  const trackW = w - 64;
+  const trackY = py + 165;
+  const targets = [0.23, 0.67, 0.42, 0.78];
+  const need = Phaser.Math.Clamp(spec.taps ?? 3, 2, 4);
+  let stage = 0;
+  let phase = 0;
+  let marker = 0;
+  let finished = false;
+  const gauge = scene.add.graphics();
+  const count = scene.add.text(width / 2, py + 106, `MOMENT 1 / ${need}`, { fontFamily: FONT, fontSize: "13px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+  const status = scene.add.text(width / 2, py + 215, "Wait for the bright zone.", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", align: "center", wordWrap: { width: w - 48 }, resolution: 2 }).setOrigin(0.5);
+  items.push(gauge, count, status);
+  const draw = () => {
+    gauge.clear();
+    gauge.fillStyle(0x3a2b3a, 1).fillRoundedRect(trackX, trackY, trackW, 18, 8);
+    const target = targets[Math.min(stage, targets.length - 1)];
+    gauge.fillStyle(0x7be0a3, 1).fillRoundedRect(trackX + target * trackW - 25, trackY + 2, 50, 14, 6);
+    gauge.fillStyle(0xffffff, 1).fillRect(trackX + marker * trackW - 3, trackY - 6, 6, 30);
+  };
+  const action = () => {
+    if (finished) return;
+    const target = targets[stage];
+    if (Math.abs(marker - target) <= 0.1) {
+      stage += 1;
+      scene.cameras.main.shake(40, 0.0015);
+      if (stage >= need) {
+        finished = true;
+        status.setColor("#57a56d").setText("Perfect enough. Tiny celebration!");
+        count.setText(`${need} / ${need} ✓`);
+        scene.time.delayedCall(480, () => spec.onDone(true));
+        return;
+      }
+      phase = 0;
+      count.setText(`MOMENT ${stage + 1} / ${need}`);
+      status.setColor("#57a56d").setText("Got it. Next one.");
+    } else {
+      status.setColor("#e46d94").setText("Almost. Nothing broke—try the next pass.");
+    }
+    draw();
+  };
+  const update = (_time: number, delta: number) => {
+    if (finished) return;
+    phase += delta * (0.0012 + stage * 0.00014);
+    marker = (Math.sin(phase * Math.PI * 2) + 1) / 2;
+    draw();
+  };
+  items.push(btn(scene, width / 2, py + 270, "HIT THE LIGHT", "#2f6fd0", action));
+  const container = scene.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
+  scene.events.on(Phaser.Scenes.Events.UPDATE, update);
+  container.once(Phaser.GameObjects.Events.DESTROY, () => scene.events.off(Phaser.Scenes.Events.UPDATE, update));
+  bindAction(scene, container, action);
+  draw();
+  return container;
 }
 
 function stairsGame(scene: Phaser.Scene, spec: MiniSpec) {

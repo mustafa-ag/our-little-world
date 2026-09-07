@@ -39,6 +39,10 @@ export class DrivingScene extends Phaser.Scene {
   private bumps = 0;
   private near = 0;
   private rain = false;
+  private radioText?: Phaser.GameObjects.Text;
+  private composureText?: Phaser.GameObjects.Text;
+  private radioAt = 0;
+  private lastHonk = 0;
 
   constructor() {
     super(SceneKeys.Driving);
@@ -54,6 +58,8 @@ export class DrivingScene extends Phaser.Scene {
     this.bumps = 0;
     this.near = 0;
     this.chatI = 0;
+    this.radioAt = 0;
+    this.lastHonk = 0;
     this.rain = store.state.timeOfDay === "night" || Math.random() < 0.18;
     const { width, height } = this.scale.gameSize;
     this.roadW = Math.min(width * 0.62, 280);
@@ -111,6 +117,12 @@ export class DrivingScene extends Phaser.Scene {
       .setDepth(50)
       .setScrollFactor(0);
 
+    this.radioText = this.add.text(width / 2, 13, "NOW PLAYING: definitely not copyrighted music", {
+      fontFamily: "monospace", fontSize: "10px", color: "#ffe08a", backgroundColor: "rgba(58,43,58,0.72)", padding: { x: 7, y: 4 }, resolution: 2,
+    }).setOrigin(0.5, 0).setDepth(50).setScrollFactor(0);
+    this.composureText = this.add.text(12, 63, "", { fontFamily: "monospace", fontSize: "10px", color: "#fff", stroke: "#3a2b3a", strokeThickness: 3, resolution: 2 }).setDepth(50).setScrollFactor(0);
+    this.refreshComposure();
+
     const exit = this.add
       .text(width - 12, 12, "End drive", {
         fontFamily: "monospace",
@@ -126,11 +138,39 @@ export class DrivingScene extends Phaser.Scene {
     exit.on("pointerdown", () => this.leave());
 
     this.cursors = this.input.keyboard!.createCursorKeys();
-    this.keys = this.input.keyboard!.addKeys("W,A,S,D") as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys("W,A,S,D,SPACE,E") as Record<string, Phaser.Input.Keyboard.Key>;
+    uiEvents.on("action", this.honk, this);
 
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
     uiEvents.emit("prompt", null);
     uiEvents.emit("locationTitle", "Road trip", `Driving to ${this.destName}`);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      uiEvents.off("action", this.honk, this);
+      this.carShadow?.destroy();
+      for (const obstacle of this.obstacles) (obstacle.getData("visualShadow") as VisualShadowHandle | undefined)?.destroy();
+    });
+  }
+
+  private honk() {
+    if (!this.sys.isActive() || this.finished || this.time.now - this.lastHonk < 550) return;
+    this.lastHonk = this.time.now;
+    store.incrementStat("jeep_honks");
+    this.tweens.add({ targets: this.car, scaleX: 2.12, scaleY: 2.12, duration: 90, yoyo: true });
+    const reaction = this.obstacles.find((obstacle) => Math.abs(obstacle.y - this.car.y) < 145);
+    if (reaction) this.tweens.add({ targets: reaction, x: reaction.x + (reaction.x < this.car.x ? -7 : 7), duration: 120, yoyo: true });
+    this.chatText?.setText(this.passenger ? `${NPCS.find((npc) => npc.id === this.passenger)?.name ?? this.passenger}: !   BEEP!` : "BEEP · a roadside NPC waves").setVisible(true);
+    this.time.delayedCall(1200, () => this.chatText?.setVisible(false));
+  }
+
+  private refreshComposure() {
+    if (!this.composureText) return;
+    if (!this.passenger) {
+      this.composureText.setVisible(false);
+      return;
+    }
+    const name = NPCS.find((npc) => npc.id === this.passenger)?.name?.toUpperCase() ?? "PASSENGER";
+    const left = Math.max(0, 5 - this.bumps);
+    this.composureText.setVisible(true).setText(`${name}'S COMPOSURE\n${"█".repeat(left)}${"░".repeat(5 - left)}`);
   }
 
   private leaveToWorld() {
@@ -176,6 +216,7 @@ export class DrivingScene extends Phaser.Scene {
     if (this.cursors.up.isDown || this.keys.W.isDown) accel += 1;
     if (this.cursors.down.isDown || this.keys.S.isDown) accel -= 1;
     accel += -controls.moveY; // push up to speed up
+    if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE) || Phaser.Input.Keyboard.JustDown(this.keys.E)) this.honk();
 
     this.speed = Phaser.Math.Clamp(this.speed + accel * 120 * dt, 120, 360);
     this.car.x = Phaser.Math.Clamp(
@@ -222,6 +263,8 @@ export class DrivingScene extends Phaser.Scene {
         this.cameras.main.shake(150, 0.008);
         this.speed = Math.max(120, this.speed - 60);
         this.bumps += 1;
+        this.refreshComposure();
+        if (this.passenger) this.chatText?.setText("Passenger: !").setVisible(true);
         o.y = height + 100;
       } else if (dxo < 36 && dyo < 50 && o.y > this.car.y - 80 && o.y < this.car.y + 10) {
         this.near += 1;
@@ -256,6 +299,13 @@ export class DrivingScene extends Phaser.Scene {
     if (this.chatAt > 7.5) {
       this.chatAt = 0;
       this.nextChat();
+    }
+
+    this.radioAt += dt;
+    if (this.radioAt > 10) {
+      this.radioAt = 0;
+      const stations = ["NOW PLAYING: definitely not copyrighted music", "TINY FM: coffee, weather, feelings", "ROAD RADIO: one song, no lawyers", "JUJU AUX: passenger approval pending"];
+      this.radioText?.setText(stations[(store.state.currentDay + this.chatI) % stations.length]);
     }
 
     const remaining = Math.max(0, Math.ceil((this.goal - this.distance) / 20));

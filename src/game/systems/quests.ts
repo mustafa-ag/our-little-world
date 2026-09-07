@@ -3,6 +3,7 @@ import { adnocRankAtLeast } from "../data/adnoc";
 import type { QuestProgress } from "./save";
 import { store } from "./store";
 import { tryDeliverMessages } from "./phone";
+import { recordQuestLifeConsequences } from "./lifeProgress";
 
 // Quest logic layered on top of the store. Scenes call the on* hooks when the
 // player does something; this returns any dialogue to show and fires store
@@ -101,6 +102,10 @@ function completeQuest(def: QuestDef, p: QuestProgress) {
   store.addHearts(def.rewardHearts);
   store.addCoins(def.rewardCoins);
   grantExtras(def);
+  recordQuestLifeConsequences(def.id);
+  // Consequence flags/memories can unlock a second, delayed-feeling reaction.
+  // Delivery is still capped, so finishing a pillar never floods the phone.
+  tryDeliverMessages({ limit: 1 });
   store.emit("questCompleted", def);
   store.emit("questUpdated");
   store.save();

@@ -53,6 +53,8 @@ export class UIScene extends Phaser.Scene {
   private phone!: PhoneOverlay;
   private giftMenu?: Phaser.GameObjects.Container;
   private foodMenu?: Phaser.GameObjects.Container;
+  private choiceMenu?: Phaser.GameObjects.Container;
+  private cameraHud?: Phaser.GameObjects.Container;
   private pendingGiftNpc?: string;
 
   // dialogue
@@ -94,6 +96,7 @@ export class UIScene extends Phaser.Scene {
   private localPins: Phaser.GameObjects.Text[] = [];
   private dedicatedHud = false;
   private questCelebration?: Phaser.GameObjects.Container;
+  private pendingMilestone?: { title: string; dialogue: string };
 
   constructor() {
     super({ key: SceneKeys.UI, active: false });
@@ -169,6 +172,10 @@ export class UIScene extends Phaser.Scene {
     store.on("newDay", () => this.clockText.setText(store.clockLabel()));
     store.on("message", () => this.phone.refreshBadge());
     store.on("relGain", () => this.heartPop());
+    store.on("milestone", (milestone: { title: string; dialogue: string }) => {
+      this.pendingMilestone = milestone;
+      this.time.delayedCall(250, () => this.showPendingMilestone());
+    });
 
     uiEvents.on("prompt", (p: string | null) => this.setPrompt(p));
     uiEvents.on("dialogue", (name: string, lines: string[], extra?: { npcId?: string }) => {
@@ -182,6 +189,9 @@ export class UIScene extends Phaser.Scene {
     });
     uiEvents.on("openShop", (mode?: "home" | "adnoc") => this.openShop(mode));
     uiEvents.on("openFoodOrder", (spec: import("../systems/controls").FoodOrderSpec) => this.openFoodOrder(spec));
+    uiEvents.on("choice", (spec: import("../systems/controls").ChoiceSpec) => this.openChoice(spec));
+    uiEvents.on("cameraStart", (pose: typeof controls.cameraPose) => this.showCameraHud(pose));
+    uiEvents.on("cameraExit", () => this.hideCameraHud());
     uiEvents.on("openWardrobe", () => this.openWardrobe());
     uiEvents.on("openPhone", (tab?: PhoneTab) => this.phone.show(tab));
     uiEvents.on("openLocalMap", () => this.openLocalMap());
@@ -819,9 +829,17 @@ export class UIScene extends Phaser.Scene {
         controls.locked = false;
       }
       uiEvents.emit("dialogueClosed");
+      this.time.delayedCall(180, () => this.showPendingMilestone());
     } else {
       this.dlgText.setText(this.dlgLines[this.dlgIndex]);
     }
+  }
+
+  private showPendingMilestone() {
+    if (!this.pendingMilestone || this.anyModal()) return;
+    const milestone = this.pendingMilestone;
+    this.pendingMilestone = undefined;
+    this.openDialogue(milestone.title, [milestone.dialogue, "This can become a little outing, visit, or keepsake—not another obligation."]);
   }
 
   private onAction() {
@@ -1159,6 +1177,79 @@ export class UIScene extends Phaser.Scene {
       controls.locked = false;
   }
 
+  private openChoice(spec: import("../systems/controls").ChoiceSpec) {
+    if (this.anyModal()) return;
+    const { width, height } = this.scale.gameSize;
+    const panelW = Math.min(width - 30, 390);
+    const panelH = Math.min(height - 42, 330);
+    const top = (height - panelH) / 2;
+    const children: Phaser.GameObjects.GameObject[] = [];
+    const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x1a1420, 0.6).setInteractive();
+    const panel = this.add.graphics();
+    panel.fillStyle(0xfff9f0, 1).fillRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
+    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
+    children.push(shade, panel);
+    children.push(this.add.text(width / 2, top + 20, spec.title, { fontFamily: FONT, fontSize: "18px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5));
+    children.push(this.add.text(width / 2, top + 50, spec.prompt, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", align: "center", wordWrap: { width: panelW - 42 }, resolution: 2 }).setOrigin(0.5, 0));
+    spec.choices.slice(0, 4).forEach((choice, index) => {
+      const y = top + 103 + index * 47;
+      const button = this.add.text(width / 2, y, choice.description ? `${choice.label}\n${choice.description}` : choice.label, {
+        fontFamily: FONT, fontSize: choice.description ? "11px" : "13px", color: "#fff", align: "center",
+        backgroundColor: index === 0 ? "#2f6fd0" : "#e46d94", padding: { x: 12, y: 7 }, fixedWidth: panelW - 54, resolution: 2,
+      }).setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
+      button.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
+        event?.stopPropagation?.();
+        this.closeChoice();
+        spec.onChoose(choice.id);
+      });
+      children.push(button);
+    });
+    const later = this.add.text(width / 2, top + panelH - 24, "Maybe later", { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 9, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    later.on("pointerdown", () => this.closeChoice());
+    children.push(later);
+    shade.on("pointerdown", () => this.closeChoice());
+    this.choiceMenu = this.add.container(0, 0, children).setScrollFactor(0).setDepth(88);
+    controls.locked = true;
+  }
+
+  private closeChoice() {
+    this.choiceMenu?.destroy(true);
+    this.choiceMenu = undefined;
+    if (!this.dialogueOpen && !this.miniGameOpen && !this.phone.open) controls.locked = false;
+  }
+
+  private showCameraHud(pose: typeof controls.cameraPose) {
+    if (!controls.cameraMode) return;
+    this.hideCameraHud();
+    const { width, height } = this.scale.gameSize;
+    const frame = this.add.graphics();
+    frame.lineStyle(4, 0xffffff, 0.9).strokeRoundedRect(24, 54, width - 48, height - 140, 12);
+    frame.lineStyle(2, 0xffffff, 0.52)
+      .lineBetween(width / 2 - 10, height / 2, width / 2 + 10, height / 2)
+      .lineBetween(width / 2, height / 2 - 10, width / 2, height / 2 + 10);
+    const title = this.add.text(34, 66, `CAMERA · ${pose.toUpperCase()}`, {
+      fontFamily: FONT, fontSize: "12px", color: "#fff", backgroundColor: "rgba(43,34,51,0.76)", padding: { x: 7, y: 4 }, resolution: 2,
+    });
+    const hint = this.add.text(width / 2, height - 73, "MOVE VIEW · ACTION TO TAKE PHOTO", {
+      fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "rgba(43,34,51,0.82)", padding: { x: 8, y: 4 }, resolution: 2,
+    }).setOrigin(0.5);
+    const exit = this.add.text(width - 34, 66, "EXIT", {
+      fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 9, y: 5 }, resolution: 2,
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    exit.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
+      event?.stopPropagation?.();
+      controls.cameraMode = false;
+      this.hideCameraHud();
+      uiEvents.emit("cameraExit");
+    });
+    this.cameraHud = this.add.container(0, 0, [frame, title, hint, exit]).setScrollFactor(0).setDepth(155);
+  }
+
+  private hideCameraHud() {
+    this.cameraHud?.destroy(true);
+    this.cameraHud = undefined;
+  }
+
   private buyFurniture(tex: string, price: number) {
     if (!store.spendCoins(price)) {
       store.toast("Not enough coins", "#e46d94");
@@ -1310,7 +1401,13 @@ export class UIScene extends Phaser.Scene {
       if (this.miniGameOpen) this.closeMiniGame(true);
       this.closeGiftMenu();
       this.closeFoodOrder();
+      this.closeChoice();
       if (this.phone.open) this.phone.close();
+      if (this.cameraHud || controls.cameraMode) {
+        controls.cameraMode = false;
+        this.hideCameraHud();
+        uiEvents.emit("cameraExit");
+      }
     } catch {
       /* stale overlay after a scene hop */
     }
@@ -1320,7 +1417,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private anyModal() {
-    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu || !!this.foodMenu;
+    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu || !!this.foodMenu || !!this.choiceMenu;
   }
 
   private setDedicatedHud(hidden: boolean) {
@@ -1354,6 +1451,7 @@ export class UIScene extends Phaser.Scene {
     place(this.fitBtn, width - 164, height - 76);
     place(this.phoneBtn, width - 252, height - 76);
     this.phoneBadge?.setPosition(width - 220, height - 106);
+    if (this.cameraHud && controls.cameraMode) this.showCameraHud(controls.cameraPose);
     this.layoutQuestCard();
   }
 
@@ -1362,6 +1460,7 @@ export class UIScene extends Phaser.Scene {
     if (this.localMapOpen && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.closeLocalMap();
     if (this.miniGameOpen && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.closeMiniGame(true);
     if (this.phone.open && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.phone.close();
+    if (this.cameraHud && !controls.cameraMode) this.hideCameraHud();
     this.clockText?.setText(store.clockLabel());
 
     if (this.dialogueOpen) {
@@ -1390,7 +1489,7 @@ export class UIScene extends Phaser.Scene {
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);
     // map + fit only in walkable scenes (not while driving)
-    const showNav = this.walkableScene() && !modal && !driving;
+    const showNav = this.walkableScene() && !modal && !driving && !controls.cameraMode;
     this.setButtonVisible(this.mapBtn, showNav);
     this.setButtonVisible(this.fitBtn, showNav);
     this.setButtonVisible(this.phoneBtn, showNav);
