@@ -132,14 +132,14 @@ export const QUESTS: QuestDef[] = [
   },
   {
     id: "q_baba_spree",
-    title: "Shopping Spree",
+    title: "Baba's Shopping Nightmare",
     giver: "baba",
     requiresQuests: ["q_baba_card"],
-    intro: "I said one bag. You heard: a timed shopping challenge. Please do not make me regret this.",
+    intro: "I said one store. One. Somehow you interpreted that as a full-scale mall operation.",
     steps: [
-      { type: "playMinigame", target: "shopping_spree", hint: "Start a shopping spree in any mall fashion area" },
+      { type: "playMinigame", target: "shopping_spree", hint: "Enter a mall and begin Baba's Shopping Nightmare" },
     ],
-    complete: "The bags have their own postcode now. Enjoy the new looks, habibti.",
+    complete: "I have stopped checking the receipts. Moomoo can carry the bags. I am going home.",
     rewardHearts: 4,
     rewardCoins: 0,
     rewardNpc: "baba",

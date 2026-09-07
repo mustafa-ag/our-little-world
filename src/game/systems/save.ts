@@ -65,6 +65,19 @@ export interface CatProgress {
   adopted: boolean;
 }
 
+export interface ShoppingRunRecord {
+  id: string;
+  mallId: "dubai_mall" | "dubai_hills_mall" | "yas_mall";
+  day: number;
+  productIds: string[];
+  babaStress: number;
+  babaBattle: "won" | "avoided";
+  collisions: number;
+  flirtyMoments: number;
+  ultimateUsed: boolean;
+  seconds: number;
+}
+
 export interface GameState {
   version: number;
   started: boolean;
@@ -114,6 +127,8 @@ export interface GameState {
   cat: CatProgress;
   souvenirs: string[];
   displayedSouvenirs: string[];
+  /** Compact result cards only; product rewards live in their normal systems. */
+  shoppingHistory: ShoppingRunRecord[];
 }
 
 /** Legacy single-save key. It remains mirrored so existing installs never lose progress. */
@@ -121,7 +136,7 @@ const SAVE_KEY = "ourlittleworld.save.v3";
 const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
 const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
 export const SAVE_SLOT_COUNT = 3;
-export const VERSION = 9;
+export const VERSION = 10;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
 
@@ -184,6 +199,7 @@ export function defaultState(): GameState {
     cat: { stage: 0, name: "Mishmish", lastSeenDay: 0, adopted: false },
     souvenirs: [],
     displayedSouvenirs: [],
+    shoppingHistory: [],
   };
 }
 
@@ -371,6 +387,26 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   const displayedSouvenirs = Array.isArray(raw.displayedSouvenirs)
     ? uniq(raw.displayedSouvenirs).filter((id) => souvenirs.includes(id)).slice(0, 5)
     : souvenirs.slice(0, 5);
+  const shoppingHistory: ShoppingRunRecord[] = Array.isArray(raw.shoppingHistory)
+    ? raw.shoppingHistory.flatMap((entry) => {
+        const run = entry as Partial<ShoppingRunRecord>;
+        const mallId: ShoppingRunRecord["mallId"] = run.mallId === "dubai_hills_mall" || run.mallId === "yas_mall" ? run.mallId : "dubai_mall";
+        if (!Array.isArray(run.productIds)) return [];
+        const normalized: ShoppingRunRecord = {
+          id: typeof run.id === "string" ? run.id : `legacy-shopping-${run.day ?? 1}`,
+          mallId,
+          day: Number.isFinite(run.day) ? Math.max(1, Math.floor(Number(run.day))) : 1,
+          productIds: uniq(run.productIds).slice(0, 8),
+          babaStress: Number.isFinite(run.babaStress) ? Math.min(100, Math.max(0, Math.round(Number(run.babaStress)))) : 0,
+          babaBattle: run.babaBattle === "won" ? "won" : "avoided",
+          collisions: Number.isFinite(run.collisions) ? Math.max(0, Math.round(Number(run.collisions))) : 0,
+          flirtyMoments: Number.isFinite(run.flirtyMoments) ? Math.max(0, Math.round(Number(run.flirtyMoments))) : 0,
+          ultimateUsed: !!run.ultimateUsed,
+          seconds: Number.isFinite(run.seconds) ? Math.max(0, Math.round(Number(run.seconds))) : 0,
+        };
+        return [normalized];
+      }).slice(-12)
+    : [];
 
   return {
     ...d,
@@ -421,6 +457,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     cat,
     souvenirs,
     displayedSouvenirs,
+    shoppingHistory,
   };
 }
 

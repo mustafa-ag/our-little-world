@@ -9,11 +9,10 @@ import { store } from "../systems/store";
 import { deliverMessage } from "../systems/phone";
 import { getVisualTexture } from "../visual";
 
-export type QuestActivityId = "shopping_spree" | "apartment_1701" | "chloe_thesis" | "nour_visit" | "fry_thief";
+export type QuestActivityId = "apartment_1701" | "chloe_thesis" | "nour_visit" | "fry_thief";
 
 interface QuestActivityData {
   activity: QuestActivityId;
-  mallId?: "dubai_mall" | "dubai_hills_mall" | "yas_mall";
   returnLocation?: string;
 }
 
@@ -48,14 +47,11 @@ export class QuestActivityScene extends Phaser.Scene {
   private interactables: Interactable[] = [];
   private current?: Interactable;
   private pickups: Pickup[] = [];
-  private bags: Phaser.GameObjects.Container[] = [];
-  private hazards: Phaser.GameObjects.Container[] = [];
   private activityUpdate?: (time: number, delta: number) => void;
   private lastInteract = 0;
   private finished = false;
   private startedAt = 0;
   private stress = 6;
-  private hazardCooldown = 0;
   private status = "";
 
   constructor() {
@@ -66,8 +62,6 @@ export class QuestActivityScene extends Phaser.Scene {
     this.taskData = data;
     this.interactables = [];
     this.pickups = [];
-    this.bags = [];
-    this.hazards = [];
     this.activityUpdate = undefined;
     this.finished = false;
     this.stress = 6;
@@ -86,7 +80,6 @@ export class QuestActivityScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdownActivity, this);
 
     const builders: Record<QuestActivityId, () => void> = {
-      shopping_spree: () => this.buildShoppingSpree(),
       apartment_1701: () => this.buildApartment(),
       chloe_thesis: () => this.buildChloeChase(),
       nour_visit: () => this.buildNourVisit(),
@@ -133,105 +126,6 @@ export class QuestActivityScene extends Phaser.Scene {
       const a = (Math.PI * 2 * i) / 8;
       this.tweens.add({ targets: t, x: x + Math.cos(a) * 34, y: y + Math.sin(a) * 28, alpha: 0, angle: 80, duration: 650, onComplete: () => t.destroy() });
     }
-  }
-
-  private buildShoppingSpree() {
-    this.baseRoom(0xeee8dc, 0x2f6fd0, "SHOPPING SPREE");
-    const g = this.add.graphics().setDepth(2);
-    const racks = [
-      { x: 72, y: 84, w: 118, h: 64 }, { x: 300, y: 82, w: 120, h: 66 }, { x: 530, y: 84, w: 116, h: 64 },
-      { x: 74, y: 275, w: 120, h: 62 }, { x: 302, y: 278, w: 120, h: 62 }, { x: 530, y: 274, w: 116, h: 64 },
-    ];
-    racks.forEach((r, i) => {
-      g.fillStyle(i % 2 ? 0xfff9ef : 0xf8d9e5, 1).fillRoundedRect(r.x, r.y, r.w, r.h, 8);
-      g.lineStyle(3, i % 2 ? 0x2f6fd0 : 0xe46d94).strokeRoundedRect(r.x, r.y, r.w, r.h, 8);
-    });
-    this.spawnPlayer(W / 2, H - 54);
-    const itemDefs = [
-      [128, 165, "Pink dress", "👗"], [354, 164, "Comfy shoes", "✦"], [590, 165, "Handbag", "▣"],
-      [128, 254, "Weekend jacket", "◇"], [354, 255, "Earrings", "♥"], [590, 254, "Sensible top", "♢"],
-    ] as const;
-    itemDefs.forEach(([x, y, label, icon], i) => {
-      const disk = this.add.circle(0, 0, 18, i % 2 ? 0x2f6fd0 : 0xe46d94).setStrokeStyle(3, 0xffffff);
-      const mark = this.add.text(0, -1, icon, { fontFamily: FONT, fontSize: "16px", color: "#fff", resolution: 2 }).setOrigin(0.5);
-      const name = this.add.text(0, 24, label, { fontFamily: FONT, fontSize: "9px", color: "#3a2b3a", backgroundColor: "#fff9ef", padding: { x: 4, y: 2 }, resolution: 2 }).setOrigin(0.5);
-      const c = this.add.container(x, y, [disk, mark, name]).setDepth(y);
-      this.pickups.push({ go: c, x, y, label, taken: false, phase: i * 0.8 });
-    });
-    for (let i = 0; i < 3; i += 1) this.makeMallHazard(i);
-    this.startedAt = this.time.now;
-    this.setStatus("LIST  0/6   ·   BABA STRESS ░░░░░   ·   0:58");
-    this.activityUpdate = (time) => {
-      const elapsed = (time - this.startedAt) / 1000;
-      let left = Math.max(0, 58 - Math.floor(elapsed));
-      if (left === 0 && !this.finished) {
-        this.startedAt += 15000;
-        left = 15;
-        this.stress = Math.max(this.stress, 84);
-        this.speech(this.player.x, this.player.y - 28, "Baba granted a very reluctant 15-second extension.", "#ffe08a");
-      }
-      const collected = this.pickups.filter((p) => p.taken).length;
-      const bars = Math.min(5, Math.ceil(this.stress / 20));
-      this.setStatus(`LIST  ${collected}/6   ·   BABA STRESS ${"█".repeat(bars)}${"░".repeat(5 - bars)}   ·   0:${String(left).padStart(2, "0")}`, this.stress > 75 ? "#ffe08a" : "#fff4e6");
-      for (const p of this.pickups) {
-        if (p.taken) continue;
-        p.go.y = p.y + Math.sin(time * 0.004 + p.phase) * 3;
-        if (Phaser.Math.Distance.Between(this.player.x, this.player.y, p.x, p.y) < 24) this.collectShoppingItem(p);
-      }
-      for (const h of this.hazards) {
-        if (time < this.hazardCooldown || Phaser.Math.Distance.Between(this.player.x, this.player.y, h.x, h.y) > 28) continue;
-        this.hazardCooldown = time + 950;
-        this.stress = Math.min(100, this.stress + 13);
-        this.player.setPosition(Phaser.Math.Clamp(this.player.x - 30, 34, W - 34), Phaser.Math.Clamp(this.player.y + 18, 68, H - 34));
-        this.cameras.main.shake(120, 0.008);
-        this.speech(h.x, h.y - 20, this.stress > 70 ? "Baba: JUJU." : "Excuse me! Tiny cart emergency.", "#ffd3d3");
-      }
-      this.updateBagTrain();
-    };
-  }
-
-  private makeMallHazard(index: number) {
-    const y = 205 + (index - 1) * 42;
-    const cart = this.add.rectangle(0, 0, 36, 20, index === 1 ? 0xe46d94 : 0x6f819d).setStrokeStyle(2, 0x3a2b3a);
-    const wheels = this.add.text(0, 8, "●     ●", { fontFamily: FONT, fontSize: "7px", color: "#3a2b3a", resolution: 2 }).setOrigin(0.5);
-    const label = this.add.text(0, -2, index === 1 ? "SHOPPER" : "CART", { fontFamily: FONT, fontSize: "7px", color: "#fff", resolution: 2 }).setOrigin(0.5);
-    const c = this.add.container(index % 2 ? W - 40 : 40, y, [cart, wheels, label]).setDepth(y + 5);
-    this.hazards.push(c);
-    this.tweens.add({ targets: c, x: index % 2 ? 40 : W - 40, duration: 3800 + index * 650, yoyo: true, repeat: -1, ease: "Sine.inOut" });
-  }
-
-  private collectShoppingItem(p: Pickup) {
-    p.taken = true;
-    this.sparkle(p.x, p.y);
-    p.go.destroy(true);
-    this.stress = Math.min(100, this.stress + 8);
-    const bag = this.add.container(this.player.x, this.player.y).setDepth(this.player.y - 1);
-    bag.add([this.add.rectangle(0, 0, 15, 17, this.bags.length % 2 ? 0x2f6fd0 : 0xe46d94).setStrokeStyle(2, 0xffffff), this.add.text(0, -1, "⌒", { fontFamily: FONT, fontSize: "10px", color: "#fff", resolution: 2 }).setOrigin(0.5)]);
-    this.bags.push(bag);
-    this.speech(this.player.x, this.player.y - 28, `${p.label} ✓`);
-    if (this.pickups.every((item) => item.taken)) this.finishShopping();
-  }
-
-  private updateBagTrain() {
-    this.bags.forEach((bag, i) => {
-      const side = i % 2 ? 1 : -1;
-      const row = Math.floor(i / 2);
-      bag.x = Phaser.Math.Linear(bag.x, this.player.x + side * (14 + row * 8), 0.13);
-      bag.y = Phaser.Math.Linear(bag.y, this.player.y + 4 + row * 5, 0.13);
-      bag.setDepth(bag.y - 1);
-    });
-  }
-
-  private finishShopping() {
-    if (this.finished) return;
-    this.finished = true;
-    this.player.move(0, 0);
-    quests.onMinigame("shopping_spree");
-    ["mall_dress", "sparkle_set", "weekend_jacket"].forEach((id) => store.unlockOutfit(id));
-    ["handbag", "necklace", "earrings", "bangle"].forEach((id) => store.unlockAccessory(id));
-    store.setAccessory("handbag");
-    this.sparkle(this.player.x, this.player.y, "♥");
-    this.afterDialogue("Shopping Spree", ["Six items. Six bags. Baba's stress meter has become modern art.", "Juju leaves wearing one new look and carrying every other look."], () => this.returnToMall());
   }
 
   private buildApartment() {
@@ -475,11 +369,6 @@ export class QuestActivityScene extends Phaser.Scene {
     };
     uiEvents.once("dialogueClosed", closed);
     uiEvents.emit("dialogue", name, lines);
-  }
-
-  private returnToMall() {
-    uiEvents.emit("sceneReset");
-    this.scene.start(SceneKeys.Mall, { mallId: this.taskData.mallId ?? "dubai_mall" });
   }
 
   private returnToWorld(locationId = this.taskData.returnLocation ?? store.state.currentLocation) {

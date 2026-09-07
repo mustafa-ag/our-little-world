@@ -15,6 +15,7 @@ import {
   type TimeOfDay,
   type SavedPhoto,
   type Career,
+  type ShoppingRunRecord,
 } from "./save";
 import {
   cloudSaveEnabled,
@@ -455,6 +456,19 @@ class Store extends Phaser.Events.EventEmitter {
   // ---- keepsakes ----
   hasKeepsake(id: string) {
     return this.state.keepsakes.includes(id);
+  }
+
+  unlockKeepsake(id: string, silent = false) {
+    if (this.state.keepsakes.includes(id)) return false;
+    this.state.keepsakes.push(id);
+    if (!silent) this.emit("toast", `Keepsake · ${id.replace(/^shopping_/, "").replace(/_/g, " ")}`, "#f4c95d");
+    this.save();
+    return true;
+  }
+
+  recordShoppingRun(run: ShoppingRunRecord) {
+    this.state.shoppingHistory = [...this.state.shoppingHistory, run].slice(-12);
+    this.save();
   }
 
   // ---- photos & notes ----

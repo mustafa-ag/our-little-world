@@ -256,7 +256,10 @@ export class PhoneOverlay {
   private drawStats(x: number, y: number, w: number, maxH: number) {
     this.add(this.scene.add.text(x, y, "JUJU'S VERY SERIOUS STATS", { fontFamily: FONT, fontSize: "13px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
     this.add(this.scene.add.text(x, y + 20, `Countries visited  ${store.getStat("countries_visited")}   ·   Cities  ${store.getStat("cities_visited")}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", resolution: 2 }));
-    let yy = y + 48;
+    const shoppingHistory = store.state.shoppingHistory;
+    const latestShopping = shoppingHistory[shoppingHistory.length - 1];
+    if (latestShopping) this.add(this.scene.add.text(x, y + 36, `LAST MALL REPORT  ${latestShopping.productIds.length} bags · Baba ${latestShopping.babaStress}% · ${latestShopping.ultimateUsed ? "Moomoo rescued" : latestShopping.babaBattle}`, { fontFamily: FONT, fontSize: "9px", color: "#2f6fd0", wordWrap: { width: w }, resolution: 2 }));
+    let yy = y + (latestShopping ? 60 : 48);
     for (const def of LIFE_STATS) {
       if (yy > y + maxH - 18) break;
       const value = def.id === "workdays_completed"

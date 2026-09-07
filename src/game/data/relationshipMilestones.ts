@@ -15,6 +15,8 @@ export const KEEPSAKES: Record<string, { name: string; description: string }> = 
   sister_polaroid: { name: "Sister Polaroid", description: "Proof that Fadwa will always make you stop for a photo." },
   folded_note: { name: "Folded note", description: "Coffee later. Or now. Or always." },
   moomoo_keepsake: { name: "Our little world charm", description: "A tiny forever made from all the places you kept." },
+  shopping_cloud_plush: { name: "Cloud plush", description: "No practical function. Perfect shopping performance." },
+  shopping_gold_frame: { name: "Little gold frame", description: "For a photo of everybody surviving Baba's Shopping Nightmare." },
 };
 
 export const RELATIONSHIP_MILESTONES: RelationshipMilestone[] = [

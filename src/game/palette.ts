@@ -73,6 +73,8 @@ export const Outfits: Record<string, { top: string; topShade: string; bottom: st
   mall_dress: { label: "Mall Dress", top: "#ff7eaa", topShade: "#d9588a", bottom: "#ff7eaa", shoes: "#fff4e6" },
   sparkle_set: { label: "Sparkle Set", top: "#a06de2", topShade: "#7d4fbd", bottom: "#3d5a80", shoes: "#f4c95d" },
   weekend_jacket: { label: "Weekend Jacket", top: "#6a9ed8", topShade: "#4779b5", bottom: "#2a334d", shoes: "#fff4e6" },
+  shopping_heels: { label: "Evening Heels", top: "#36263d", topShade: "#241a2b", bottom: "#d98ba7", shoes: "#d7a44b" },
+  shopping_sandals: { label: "Golden Sandals", top: "#fff0c7", topShade: "#e6c67f", bottom: "#e46d94", shoes: "#f4c95d" },
   pirate_chic: { label: "Pirate Chic", top: "#d84652", topShade: "#a82d39", bottom: "#2a2230", shoes: "#f4c95d" },
   engineer_blue: { label: "Engineering Blue", top: "#2f6fd0", topShade: "#22539f", bottom: "#2a334d", shoes: "#1a2230" },
   executive_blue: { label: "Executive Blue", top: "#244f9d", topShade: "#183a78", bottom: "#232b3b", shoes: "#111827" },

@@ -13,6 +13,7 @@ import { SisterHeistScene } from "./game/scenes/SisterHeistScene";
 import { AdnocHQScene } from "./game/scenes/AdnocHQScene";
 import { AdnocTaskScene } from "./game/scenes/AdnocTaskScene";
 import { QuestActivityScene } from "./game/scenes/QuestActivityScene";
+import { BabaShoppingScene } from "./game/scenes/BabaShoppingScene";
 import { UIScene } from "./game/scenes/UIScene";
 
 const isAppleTouchDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -43,7 +44,7 @@ const config: Phaser.Types.Core.GameConfig = {
     },
   },
   // UI is last so it always renders on top of gameplay scenes.
-  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, AdnocHQScene, AdnocTaskScene, QuestActivityScene, UIScene],
+  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, AdnocHQScene, AdnocTaskScene, QuestActivityScene, BabaShoppingScene, UIScene],
 };
 
 const game = new Phaser.Game(config);

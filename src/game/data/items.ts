@@ -30,6 +30,15 @@ export const ITEMS: Record<string, ItemDef> = {
   mamas_bangle: { id: "mamas_bangle", name: "Mama's gold bangles", desc: "A gleaming stack of gold bangles with a very long story.", kind: "keepsake", icon: "i_bangle" },
   home_sketch: { id: "home_sketch", name: "Home sketch", desc: "A tiny plan for a home that feels entirely yours.", kind: "keepsake", icon: "ui_star" },
   adnoc_badge: { id: "adnoc_badge", name: "ADNOC employee badge", desc: "The photo is official. Whether it is reasonable is another matter.", kind: "keepsake", icon: "i_baba_card" },
+  shopping_perfume: { id: "shopping_perfume", name: "Rose-night perfume", desc: "A confident little bottle from Baba's Shopping Nightmare.", kind: "keepsake", icon: "ui_star" },
+  shopping_lipstick: { id: "shopping_lipstick", name: "Berry lipstick", desc: "Main-character color in a very small tube.", kind: "keepsake", icon: "ui_heart" },
+  black_lace_set: { id: "black_lace_set", name: "Black lace set", desc: "Tasteful boutique packaging. Moomoo had no useful comments.", kind: "keepsake", icon: "ui_star" },
+  blush_satin_set: { id: "blush_satin_set", name: "Blush satin set", desc: "Soft pink tissue paper and one memorable reaction.", kind: "keepsake", icon: "ui_heart" },
+  soft_white_set: { id: "soft_white_set", name: "Soft white set", desc: "A simple boutique set in elegant white packaging.", kind: "keepsake", icon: "ui_star" },
+  shopping_candle: { id: "shopping_candle", name: "Fancy candle", desc: "Smells like a hotel lobby with excellent boundaries.", kind: "keepsake", icon: "ui_star" },
+  shopping_macarons: { id: "shopping_macarons", name: "Tiny macarons", desc: "Six colors from the final speed-shopping lap.", kind: "food", icon: "ui_heart", giftable: true },
+  shopping_fancy_chocolate: { id: "shopping_fancy_chocolate", name: "Fancy chocolate", desc: "For recovery from financial discussion.", kind: "gift", icon: "ui_heart", giftable: true },
+  shopping_crisps: { id: "shopping_crisps", name: "Emergency crisps", desc: "The one purchase Baba almost called practical.", kind: "food", icon: "ui_coin", giftable: true },
 };
 
 export const itemById = (id: string) => ITEMS[id];

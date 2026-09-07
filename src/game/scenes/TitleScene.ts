@@ -17,10 +17,11 @@ export class TitleScene extends Phaser.Scene {
 
     if (import.meta.env.DEV) {
       const query = new URLSearchParams(window.location.search);
-      const activity = query.get("debugActivity") as QuestActivityId | null;
-      const activities: QuestActivityId[] = ["shopping_spree", "apartment_1701", "chloe_thesis", "nour_visit", "fry_thief"];
+      const activity = query.get("debugActivity") as QuestActivityId | "shopping_spree" | null;
+      const activities: Array<QuestActivityId | "shopping_spree"> = ["shopping_spree", "apartment_1701", "chloe_thesis", "nour_visit", "fry_thief"];
       if (activity && activities.includes(activity)) {
-        this.scene.start(SceneKeys.QuestActivity, { activity, mallId: "dubai_mall", returnLocation: "abudhabi_yas" });
+        if (activity === "shopping_spree") this.scene.start(SceneKeys.BabaShopping, { mallId: "dubai_mall", debugStage: Number(query.get("debugStage") ?? 0) });
+        else this.scene.start(SceneKeys.QuestActivity, { activity, returnLocation: "abudhabi_yas" });
         return;
       }
       const mini = query.get("debugMini") as MiniGameSpec["kind"] | null;

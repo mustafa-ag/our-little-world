@@ -9,6 +9,8 @@ export const controls = {
   locked: false, // true while a dialogue/menu is open -> freeze movement
   cameraMode: false,
   cameraPose: "smile" as "smile" | "peace" | "silly" | "hug",
+  shoppingUltimateReady: false,
+  shoppingUltimateActive: false,
 };
 
 // Global UI event bus (button presses, dialogue requests, menu toggles).
@@ -37,14 +39,30 @@ export interface FoodOrderSpec {
 export interface ChoiceSpec {
   title: string;
   prompt: string;
-  choices: { id: string; label: string; description?: string }[];
+  kicker?: string;
+  cancelLabel?: string;
+  accent?: string;
+  choices: { id: string; label: string; description?: string; icon?: string; badge?: string }[];
   onChoose: (id: string) => void;
+}
+
+export interface ShoppingHudSpec {
+  stress: number;
+  ultimate: number;
+  bags: number;
+  stores: number;
+  time: string;
+  boss?: string;
+  receipts?: number;
+  ultimateActive?: boolean;
 }
 
 export function resetControls() {
   controls.moveX = 0;
   controls.moveY = 0;
   controls.cameraMode = false;
+  controls.shoppingUltimateReady = false;
+  controls.shoppingUltimateActive = false;
 }
 
 export type MiniKind = "npc" | "landmark" | "home" | "exit" | "shop" | "jeep";

@@ -209,7 +209,22 @@ export class MallScene extends Phaser.Scene {
       }
       if (quests.currentStep("q_baba_spree")?.target === "shopping_spree") {
         uiEvents.emit("sceneReset");
-        this.scene.start(SceneKeys.QuestActivity, { activity: "shopping_spree", mallId: this.config.id });
+        this.scene.start(SceneKeys.BabaShopping, { mallId: this.config.id });
+        return;
+      }
+      if (quests.statusOf("q_baba_spree") === "done") {
+        uiEvents.emit("choice", {
+          kicker: `${this.config.title.toUpperCase()} · REPLAY`,
+          title: "Baba Shopping Challenge",
+          prompt: "The staff remember the receipts. Baba has not emotionally recovered.",
+          accent: "#e46d94",
+          cancelLabel: "Browse normally",
+          choices: [{ id: "replay", label: "Start the mall gauntlet", description: "Replay for chosen purchases and a new report. Quest rewards do not repeat.", icon: "▣" }],
+          onChoose: () => {
+            uiEvents.emit("sceneReset");
+            this.scene.start(SceneKeys.BabaShopping, { mallId: this.config.id, replay: true });
+          },
+        });
         return;
       }
       uiEvents.emit("dialogue", label, ["Cute tops, jackets, shoes, and a mirror that says yes."]);

@@ -11,6 +11,10 @@ export const LIFE_STATS: LifeStatDef[] = [
   { id: "flowers_for_mama", label: "Flowers given to Mama", icon: "✿" },
   { id: "baba_card_purchases", label: "Baba card purchases", icon: "▭" },
   { id: "shopping_bags", label: "Shopping bags acquired", icon: "▱" },
+  { id: "mall_collisions", label: "Mall pedestrian collisions", icon: "!" },
+  { id: "baba_budget_battles_won", label: "Baba budget battles won", icon: "≋" },
+  { id: "shopping_ultimate_uses", label: "Moomoo bag rescues", icon: "↯" },
+  { id: "flirty_moments", label: "Shopping flirt freezes", icon: "♥" },
   { id: "pigeons_encountered", label: "Pigeons encountered", icon: "⌁" },
   { id: "seagull_fries_stolen", label: "Seagull fries stolen", icon: "≈" },
   { id: "sharks_defeated", label: "Sharks defeated", icon: "◇" },
@@ -25,4 +29,3 @@ export const LIFE_STATS: LifeStatDef[] = [
   { id: "secrets_found", label: "Secrets found", icon: "?" },
   { id: "random_events_completed", label: "Little events helped", icon: "☆" },
 ];
-

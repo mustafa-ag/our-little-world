@@ -85,16 +85,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const y = Math.round(this.y - 10);
     this.accessory.clear();
     const accessory = store.state.equippedAccessory;
-    if (accessory === "necklace") {
+    if (accessory === "necklace" || accessory === "gold_textured_necklace") {
       this.accessory.lineStyle(1, 0xf4c95d, 1).beginPath().arc(x, y + 7, 4, 0.15, Math.PI - 0.15).strokePath();
-      this.accessory.fillStyle(0xff8fae, 1).fillRect(x - 1, y + 10, 2, 2);
+      this.accessory.fillStyle(accessory === "gold_textured_necklace" ? 0xf4c95d : 0xff8fae, 1).fillRect(x - 1, y + 10, 2, 2);
     } else if (accessory === "earrings") {
       this.accessory.fillStyle(0xf4c95d, 1).fillRect(x - 6, y + 4, 2, 3).fillRect(x + 5, y + 4, 2, 3);
-    } else if (accessory === "bangle") {
-      this.accessory.lineStyle(1, 0xf4c95d, 1).strokeCircle(x + 6, y + 12, 2);
-    } else if (accessory === "handbag") {
-      this.accessory.fillStyle(0xe46d94, 1).fillRect(x + 6, y + 10, 4, 5);
-      this.accessory.lineStyle(1, 0x8a5c3b, 1).strokeRect(x + 7, y + 8, 2, 3);
+    } else if (accessory === "bangle" || accessory === "love_bracelet" || accessory === "nail_bracelet") {
+      this.accessory.lineStyle(accessory === "nail_bracelet" ? 2 : 1, accessory === "love_bracelet" ? 0xd9b45f : 0xf4c95d, 1).strokeCircle(x + 6, y + 12, accessory === "love_bracelet" ? 2.5 : 2);
+      if (accessory === "nail_bracelet") this.accessory.fillStyle(0xf4c95d, 1).fillTriangle(x + 6, y + 8, x + 9, y + 11, x + 6, y + 11);
+    } else if (["handbag", "mini_bag", "shoulder_bag", "big_tote"].includes(accessory ?? "")) {
+      const bagW = accessory === "mini_bag" ? 4 : accessory === "big_tote" ? 8 : 6;
+      const bagH = accessory === "big_tote" ? 7 : 5;
+      this.accessory.fillStyle(accessory === "shoulder_bag" ? 0x8c5b45 : accessory === "big_tote" ? 0x527fc4 : 0xe46d94, 1).fillRoundedRect(x + 5, y + 10, bagW, bagH, 1);
+      this.accessory.lineStyle(1, 0x8a5c3b, 1).beginPath().arc(x + 5 + bagW / 2, y + 10, Math.max(2, bagW / 3), Math.PI, Math.PI * 2).strokePath();
+    } else if (accessory === "pearl_hair_clip") {
+      this.accessory.fillStyle(0xfff9ef, 1).fillCircle(x + 5, y, 2).fillCircle(x + 7, y + 1, 1.5);
+      this.accessory.lineStyle(1, 0xcaa27a, 1).lineBetween(x + 3, y - 1, x + 8, y + 2);
     }
 
     this.disguise.clear();

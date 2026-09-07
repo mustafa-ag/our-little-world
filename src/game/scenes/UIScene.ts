@@ -48,6 +48,7 @@ export class UIScene extends Phaser.Scene {
   private mapBtn!: Phaser.GameObjects.Image;
   private fitBtn!: Phaser.GameObjects.Image;
   private phoneBtn!: Phaser.GameObjects.Image;
+  private ultimateBtn!: Phaser.GameObjects.Image;
   private phoneBadge!: Phaser.GameObjects.Text;
   private clockText!: Phaser.GameObjects.Text;
   private phone!: PhoneOverlay;
@@ -55,6 +56,12 @@ export class UIScene extends Phaser.Scene {
   private foodMenu?: Phaser.GameObjects.Container;
   private choiceMenu?: Phaser.GameObjects.Container;
   private cameraHud?: Phaser.GameObjects.Container;
+  private shoppingHud?: Phaser.GameObjects.Container;
+  private shoppingHudG?: Phaser.GameObjects.Graphics;
+  private shoppingHudStress?: Phaser.GameObjects.Text;
+  private shoppingHudUltimate?: Phaser.GameObjects.Text;
+  private shoppingHudMeta?: Phaser.GameObjects.Text;
+  private shoppingHudState?: import("../systems/controls").ShoppingHudSpec;
   private pendingGiftNpc?: string;
 
   // dialogue
@@ -158,6 +165,7 @@ export class UIScene extends Phaser.Scene {
     this.buildWardrobe();
     this.buildShop();
     this.buildLocalMap();
+    this.buildShoppingHud();
 
     this.keys = this.input.keyboard!.addKeys("SPACE,E,ENTER,ESC") as Record<string, Phaser.Input.Keyboard.Key>;
 
@@ -190,6 +198,7 @@ export class UIScene extends Phaser.Scene {
     uiEvents.on("openShop", (mode?: "home" | "adnoc") => this.openShop(mode));
     uiEvents.on("openFoodOrder", (spec: import("../systems/controls").FoodOrderSpec) => this.openFoodOrder(spec));
     uiEvents.on("choice", (spec: import("../systems/controls").ChoiceSpec) => this.openChoice(spec));
+    uiEvents.on("shoppingHud", (spec: import("../systems/controls").ShoppingHudSpec | null) => this.updateShoppingHud(spec));
     uiEvents.on("cameraStart", (pose: typeof controls.cameraPose) => this.showCameraHud(pose));
     uiEvents.on("cameraExit", () => this.hideCameraHud());
     uiEvents.on("openWardrobe", () => this.openWardrobe());
@@ -733,6 +742,8 @@ export class UIScene extends Phaser.Scene {
     this.mapBtn = this.makeButton(width - 76, height - 168, "Map", 0.92, () => uiEvents.emit("openMap"));
     this.fitBtn = this.makeButton(width - 164, height - 76, "Fit", 0.88, () => this.openWardrobe());
     this.phoneBtn = this.makeButton(width - 252, height - 76, "Ph", 0.88, () => this.phone.show());
+    this.ultimateBtn = this.makeButton(width - 164, height - 168, "Q\nULT", 0.92, () => uiEvents.emit("shoppingUltimate"));
+    this.setButtonVisible(this.ultimateBtn, false);
     this.phoneBadge = this.add
       .text(width - 220, height - 106, "", {
         fontFamily: FONT,
@@ -1187,15 +1198,21 @@ export class UIScene extends Phaser.Scene {
     const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x1a1420, 0.6).setInteractive();
     const panel = this.add.graphics();
     panel.fillStyle(0xfff9f0, 1).fillRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
-    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
+    const accent = Phaser.Display.Color.HexStringToColor(spec.accent ?? "#e46d94").color;
+    panel.lineStyle(3, accent).strokeRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
     children.push(shade, panel);
-    children.push(this.add.text(width / 2, top + 20, spec.title, { fontFamily: FONT, fontSize: "18px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5));
-    children.push(this.add.text(width / 2, top + 50, spec.prompt, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", align: "center", wordWrap: { width: panelW - 42 }, resolution: 2 }).setOrigin(0.5, 0));
+    if (spec.kicker) children.push(this.add.text(width / 2, top + 11, spec.kicker, { fontFamily: FONT, fontSize: "8px", color: "#8a7a6a", letterSpacing: 1, resolution: 2 }).setOrigin(0.5));
+    children.push(this.add.text(width / 2, top + (spec.kicker ? 26 : 20), spec.title, { fontFamily: FONT, fontSize: "18px", color: spec.accent ?? "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5));
+    const prompt = this.add.text(width / 2, top + 50, spec.prompt, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", align: "center", wordWrap: { width: panelW - 42 }, resolution: 2 }).setOrigin(0.5, 0);
+    children.push(prompt);
+    const choiceStartY = Math.max(top + 103, prompt.y + prompt.height + 12);
     spec.choices.slice(0, 4).forEach((choice, index) => {
-      const y = top + 103 + index * 47;
-      const button = this.add.text(width / 2, y, choice.description ? `${choice.label}\n${choice.description}` : choice.label, {
+      const y = choiceStartY + index * 47;
+      const leading = choice.icon ? `${choice.icon}  ` : "";
+      const trailing = choice.badge ? `   ${choice.badge}` : "";
+      const button = this.add.text(width / 2, y, choice.description ? `${leading}${choice.label}${trailing}\n${choice.description}` : `${leading}${choice.label}${trailing}`, {
         fontFamily: FONT, fontSize: choice.description ? "11px" : "13px", color: "#fff", align: "center",
-        backgroundColor: index === 0 ? "#2f6fd0" : "#e46d94", padding: { x: 12, y: 7 }, fixedWidth: panelW - 54, resolution: 2,
+        backgroundColor: index === 0 ? (spec.accent ?? "#2f6fd0") : "#6f6274", padding: { x: 12, y: 7 }, fixedWidth: panelW - 54, resolution: 2,
       }).setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
       button.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
         event?.stopPropagation?.();
@@ -1204,7 +1221,7 @@ export class UIScene extends Phaser.Scene {
       });
       children.push(button);
     });
-    const later = this.add.text(width / 2, top + panelH - 24, "Maybe later", { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 9, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const later = this.add.text(width / 2, top + panelH - 24, spec.cancelLabel ?? "Maybe later", { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 9, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     later.on("pointerdown", () => this.closeChoice());
     children.push(later);
     shade.on("pointerdown", () => this.closeChoice());
@@ -1248,6 +1265,43 @@ export class UIScene extends Phaser.Scene {
   private hideCameraHud() {
     this.cameraHud?.destroy(true);
     this.cameraHud = undefined;
+  }
+
+  private buildShoppingHud() {
+    this.shoppingHud?.destroy(true);
+    this.shoppingHudG = this.add.graphics();
+    this.shoppingHudStress = this.add.text(0, 0, "", { fontFamily: FONT, fontSize: "10px", color: "#fff", fontStyle: "bold", resolution: 2 });
+    this.shoppingHudUltimate = this.add.text(0, 0, "", { fontFamily: FONT, fontSize: "10px", color: "#fff", fontStyle: "bold", resolution: 2 });
+    this.shoppingHudMeta = this.add.text(0, 0, "", { fontFamily: FONT, fontSize: "9px", color: "#fff4e6", align: "right", resolution: 2 }).setOrigin(1, 0);
+    this.shoppingHud = this.add.container(0, 0, [this.shoppingHudG, this.shoppingHudStress, this.shoppingHudUltimate, this.shoppingHudMeta]).setScrollFactor(0).setDepth(140).setVisible(false);
+  }
+
+  private updateShoppingHud(spec: import("../systems/controls").ShoppingHudSpec | null) {
+    this.shoppingHudState = spec ?? undefined;
+    if (!spec) {
+      this.shoppingHud?.setVisible(false);
+      return;
+    }
+    const { width } = this.scale.gameSize;
+    const panelW = Math.max(270, Math.min(600, width - 170));
+    const x = 12;
+    const y = 10;
+    const half = (panelW - 28) / 2;
+    const stress = Phaser.Math.Clamp(spec.stress / 100, 0, 1);
+    const ultimate = Phaser.Math.Clamp(spec.ultimate / 100, 0, 1);
+    const stressColor = spec.stress >= 75 ? 0xff426d : spec.stress >= 50 ? 0xf49a45 : 0x7be0a3;
+    this.shoppingHudG?.clear();
+    this.shoppingHudG?.fillStyle(0x201a27, 0.94).fillRoundedRect(x, y, panelW, 61, 11);
+    this.shoppingHudG?.lineStyle(2, spec.stress >= 75 ? 0xff6d91 : 0xcaa27a, 1).strokeRoundedRect(x, y, panelW, 61, 11);
+    this.shoppingHudG?.fillStyle(0x4a3f50, 1).fillRoundedRect(x + 10, y + 25, half, 10, 5);
+    this.shoppingHudG?.fillStyle(stressColor, 1).fillRoundedRect(x + 10, y + 25, half * stress, 10, 5);
+    this.shoppingHudG?.fillStyle(0x4a3f50, 1).fillRoundedRect(x + 18 + half, y + 25, half, 10, 5);
+    this.shoppingHudG?.fillStyle(spec.ultimateActive ? 0xffffff : 0x63c6e8, 1).fillRoundedRect(x + 18 + half, y + 25, half * ultimate, 10, 5);
+    this.shoppingHudStress?.setPosition(x + 10, y + 8).setText(`BABA STRESS  ${Math.round(spec.stress)}%`);
+    this.shoppingHudUltimate?.setPosition(x + 18 + half, y + 8).setText(spec.ultimateActive ? "MOCK LIGHT SPEED" : `MOOMOO RESCUE  ${Math.round(spec.ultimate)}%`);
+    const boss = spec.boss ? ` · ${spec.boss}${spec.receipts === undefined ? "" : ` · RECEIPTS ${spec.receipts}`}` : "";
+    this.shoppingHudMeta?.setPosition(x + panelW - 10, y + 43).setText(`${spec.stores}/8 STORES · ${spec.bags} BAGS · ${spec.time}${boss}`);
+    this.shoppingHud?.setVisible(true);
   }
 
   private buyFurniture(tex: string, price: number) {
@@ -1384,7 +1438,7 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping);
   }
   private walkableScene() {
     const m = this.scene.manager;
@@ -1408,6 +1462,9 @@ export class UIScene extends Phaser.Scene {
         this.hideCameraHud();
         uiEvents.emit("cameraExit");
       }
+      this.updateShoppingHud(null);
+      controls.shoppingUltimateReady = false;
+      controls.shoppingUltimateActive = false;
     } catch {
       /* stale overlay after a scene hop */
     }
@@ -1450,8 +1507,10 @@ export class UIScene extends Phaser.Scene {
     place(this.mapBtn, width - 76, height - 168);
     place(this.fitBtn, width - 164, height - 76);
     place(this.phoneBtn, width - 252, height - 76);
+    place(this.ultimateBtn, width - 164, height - 168);
     this.phoneBadge?.setPosition(width - 220, height - 106);
     if (this.cameraHud && controls.cameraMode) this.showCameraHud(controls.cameraPose);
+    if (this.shoppingHudState) this.updateShoppingHud(this.shoppingHudState);
     this.layoutQuestCard();
   }
 
@@ -1476,15 +1535,18 @@ export class UIScene extends Phaser.Scene {
     const modal = this.anyModal();
     const driving = this.scene.manager.isActive(SceneKeys.Driving);
     const questActivity = this.scene.manager.isActive(SceneKeys.QuestActivity);
-    const dedicated = this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || questActivity;
+    const babaShopping = this.scene.manager.isActive(SceneKeys.BabaShopping);
+    const dedicated = this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || questActivity || babaShopping;
     this.setDedicatedHud(dedicated);
     this.dedicatedStatus.setY(questActivity ? 24 : 64);
     this.dedicatedStatus.setVisible(dedicated && this.dedicatedStatusActive && !modal);
+    this.shoppingHud?.setVisible(!!this.shoppingHudState && babaShopping && !modal);
 
     const showTouch = gp && (!modal || this.miniGameOpen);
     this.setButtonVisible(this.actionBtn, showTouch);
     this.actionBtn.setDepth(this.miniGameOpen ? 90 : 12);
     (this.actionBtn as ButtonImage).label?.setDepth(this.miniGameOpen ? 91 : 13);
+    this.setButtonVisible(this.ultimateBtn, babaShopping && controls.shoppingUltimateReady && !controls.shoppingUltimateActive && !modal);
     const showJoy = showTouch && this.joyPointerId !== -1;
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);
