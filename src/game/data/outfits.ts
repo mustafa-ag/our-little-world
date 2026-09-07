@@ -33,4 +33,7 @@ export const OUTFIT_UNLOCKS: OutfitUnlock[] = [
   { id: "engineer_blue", label: "Engineering Blue", hint: "Complete Juju's first day at ADNOC HQ.", questDone: "q_adnoc_engineer" },
   { id: "executive_blue", label: "Executive Blue", hint: "Become Engineering Director.", flag: "adnoc_director_promoted" },
   { id: "ceo_blue", label: "CEO Blue", hint: "Complete the final ADNOC promotion.", questDone: "q_adnoc_ceo" },
+  { id: "wedding_moroccan", label: "Moroccan Celebration", hint: "Complete the desert wedding.", questDone: "q_desert_wedding" },
+  { id: "wedding_jordanian", label: "Jordanian Celebration", hint: "Complete the desert wedding.", questDone: "q_desert_wedding" },
+  { id: "wedding_white", label: "Wedding White", hint: "Complete the desert wedding.", questDone: "q_desert_wedding" },
 ];

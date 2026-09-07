@@ -13,15 +13,17 @@ import { KEEPSAKES } from "../data/relationshipMilestones";
 import { SECRETS } from "../data/secrets";
 import { QUESTS } from "../data/quests";
 import { store } from "../systems/store";
-import { markRead } from "../systems/phone";
 import { activateFromMessage as startQuest } from "../systems/quests";
 import { controls, uiEvents } from "../systems/controls";
 import { LIFE_STATS } from "../data/stats";
 import { SOUVENIRS } from "../data/souvenirs";
 import { SceneKeys } from "../constants";
+import { chatContacts, markThreadRead, sendChat, suggestionsFor, threadFor } from "../systems/chat";
+import { PROPERTIES } from "../data/properties";
+import { buyProperty, propertyStatus, setPrimaryHome, visitProperty } from "../systems/properties";
 
 const FONT = "monospace";
-export type PhoneTab = "messages" | "camera" | "album" | "stats" | "map" | "contacts" | "notes" | "bag" | "style" | "debug";
+export type PhoneTab = "messages" | "camera" | "album" | "stats" | "map" | "contacts" | "car" | "homes" | "notes" | "bag" | "style" | "debug";
 
 export class PhoneOverlay {
   root: Phaser.GameObjects.Container;
@@ -32,6 +34,9 @@ export class PhoneOverlay {
   private readonly debugQuestTour = new URLSearchParams(window.location.search).has("debugQuests");
   private debugQuestIndex = 0;
   private albumFilter = "all";
+  private selectedChat?: string;
+  private chatContactPage = 0;
+  private propertyPage = 0;
 
   constructor(private scene: Phaser.Scene) {
     this.root = scene.add.container(0, 0).setScrollFactor(0).setDepth(70);
@@ -120,12 +125,14 @@ export class PhoneOverlay {
       { id: "stats", label: "Stats" },
       { id: "map", label: "Map" },
       { id: "contacts", label: "Ppl" },
+      { id: "car", label: "Car" },
+      { id: "homes", label: "Homes" },
       { id: "notes", label: "Notes" },
       { id: "bag", label: "Bag" },
       { id: "style", label: "Fit" },
     ];
     if (this.debugQuestTour) tabs.push({ id: "debug", label: "Debug" });
-    const tabCols = 5;
+    const tabCols = 4;
     const tabW = (w - 32) / tabCols;
     tabs.forEach((t, i) => {
       const on = this.tab === t.id;
@@ -151,14 +158,17 @@ export class PhoneOverlay {
       this.add(b);
     });
 
-    const innerTop = py + 120;
-    const innerH = h - 164;
+    const tabRows = Math.ceil(tabs.length / tabCols);
+    const innerTop = py + 70 + tabRows * 25;
+    const innerH = py + h - 52 - innerTop;
     if (this.tab === "messages") this.drawMessages(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "camera") this.drawCamera(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "album") this.drawAlbum(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "stats") this.drawStats(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "map") this.drawMap(px + 16, innerTop, w - 32);
     if (this.tab === "contacts") this.drawContacts(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "car") this.drawCar(px + 16, innerTop, w - 32);
+    if (this.tab === "homes") this.drawHomes(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "notes") this.drawNotes(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "bag") this.drawBag(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "style") this.drawStyle(px + 16, innerTop, w - 32, innerH);
@@ -180,33 +190,129 @@ export class PhoneOverlay {
     this.refreshBadge();
   }
 
-  private drawMessages(x: number, y: number, _w: number, maxH: number) {
-    const list = store.state.messages;
-    if (!list.length) {
-      this.add(this.scene.add.text(x, y, "No texts yet.\nSleep, travel, talk — they'll find you.", { fontFamily: FONT, fontSize: "12px", color: "#3a2b3a", resolution: 2 }));
+  private drawMessages(x: number, y: number, w: number, maxH: number) {
+    if (this.selectedChat) {
+      this.drawConversation(this.selectedChat, x, y, w, maxH);
       return;
     }
     let yy = y;
-    for (const m of list.slice(0, 8)) {
-      if (yy > y + maxH - 40) break;
-      const name = NPCS.find((n) => n.id === m.sender)?.name ?? m.sender;
-      const row = this.scene.add
-        .text(x, yy, `${m.read ? "  " : "● "}${name} · day ${m.day}\n  ${m.body}`, {
-          fontFamily: FONT,
-          fontSize: "11px",
-          color: "#3a2b3a",
-          wordWrap: { width: _w - 8 },
-          resolution: 2,
-        })
-        .setInteractive({ useHandCursor: true });
-      row.on("pointerdown", (_p: Phaser.Input.Pointer, _lx: number, _ly: number, e?: Phaser.Types.Input.EventData) => {
-        e?.stopPropagation?.();
-        markRead(m.id);
-        if (m.questId) startQuest(m.questId);
+    this.add(this.scene.add.text(x, yy, "CHATS", { fontFamily: FONT, fontSize: "13px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    const contacts = chatContacts();
+    const pageSize = maxH < 210 ? 3 : 6;
+    const pages = Math.max(1, Math.ceil(contacts.length / pageSize));
+    this.chatContactPage %= pages;
+    if (pages > 1) {
+      const next = this.scene.add.text(x + w, yy, `${this.chatContactPage + 1}/${pages}  NEXT ›`, { fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 5, y: 3 }, resolution: 2 }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      next.on("pointerdown", () => { this.chatContactPage = (this.chatContactPage + 1) % pages; this.rebuild(); });
+      this.add(next);
+    }
+    yy += 20;
+    for (const contact of contacts.slice(this.chatContactPage * pageSize, (this.chatContactPage + 1) * pageSize)) {
+      if (yy > y + maxH - 34) break;
+      const thread = threadFor(contact.id);
+      const last = thread[thread.length - 1];
+      const unread = thread.filter((entry) => entry.direction === "incoming" && !entry.read).length;
+      const preview = last?.body ?? "Start a conversation ♡";
+      const row = this.scene.add.text(x, yy, `${contact.id === "moomoo" ? "♥ " : ""}${contact.name}${unread ? `  ●${unread}` : ""}\n${preview.slice(0, 45)}`, {
+        fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", backgroundColor: contact.id === "moomoo" ? "#fff0f5" : "#f1e8dc",
+        padding: { x: 7, y: 5 }, fixedWidth: w, wordWrap: { width: w - 16 }, resolution: 2,
+      }).setInteractive({ useHandCursor: true });
+      row.on("pointerdown", () => {
+        this.selectedChat = contact.id;
+        const attachment = [...thread].reverse().find((entry) => entry.questId)?.questId;
+        if (attachment) startQuest(attachment);
+        markThreadRead(contact.id);
         this.rebuild();
       });
       this.add(row);
-      yy += 46;
+      yy += maxH < 210 ? 35 : 40;
+    }
+  }
+
+  private drawConversation(contactId: string, x: number, y: number, w: number, maxH: number) {
+    const contact = NPCS.find((npc) => npc.id === contactId);
+    const back = this.scene.add.text(x, y, "‹ CHATS", { fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 7, y: 4 }, resolution: 2 }).setInteractive({ useHandCursor: true });
+    back.on("pointerdown", () => { this.selectedChat = undefined; this.rebuild(); });
+    this.add(back);
+    this.add(this.scene.add.text(x + w, y + 3, `${contactId === "moomoo" ? "♥ " : ""}${contact?.name ?? contactId} · ${store.state.relationshipStage}`, { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(1, 0));
+    const suggestions = suggestionsFor(contactId).slice(0, 3);
+    const compact = maxH < 170;
+    const thread = threadFor(contactId).slice(compact ? -2 : maxH < 220 ? -2 : -4);
+    let yy = y + 27;
+    for (const entry of thread) {
+      const mine = entry.direction === "outgoing";
+      const bubble = this.scene.add.text(mine ? x + w : x, yy, entry.body, {
+        fontFamily: FONT, fontSize: compact ? "9px" : "10px", color: mine ? "#fff" : "#3a2b3a", backgroundColor: mine ? "#e46d94" : "#e9dfd2",
+        padding: { x: compact ? 5 : 7, y: compact ? 3 : 5 }, wordWrap: { width: w * (compact ? 0.86 : 0.72) }, fixedWidth: w * (compact ? 0.9 : 0.76), align: mine ? "right" : "left", resolution: 2,
+      }).setOrigin(mine ? 1 : 0, 0);
+      this.add(bubble);
+      yy += Math.max(compact ? 22 : 29, bubble.height + (compact ? 2 : 4));
+    }
+    const suggestY = y + maxH - 72;
+    suggestions.forEach((body, index) => {
+      const button = this.scene.add.text(x + index * (w / 3), suggestY, body, { fontFamily: FONT, fontSize: "8px", color: "#3a2b3a", backgroundColor: "#fff0bd", padding: { x: 4, y: 5 }, fixedWidth: w / 3 - 3, align: "center", wordWrap: { width: w / 3 - 10 }, resolution: 2 }).setInteractive({ useHandCursor: true });
+      button.on("pointerdown", () => { sendChat(contactId, body); markThreadRead(contactId); this.rebuild(); });
+      this.add(button);
+    });
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Type a text…";
+    input.maxLength = 280;
+    input.setAttribute("aria-label", `Message ${contact?.name ?? contactId}`);
+    input.style.cssText = "width:220px;height:30px;border:2px solid #e4c8ce;border-radius:12px;padding:0 10px;font:13px system-ui;background:#fff;color:#3a2b3a;box-sizing:border-box;";
+    const inputX = x + Math.min(120, w * 0.35);
+    const inputY = y + maxH - 25;
+    const dom = this.scene.add.dom(inputX, inputY, input).setOrigin(0.5).setScrollFactor(0);
+    input.addEventListener("pointerdown", (event) => event.stopPropagation());
+    input.addEventListener("keydown", (event) => {
+      event.stopPropagation();
+      if (event.key !== "Enter") return;
+      if (sendChat(contactId, input.value)) { markThreadRead(contactId); this.rebuild(); }
+    });
+    this.add(dom);
+    const send = this.scene.add.text(x + w, inputY - 13, "SEND", { fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 8, y: 6 }, resolution: 2 }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    send.on("pointerdown", () => { if (sendChat(contactId, input.value)) { markThreadRead(contactId); this.rebuild(); } });
+    this.add(send);
+  }
+
+  private drawCar(x: number, y: number, w: number) {
+    this.add(this.scene.add.text(x, y, "BLUE JEEP", { fontFamily: FONT, fontSize: "15px", color: "#2f6fd0", fontStyle: "bold", resolution: 2 }));
+    this.add(this.scene.add.text(x, y + 28, "Your existing Jeep can come find Juju during normal outdoor exploration.", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", wordWrap: { width: w }, resolution: 2 }));
+    const call = this.scene.add.text(x + w / 2, y + 92, "CALL JEEP", { fontFamily: FONT, fontSize: "16px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 20, y: 10 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    call.on("pointerdown", () => { this.close(); uiEvents.emit("callJeep"); });
+    this.add(call);
+    this.add(this.scene.add.text(x + w / 2, y + 132, "No duplicate cars. Jeep promises.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", resolution: 2 }).setOrigin(0.5));
+  }
+
+  private drawHomes(x: number, y: number, w: number, maxH: number) {
+    let yy = y;
+    this.add(this.scene.add.text(x, yy, "OUR HOMES", { fontFamily: FONT, fontSize: "13px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+    const pageSize = maxH < 180 ? 2 : maxH < 260 ? 3 : 5;
+    const pages = Math.ceil(PROPERTIES.length / pageSize);
+    this.propertyPage %= pages;
+    const next = this.scene.add.text(x + w, yy, `${this.propertyPage + 1}/${pages}  NEXT ›`, { fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 5, y: 3 }, resolution: 2 }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    next.on("pointerdown", () => { this.propertyPage = (this.propertyPage + 1) % pages; this.rebuild(); });
+    this.add(next);
+    yy += 20;
+    for (const def of PROPERTIES.slice(this.propertyPage * pageSize, (this.propertyPage + 1) * pageSize)) {
+      if (yy > y + maxH - 48) break;
+      const { state, locked, affordable } = propertyStatus(def.id);
+      const status = state.owned ? (store.state.primaryHomeId === def.id ? "OUR HOME" : "OWNED") : locked ? "AFTER WEDDING" : `${def.price} coins`;
+      this.add(this.scene.add.text(x, yy, `${def.name} · ${def.bedrooms}BR\n${def.location} · ${status}`, { fontFamily: FONT, fontSize: "9px", color: "#3a2b3a", wordWrap: { width: w - 108 }, resolution: 2 }));
+      const label = state.owned ? (store.state.primaryHomeId === def.id ? "Visit" : "Set home") : state.visited ? (affordable ? "Buy" : "Save") : "Tour";
+      const button = this.scene.add.text(x + w, yy + 2, label, { fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: locked ? "#8a7a6a" : state.owned ? "#e46d94" : "#2f6fd0", padding: { x: 6, y: 5 }, fixedWidth: 82, align: "center", resolution: 2 }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      button.on("pointerdown", () => {
+        if (locked) { store.toast("Plan this one together after the wedding.", "#a08a70"); return; }
+        if (state.owned && store.state.primaryHomeId !== def.id) { setPrimaryHome(def.id); store.toast(`${def.name} is now home ♡`, "#f4a6c0"); this.rebuild(); return; }
+        if (state.visited && !state.owned) { const result = buyProperty(def.id); store.toast(result.reason, result.ok ? "#f4c95d" : "#a08a70"); this.rebuild(); return; }
+        visitProperty(def.id);
+        this.close();
+        const active = this.scene.scene.manager.getScene(SceneKeys.World);
+        if (active?.scene.isActive()) active.scene.start(SceneKeys.House, { propertyId: def.id, tour: !state.owned, title: def.name });
+        else store.toast("Finish this adventure before booking a tour.", "#a08a70");
+      });
+      this.add(button);
+      yy += 42;
     }
   }
 
@@ -400,7 +506,8 @@ export class PhoneOverlay {
       const hearts = "♡".repeat(Math.max(1, Math.round((rel / REL_MAX) * 5)));
       const unlocked = store.state.unlockedCompanions.includes(n.id);
       const active = store.state.activeCompanionId === n.id;
-      this.add(this.scene.add.text(x, yy, `${n.name}  ${hearts}  ${rel} · ${bandFor(rel)}`, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", resolution: 2 }));
+      const stage = n.id === "moomoo" ? ` · ${store.state.relationshipStage}` : "";
+      this.add(this.scene.add.text(x, yy, `${n.name}  ${hearts}  ${rel} · ${bandFor(rel)}${stage}`, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", resolution: 2 }));
       if (unlocked) {
         const button = this.scene.add.text(x + w - 84, yy - 2, active ? "With you" : "Invite", {
           fontFamily: FONT,

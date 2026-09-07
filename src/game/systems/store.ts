@@ -332,25 +332,33 @@ class Store extends Phaser.Events.EventEmitter {
 
   // ---- furniture ----
   placeFurniture(f: PlacedFurniture) {
-    this.state.furniture.push(f);
+    const property = this.state.properties[this.state.activeHomeId] ?? this.state.properties.starter_yas;
+    property.furniture.push(f);
+    if (this.state.activeHomeId === "starter_yas") this.state.furniture = property.furniture;
     this.emit("furniturePlaced", f);
     this.save();
   }
 
   setFurniture(list: PlacedFurniture[]) {
-    this.state.furniture = list;
+    const property = this.state.properties[this.state.activeHomeId] ?? this.state.properties.starter_yas;
+    property.furniture = list;
+    if (this.state.activeHomeId === "starter_yas") this.state.furniture = list;
     this.save();
   }
 
   storeFurniture(tex: string) {
-    this.state.storedFurniture.push(tex);
+    const property = this.state.properties[this.state.activeHomeId] ?? this.state.properties.starter_yas;
+    property.storedFurniture.push(tex);
+    if (this.state.activeHomeId === "starter_yas") this.state.storedFurniture = property.storedFurniture;
     this.save();
   }
 
   takeStoredFurniture(tex: string): boolean {
-    const i = this.state.storedFurniture.indexOf(tex);
+    const property = this.state.properties[this.state.activeHomeId] ?? this.state.properties.starter_yas;
+    const i = property.storedFurniture.indexOf(tex);
     if (i < 0) return false;
-    this.state.storedFurniture.splice(i, 1);
+    property.storedFurniture.splice(i, 1);
+    if (this.state.activeHomeId === "starter_yas") this.state.storedFurniture = property.storedFurniture;
     this.save();
     return true;
   }
@@ -681,7 +689,8 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   unreadCount() {
-    return this.state.messages.filter((m) => !m.read).length;
+    const legacyUnread = this.state.messages.filter((m) => !m.read && !this.state.chatEntries.some((entry) => entry.id === `story:${m.id}` || entry.id === `legacy:${m.id}`)).length;
+    return legacyUnread + this.state.chatEntries.filter((entry) => entry.direction === "incoming" && !entry.read).length;
   }
 }
 

@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
 
 import type { AdnocRank } from "./adnoc";
+import type { RelationshipStage } from "../systems/save";
 // Cute little side quests. Each quest is a list of steps that complete in
 // order. EDIT ME to invent your own real-life adventures together.
 //
@@ -28,7 +29,8 @@ export type StepType =
   | "discoverMemory"
   | "waitUntilDay"
   | "receiveMessage"
-  | "driveWithPassenger";
+  | "driveWithPassenger"
+  | "buyProperty";
 
 export interface QuestStep {
   type: StepType;
@@ -55,6 +57,9 @@ export interface QuestDef {
   requiresAdnocRank?: AdnocRank;
   requiresAdnocXp?: number;
   requiresAdnocWorkdays?: number;
+  requiresMinDay?: number;
+  requiresRelationship?: { npc: string; min: number };
+  requiresRelationshipStage?: RelationshipStage;
 }
 
 export const QUESTS: QuestDef[] = [
@@ -477,6 +482,132 @@ export const QUESTS: QuestDef[] = [
     rewardHearts: 3,
     rewardCoins: 25,
     rewardItem: "home_sketch",
+  },
+  {
+    id: "q_romance_us",
+    title: "Us",
+    giver: "moomoo",
+    requiresQuests: ["q_date"],
+    requiresMinDay: 3,
+    requiresRelationship: { npc: "moomoo", min: 18 },
+    intro: "No errands this time. No coffee delivery quest. Just you and me on a real date.",
+    steps: [{ type: "playMinigame", target: "romance_us", hint: "Meet Moomoo for a proper date" }],
+    complete: "Two coffees, one crooked photo, and the ordinary kind of magic.",
+    rewardHearts: 5,
+    rewardCoins: 35,
+    rewardNpc: "moomoo",
+    rewardRel: 8,
+    rewardMemory: "mem_romance_us",
+  },
+  {
+    id: "q_romance_future",
+    title: "One More Place",
+    giver: "moomoo",
+    requiresQuests: ["q_romance_us"],
+    requiresMinDay: 4,
+    intro: "Come walk Downtown with me. I want to talk about places we haven't lived yet.",
+    steps: [{ type: "playMinigame", target: "romance_future", hint: "Take the golden-hour walk with Moomoo" }],
+    complete: "One more place. Then another. Always together.",
+    rewardHearts: 5,
+    rewardCoins: 40,
+    rewardNpc: "moomoo",
+    rewardRel: 8,
+  },
+  {
+    id: "q_proposal",
+    title: "One Question",
+    giver: "moomoo",
+    requiresQuests: ["q_romance_future"],
+    requiresMinDay: 6,
+    requiresRelationship: { npc: "moomoo", min: 40 },
+    intro: "There is one more place I need to take you. Wear something that feels like you.",
+    steps: [{ type: "playMinigame", target: "romance_proposal", hint: "Meet Moomoo for one important question" }],
+    complete: "She said yes. He is still smiling like he forgot how not to.",
+    rewardHearts: 10,
+    rewardCoins: 75,
+    rewardNpc: "moomoo",
+    rewardRel: 10,
+    rewardMemory: "mem_proposal",
+  },
+  {
+    id: "q_wedding_plan_one",
+    title: "The List",
+    giver: "moomoo",
+    requiresQuests: ["q_proposal"],
+    requiresMinDay: 7,
+    requiresRelationshipStage: "engaged",
+    intro: "Invitations, flowers, rugs, lanterns. We can absolutely plan this calmly. That was a joke.",
+    steps: [{ type: "playMinigame", target: "wedding_planning_one", hint: "Plan invitations and the desert venue together" }],
+    complete: "Invitations sent. Family opinions have achieved weather-system status.",
+    rewardHearts: 5,
+    rewardCoins: 60,
+  },
+  {
+    id: "q_wedding_plan_two",
+    title: "Three Looks, One Juju",
+    giver: "moomoo",
+    requiresQuests: ["q_wedding_plan_one"],
+    requiresMinDay: 8,
+    requiresRelationshipStage: "engaged",
+    intro: "Fitting, cake, final venue check. Then I get to marry you. Easy. I am completely calm.",
+    steps: [{ type: "playMinigame", target: "wedding_planning_two", hint: "Finish the fitting and wedding preparations" }],
+    complete: "The desert is ready. The cake has survived tasting. Tomorrow is theirs.",
+    rewardHearts: 6,
+    rewardCoins: 70,
+  },
+  {
+    id: "q_desert_wedding",
+    title: "Our Desert Wedding",
+    giver: "moomoo",
+    requiresQuests: ["q_wedding_plan_two"],
+    requiresMinDay: 9,
+    requiresRelationshipStage: "engaged",
+    intro: "The lanterns are lit. Everyone is here. Whatever happens next, I only need you at the end of it.",
+    steps: [{ type: "playMinigame", target: "desert_wedding", hint: "Begin Juju and Moomoo's Dubai desert wedding" }],
+    complete: "Husband. Wife. One friendly Dune Puff. Their bigger little life begins.",
+    rewardHearts: 20,
+    rewardCoins: 250,
+    rewardNpc: "moomoo",
+    rewardRel: 20,
+    rewardMemory: "mem_wedding",
+  },
+  {
+    id: "q_first_property",
+    title: "Keys to Somewhere New",
+    giver: "moomoo",
+    requiresQuests: ["q_desert_wedding"],
+    requiresRelationshipStage: "married",
+    intro: "Browse Homes with me. Tour somewhere. If the balcony wins, we both know what happens next.",
+    steps: [{ type: "buyProperty", target: "dubailand_2br", hint: "Tour and buy the Dubailand two-bedroom" }, { type: "decorate", target: "home", hint: "Use Build Mode in the new home" }],
+    complete: "First new keys together. Moomoo has already claimed one mug cupboard.",
+    rewardHearts: 8,
+    rewardCoins: 180,
+  },
+  {
+    id: "q_positano_life",
+    title: "Lemon Light",
+    giver: "moomoo",
+    requiresQuests: ["q_first_property"],
+    requiresRelationshipStage: "married",
+    intro: "We keep talking about Italy. Let's stop talking and go find the balcony.",
+    steps: [{ type: "buyProperty", target: "positano_home", hint: "Tour and buy the Positano Lemon House" }, { type: "visit", target: "italy_positano", hint: "Travel to Positano" }, { type: "interact", target: "positano_cafe", hint: "Share coffee at the lemon terrace" }, { type: "interact", target: "positano_view", hint: "Find the Amalfi viewpoint" }],
+    complete: "Lemon light, sea air, and a key that belongs to both of them.",
+    rewardHearts: 10,
+    rewardCoins: 220,
+    rewardMemory: "mem_positano",
+  },
+  {
+    id: "q_santorini_life",
+    title: "Blue Door, Gold Sky",
+    giver: "moomoo",
+    requiresQuests: ["q_positano_life"],
+    requiresRelationshipStage: "married",
+    intro: "You saw one blue door and one sunset photo. We both know this ends with a viewing.",
+    steps: [{ type: "buyProperty", target: "santorini_villa", hint: "Tour and buy the Santorini villa" }, { type: "visit", target: "greece_santorini", hint: "Travel to Santorini" }, { type: "interact", target: "santorini_cafe", hint: "Stop at the Oia coffee steps" }, { type: "interact", target: "santorini_view", hint: "Watch the caldera sunset" }],
+    complete: "The sky turns gold. Moomoo admits the balcony made the decision.",
+    rewardHearts: 12,
+    rewardCoins: 300,
+    rewardMemory: "mem_santorini",
   },
   {
     id: "q_adnoc_ceo",

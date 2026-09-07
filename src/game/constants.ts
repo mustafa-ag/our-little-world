@@ -16,6 +16,8 @@ export const SceneKeys = {
   AdnocTask: "AdnocTask",
   QuestActivity: "QuestActivity",
   BabaShopping: "BabaShopping",
+  Romance: "Romance",
+  Wedding: "Wedding",
   UI: "UI",
   Title: "Title",
 } as const;

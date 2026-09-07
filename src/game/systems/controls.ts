@@ -11,6 +11,7 @@ export const controls = {
   cameraPose: "smile" as "smile" | "peace" | "silly" | "hug",
   shoppingUltimateReady: false,
   shoppingUltimateActive: false,
+  buildModeActive: false,
 };
 
 // Global UI event bus (button presses, dialogue requests, menu toggles).
@@ -63,6 +64,7 @@ export function resetControls() {
   controls.cameraMode = false;
   controls.shoppingUltimateReady = false;
   controls.shoppingUltimateActive = false;
+  controls.buildModeActive = false;
 }
 
 export type MiniKind = "npc" | "landmark" | "home" | "exit" | "shop" | "jeep";

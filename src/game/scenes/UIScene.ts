@@ -1438,7 +1438,7 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping) || m.isActive(SceneKeys.Romance) || m.isActive(SceneKeys.Wedding);
   }
   private walkableScene() {
     const m = this.scene.manager;
@@ -1536,13 +1536,13 @@ export class UIScene extends Phaser.Scene {
     const driving = this.scene.manager.isActive(SceneKeys.Driving);
     const questActivity = this.scene.manager.isActive(SceneKeys.QuestActivity);
     const babaShopping = this.scene.manager.isActive(SceneKeys.BabaShopping);
-    const dedicated = this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || questActivity || babaShopping;
+    const dedicated = controls.buildModeActive || this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || this.scene.manager.isActive(SceneKeys.Romance) || this.scene.manager.isActive(SceneKeys.Wedding) || questActivity || babaShopping;
     this.setDedicatedHud(dedicated);
     this.dedicatedStatus.setY(questActivity ? 24 : 64);
     this.dedicatedStatus.setVisible(dedicated && this.dedicatedStatusActive && !modal);
     this.shoppingHud?.setVisible(!!this.shoppingHudState && babaShopping && !modal);
 
-    const showTouch = gp && (!modal || this.miniGameOpen);
+    const showTouch = gp && !controls.buildModeActive && (!modal || this.miniGameOpen);
     this.setButtonVisible(this.actionBtn, showTouch);
     this.actionBtn.setDepth(this.miniGameOpen ? 90 : 12);
     (this.actionBtn as ButtonImage).label?.setDepth(this.miniGameOpen ? 91 : 13);
@@ -1551,7 +1551,7 @@ export class UIScene extends Phaser.Scene {
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);
     // map + fit only in walkable scenes (not while driving)
-    const showNav = this.walkableScene() && !modal && !driving && !controls.cameraMode;
+    const showNav = this.walkableScene() && !controls.buildModeActive && !modal && !driving && !controls.cameraMode;
     this.setButtonVisible(this.mapBtn, showNav);
     this.setButtonVisible(this.fitBtn, showNav);
     this.setButtonVisible(this.phoneBtn, showNav);

@@ -13,6 +13,10 @@ import { NPC } from "../objects/NPC";
 import { NPCS } from "../data/npcs";
 import { stableDailyRoll } from "../systems/worldEvents";
 import { souvenirById } from "../data/souvenirs";
+import { propertyById } from "../data/properties";
+import { ensurePropertyState, savePropertyState } from "../systems/properties";
+import type { PropertyState } from "../systems/save";
+import { BuildModeController } from "../systems/buildMode";
 
 interface Interactable {
   x: number;
@@ -21,9 +25,6 @@ interface Interactable {
   prompt: string;
   trigger: () => void;
 }
-
-const RW = 18; // room width (tiles)
-const RH = 13; // room height (tiles)
 
 export class HouseScene extends Phaser.Scene {
   private player!: Player;
@@ -45,12 +46,18 @@ export class HouseScene extends Phaser.Scene {
   private cameraOffset = new Phaser.Math.Vector2();
   private cameraPose: "smile" | "peace" | "silly" | "hug" = "smile";
   private lastCameraCapture = 0;
+  private roomW = 18;
+  private roomH = 13;
+  private propertyId = "starter_yas";
+  private property!: PropertyState;
+  private buildMode?: BuildModeController;
+  private playerCollider?: Phaser.Physics.Arcade.Collider;
 
   constructor() {
     super(SceneKeys.House);
   }
 
-  create(data: { title?: string; interior?: "cream" | "brown" } = {}) {
+  create(data: { title?: string; interior?: "cream" | "brown"; propertyId?: string; tour?: boolean } = {}) {
     this.interactables = [];
     this.homeCat = undefined;
     this.catInteractable = undefined;
@@ -60,10 +67,18 @@ export class HouseScene extends Phaser.Scene {
     this.cameraOffset.set(0, 0);
     controls.cameraMode = false;
     uiEvents.emit("prompt", null);
-    const worldW = RW * TILE;
-    const worldH = RH * TILE;
+    this.propertyId = data.propertyId ?? store.state.primaryHomeId ?? "starter_yas";
+    const propertyDef = propertyById(this.propertyId);
+    this.property = ensurePropertyState(this.propertyId);
+    this.property.visited = true;
+    store.state.activeHomeId = this.propertyId;
+    store.save();
+    this.roomW = propertyDef.width;
+    this.roomH = propertyDef.height;
+    const worldW = this.roomW * TILE;
+    const worldH = this.roomH * TILE;
     const brown = data.interior === "brown";
-    const title = data.title ?? getLocation(store.state.currentLocation).homeName ?? "Home";
+    const title = data.title ?? propertyDef.name ?? getLocation(store.state.currentLocation).homeName ?? "Home";
 
     this.cameras.main.setBackgroundColor(brown ? "#2a1810" : "#2b2233");
     this.physics.world.setBounds(TILE, TILE * 2, worldW - TILE * 2, worldH - TILE * 3);
@@ -72,9 +87,10 @@ export class HouseScene extends Phaser.Scene {
     // floor
     const rt = this.add.renderTexture(0, 0, worldW, worldH).setOrigin(0, 0).setDepth(Depths.ground);
     rt.beginDraw();
-    for (let y = 0; y < RH; y++)
-      for (let x = 0; x < RW; x++) rt.batchDraw(getVisualTexture(this, "t_wood"), x * TILE, y * TILE);
+    for (let y = 0; y < this.roomH; y++)
+      for (let x = 0; x < this.roomW; x++) rt.batchDraw(getVisualTexture(this, "t_wood"), x * TILE, y * TILE);
     rt.endDraw();
+    this.add.rectangle(worldW / 2, worldH / 2, worldW, worldH, propertyDef.floorTint, 0.12).setDepth(Depths.ground + 1);
     if (brown) {
       this.add.rectangle(worldW / 2, worldH / 2, worldW, worldH, 0x4a3224, 0.35).setDepth(Depths.ground + 1);
     }
@@ -84,7 +100,7 @@ export class HouseScene extends Phaser.Scene {
 
     // walls (top band) + border collision
     const wall = this.add.graphics().setDepth(Depths.overlay - 1);
-    wall.fillStyle(brown ? 0x6b4535 : 0xede0d0, 1);
+    wall.fillStyle(brown ? 0x6b4535 : propertyDef.wallColor, 1);
     wall.fillRect(0, 0, worldW, TILE * 2);
     wall.fillStyle(brown ? 0x5a382c : 0xd8c6b0, 1);
     wall.fillRect(0, TILE * 2 - 3, worldW, 3);
@@ -107,6 +123,7 @@ export class HouseScene extends Phaser.Scene {
       .setDepth(Depths.overlay - 1);
 
     this.drawMemoryCorner(worldW, brown);
+    this.drawPropertyPersonality(propertyDef.theme, worldW, worldH);
 
     this.buildCollision();
 
@@ -114,7 +131,7 @@ export class HouseScene extends Phaser.Scene {
     this.add.image(TILE * 3, TILE * 4.5, getVisualTexture(this, "f_bed")).setOrigin(0.5, 1).setDepth(TILE * 4.5);
     createVisualShadow(this, TILE * 3, TILE * 4.5, getVisualAssetDef("f_bed")?.shadow, { directionX: 0.65, directionY: 0.4, castLength: 12, opacity: 0.18, ambient: 0.2, warmth: 0.5 });
     this.addFurnitureInteract(TILE * 3, TILE * 4.5 - 8, "Sleep (save & new day)", () => this.sleep());
-    this.addFurnitureInteract(TILE * 14, TILE * 3.2, "Edit home", () => this.toggleEdit());
+    this.addFurnitureInteract(Math.min(worldW - TILE * 3, TILE * 14), TILE * 3.2, "Open Build Mode", () => this.openBuildMode());
     this.addFurnitureInteract(TILE * 7.4, TILE * 2.9, "Look at photo wall", () => uiEvents.emit("openPhone", "album"));
     this.addFurnitureInteract(TILE * 11.2, TILE * 2.9, "Look at keepsakes", () => uiEvents.emit("openPhone", "notes"));
     this.addHomeFeatures(worldW);
@@ -137,11 +154,11 @@ export class HouseScene extends Phaser.Scene {
     });
     this.input.on("pointerup", () => {
       if (this.drag) {
-        store.setFurniture(this.placed.map((p) => p.data));
+        this.savePlacedFurniture();
         this.drag = undefined;
       }
     });
-    for (const f of store.state.furniture) this.spawnPlaced(f);
+    for (const f of this.property.furniture) this.spawnPlaced(f);
     store.on("furniturePlaced", this.onFurniturePlaced, this);
     this.buildDeliveryBoxes();
 
@@ -166,24 +183,37 @@ export class HouseScene extends Phaser.Scene {
 
     // player
     this.player = new Player(this, doorX, doorY - TILE * 2, getVisualTexture(this, "char_her"));
-    this.physics.add.collider(this.player, this.solids);
+    this.playerCollider = this.physics.add.collider(this.player, this.solids);
     this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
     this.applyZoom();
     this.scale.on("resize", this.applyZoom, this);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("W,A,S,D,SPACE,E,ESC") as Record<string, Phaser.Input.Keyboard.Key>;
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("debugLife") === "home") this.time.delayedCall(300, () => this.openBuildMode());
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("openMap", this.openMap, this);
     uiEvents.on("cameraStart", this.startCamera, this);
     uiEvents.on("cameraExit", this.exitCameraMode, this);
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
-    uiEvents.emit("locationTitle", title, brown ? "Top floor · brown inside" : title);
+    uiEvents.emit("locationTitle", title, data.tour && !this.property.owned ? "PROPERTY TOUR · walk, build-preview, then buy from Homes" : `${propertyDef.location} · ${propertyDef.type}`);
+    if (data.tour) {
+      const reactions: Record<string, string> = {
+        dubailand_2br: "This kitchen is dangerous. You know we're buying six mugs.",
+        damac_hills_2br: "The sofa location has already been decided apparently.",
+        downtown_apartment: "You saw the skyline. It's over. We live here now.",
+        damac_hills_villa: "There are enough rooms for you to move the sofa into a different one every week.",
+        positano_home: "You saw the balcony. It's over. We live here now.",
+        santorini_villa: "Blue door, sea view, twelve stairs. I accept the terms.",
+      };
+      this.time.delayedCall(650, () => uiEvents.emit("dialogue", store.state.relationshipStage === "married" ? "Moomoo" : "Property viewing", [reactions[this.propertyId] ?? "Walk around. Big decisions deserve a real look.", "Buy it later from Phone › Homes, or keep saving."]));
+    }
+    if (this.property.owned && store.hasFlag(`moving_day_${this.propertyId}`)) this.time.delayedCall(900, () => this.playMovingDay());
 
     if (!brown) {
       if (store.state.cat.adopted) this.spawnHomeCat();
       else if (store.state.cat.stage >= 3 && store.state.cat.lastSeenDay < store.state.currentDay) this.spawnAdoptionMoment();
-      this.time.delayedCall(850, () => this.maybeWelcomeVisitor());
+      this.time.delayedCall(850, () => store.state.relationshipStage === "married" ? this.spawnMarriedMoomoo() : this.maybeWelcomeVisitor());
     }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -198,7 +228,106 @@ export class HouseScene extends Phaser.Scene {
       this.input.off("pointermove");
       this.input.off("pointerup");
       store.off("furniturePlaced", this.onFurniturePlaced, this);
+      this.buildMode?.destroy();
+      this.playerCollider?.destroy();
     });
+  }
+
+  private savePlacedFurniture() {
+    this.property.furniture = this.placed.map((piece) => piece.data);
+    savePropertyState(this.propertyId, this.property);
+  }
+
+  private drawPropertyPersonality(theme: import("../data/properties").PropertyTheme, worldW: number, worldH: number) {
+    const accents: Record<typeof theme, { color: number; label: string; detail: string }> = {
+      yas: { color: 0x7bc86c, label: "YAS MORNING", detail: "palm light" },
+      dubailand: { color: 0xd79b6d, label: "WARM MODERN", detail: "two rooms, six mugs" },
+      damac: { color: 0x82a978, label: "HILLS GREEN", detail: "garden view" },
+      downtown: { color: 0x486fa8, label: "CITY LIGHTS", detail: "skyline balcony" },
+      villa: { color: 0xc6a85b, label: "GARDEN VILLA", detail: "room to grow" },
+      positano: { color: 0xf0b84a, label: "POSITANO", detail: "lemon terrace" },
+      santorini: { color: 0x3d82b8, label: "SANTORINI", detail: "blue door, sea light" },
+    };
+    const accent = accents[theme];
+    this.add.rectangle(worldW - 42, TILE * 1.05, 58, 20, theme === "downtown" ? 0x263653 : 0xbfe6ff).setDepth(Depths.overlay - 1).setStrokeStyle(2, accent.color);
+    this.add.text(worldW - 42, TILE * 1.05, theme === "downtown" ? "▥ ▥ ▥" : theme === "positano" || theme === "santorini" ? "≈  ☀" : "♧  ♧", { fontFamily: "monospace", fontSize: "8px", color: theme === "downtown" ? "#f4c95d" : "#2f6fd0", resolution: 2 }).setOrigin(0.5).setDepth(Depths.overlay);
+    this.add.rectangle(TILE * 1.2, worldH / 2, 5, worldH - TILE * 5, accent.color, 0.55).setDepth(2);
+    this.add.text(TILE * 1.65, worldH - TILE * 2.4, `${accent.label}\n${accent.detail}`, { fontFamily: "monospace", fontSize: "7px", color: "#7a6a5a", resolution: 2 }).setOrigin(0, 1).setDepth(4);
+  }
+
+  private openBuildMode() {
+    if (this.buildMode) return;
+    this.editing = true;
+    controls.locked = true;
+    this.buildMode = new BuildModeController(this, {
+      widthCells: this.roomW,
+      heightCells: this.roomH,
+      layout: this.property.layout,
+      onLayoutChanged: (layout) => {
+        this.property.layout = layout;
+        savePropertyState(this.propertyId, this.property);
+        this.rebuildCollision();
+      },
+      onFurniturePlaced: (piece) => {
+        this.spawnPlaced(piece);
+        this.savePlacedFurniture();
+      },
+      onFurnitureBreak: (x, y, storeIt) => {
+        const nearest = this.placed.map((piece) => ({ piece, distance: Phaser.Math.Distance.Between(x, y, piece.img.x, piece.img.y) })).sort((a, b) => a.distance - b.distance)[0];
+        if (!nearest || nearest.distance > 18) return false;
+        if (storeIt) this.property.storedFurniture.push(nearest.piece.data.tex);
+        nearest.piece.shadow?.destroy();
+        nearest.piece.img.destroy();
+        this.placed = this.placed.filter((piece) => piece !== nearest.piece);
+        this.savePlacedFurniture();
+        return true;
+      },
+      storedCount: (texture) => this.property.storedFurniture.filter((id) => id === texture).length,
+      takeStored: (texture) => {
+        const index = this.property.storedFurniture.indexOf(texture);
+        if (index < 0) return false;
+        this.property.storedFurniture.splice(index, 1);
+        savePropertyState(this.propertyId, this.property);
+        return true;
+      },
+      onExit: () => {
+        this.editing = false;
+        controls.locked = false;
+        this.buildMode = undefined;
+        quests.onDecorate("home");
+        store.incrementStat("rooms_redesigned");
+        store.toast("Build saved. This room has a new personality.", "#f4a6c0");
+      },
+    });
+    this.buildMode.open();
+    store.toast("BUILD MODE · select, preview, place or break", "#f4c95d");
+  }
+
+  private spawnMarriedMoomoo() {
+    if (store.state.activeCompanionId === "moomoo" || this.visitor) return;
+    const def = NPCS.find((npc) => npc.id === "moomoo");
+    if (!def) return;
+    const spots = {
+      morning: { x: TILE * 7, y: TILE * 5, routine: "tea" },
+      afternoon: { x: TILE * 11, y: TILE * 7, routine: "computer" },
+      evening: { x: TILE * 9, y: TILE * 8, routine: "sit" },
+      night: { x: TILE * 4, y: TILE * 5, routine: "look" },
+    }[store.state.timeOfDay];
+    this.visitor = new NPC(this, def);
+    this.visitor.place(spots.x, spots.y).startRoutine(spots.routine, 10);
+    this.visitorInteractable = this.addFurnitureInteract(spots.x, spots.y, 28, "Spend time with Moomoo", () => {
+      uiEvents.emit("choice", { title: "Moomoo · at home", prompt: "A normal little married moment.", choices: [{ id: "hug", label: "Hug" }, { id: "coffee", label: "Make coffee" }, { id: "sofa", label: "Sit together" }, { id: "home", label: "Talk about the home" }], onChoose: (id: string) => this.finishVisitorHangout("moomoo", id) });
+    });
+  }
+
+  private playMovingDay() {
+    store.setFlag(`moving_day_${this.propertyId}`, false);
+    const box = this.add.container(this.roomW * TILE / 2, this.roomH * TILE / 2).setDepth(8000);
+    box.add([this.add.rectangle(-24, 0, 38, 30, 0xc98d55).setStrokeStyle(3, 0x7a5238), this.add.rectangle(20, 5, 30, 25, 0xdca66f).setStrokeStyle(3, 0x7a5238), this.add.text(0, -28, "MUGS? / CABLES? / PROBABLY", { fontFamily: "monospace", fontSize: "8px", color: "#3a2b3a", backgroundColor: "#fff4e6", padding: { x: 4, y: 2 }, resolution: 2 }).setOrigin(0.5)]);
+    this.tweens.add({ targets: box, y: box.y - 8, duration: 620, yoyo: true, repeat: 2, ease: "Sine.inOut", onComplete: () => box.destroy(true) });
+    uiEvents.emit("dialogue", "MOVING DAY", ["Moomoo carries one box sideways. The label says THIS WAY UP.", "Juju: Why is it making that sound?", "Moomoo: New-home sound.", "The empty rooms are theirs to build."]);
+    store.incrementStat("moving_days");
+    store.capturePhoto({ id: `moving_${this.propertyId}_${store.state.currentDay}`, title: "First day in a new home", locationId: store.state.currentLocation, day: store.state.currentDay, timeOfDay: store.state.timeOfDay, companionId: store.state.relationshipStage === "married" ? "moomoo" : undefined, participantIds: store.state.relationshipStage === "married" ? ["moomoo"] : [], pose: "silly", frame: "hearts", caption: "Boxes, keys and one completely unidentified sound." });
   }
 
   private spawnPlaced(f: PlacedFurniture) {
@@ -212,7 +341,7 @@ export class HouseScene extends Phaser.Scene {
       if (this.drag?.img === img) {
         f.rot = f.rot ? 0 : 1;
         img.setFlipX(!!f.rot);
-        store.setFurniture(this.placed.map((p) => p.data));
+        this.savePlacedFurniture();
         return;
       }
       this.drag = { img, data: f, shadow };
@@ -236,7 +365,7 @@ export class HouseScene extends Phaser.Scene {
 
   private buildDeliveryBoxes() {
     if (this.deliveryBoxes || store.hasFlag("home_delivery_unboxed")) return;
-    if (!store.state.furniture.some((f) => f.tex === "f_sofa") || !store.state.furniture.some((f) => f.tex === "f_plant")) return;
+    if (!this.property.furniture.some((f) => f.tex === "f_sofa") || !this.property.furniture.some((f) => f.tex === "f_plant")) return;
     const x = TILE * 9;
     const y = TILE * 9.2;
     const big = this.add.rectangle(-18, 0, 38, 34, 0xc98d55).setStrokeStyle(3, 0x7a5238);
@@ -384,7 +513,7 @@ export class HouseScene extends Phaser.Scene {
       store.unlockMemory("mem_cat_roommate");
       tryDeliverMessages({ limit: 1 });
       this.interactables = this.interactables.filter((candidate) => candidate !== it);
-      const banner = this.add.text((RW * TILE) / 2, TILE * 5.4, "NEW ROOMMATE", { fontFamily: "monospace", fontSize: "24px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 5, resolution: 2 }).setOrigin(0.5).setDepth(900).setScale(0.4);
+      const banner = this.add.text((this.roomW * TILE) / 2, TILE * 5.4, "NEW ROOMMATE", { fontFamily: "monospace", fontSize: "24px", color: "#f4c95d", stroke: "#3a2b3a", strokeThickness: 5, resolution: 2 }).setOrigin(0.5).setDepth(900).setScale(0.4);
       this.tweens.add({ targets: banner, scale: 1, y: banner.y - 10, duration: 420, ease: "Back.out", hold: 1200, yoyo: true, onComplete: () => banner.destroy() });
       this.tweens.add({ targets: cat, x: TILE * 9.2, y: TILE * 7.4, duration: 900, ease: "Sine.inOut", onComplete: () => {
         cat.destroy();
@@ -487,17 +616,6 @@ export class HouseScene extends Phaser.Scene {
     uiEvents.emit("dialogue", name, [...(lines[activity] ?? ["A small evening. A good one."]), "Drinks made. Feet up. The world can wait outside."]);
   }
 
-  private toggleEdit() {
-    this.editing = !this.editing;
-    controls.locked = this.editing;
-    store.toast(this.editing ? "Edit home — drag things. Tap again to finish." : "Looks good.", "#f4a6c0");
-    if (!this.editing) {
-      store.setFurniture(this.placed.map((p) => p.data));
-      this.maybeStoreNearest();
-      quests.onDecorate("home");
-    }
-  }
-
   private startCamera(pose: "smile" | "peace" | "silly" | "hug" = "smile") {
     if (!this.sys.isActive() || this.editing) {
       controls.cameraMode = false;
@@ -561,28 +679,6 @@ export class HouseScene extends Phaser.Scene {
     tryDeliverMessages({ limit: 1 });
   }
 
-  private maybeStoreNearest() {
-    // tap-to-store: if a piece sits in the doorway, send it to storage
-    const doorX = (RW * TILE) / 2;
-    const doorY = RH * TILE - TILE;
-    const keep: typeof this.placed = [];
-    for (const p of this.placed) {
-      if (Phaser.Math.Distance.Between(p.img.x, p.img.y, doorX, doorY) < 20) {
-        store.storeFurniture(p.data.tex);
-        p.img.destroy();
-        store.toast("Stored", "#fff4e6");
-      } else keep.push(p);
-    }
-    this.placed = keep;
-    store.setFurniture(this.placed.map((p) => p.data));
-    const extra = store.state.storedFurniture[0];
-    if (extra && this.editing) {
-      store.takeStoredFurniture(extra);
-      this.spawnPlaced({ tex: extra, x: TILE * 10, y: TILE * 7 });
-      store.setFurniture(this.placed.map((p) => p.data));
-    }
-  }
-
   private sleep() {
     store.addHearts(1);
     store.sleep();
@@ -610,17 +706,26 @@ export class HouseScene extends Phaser.Scene {
       this.physics.add.existing(go, true);
       this.solids.add(go);
     };
-    const worldW = RW * TILE;
-    const worldH = RH * TILE;
+    const worldW = this.roomW * TILE;
+    const worldH = this.roomH * TILE;
     add(0, 0, worldW, TILE * 2); // top wall
     add(0, 0, TILE, worldH); // left
     add(worldW - TILE, 0, TILE, worldH); // right
     add(0, worldH - TILE, worldW / 2 - TILE, TILE); // bottom left of door
     add(worldW / 2 + TILE, worldH - TILE, worldW / 2 - TILE, TILE); // bottom right of door
+    for (const cell of this.property.layout.walls) add(cell.x * TILE, cell.y * TILE + 2, TILE, TILE - 4);
+  }
+
+  private rebuildCollision() {
+    this.playerCollider?.destroy();
+    this.solids?.clear(true, true);
+    this.buildCollision();
+    if (this.player) this.playerCollider = this.physics.add.collider(this.player, this.solids);
   }
 
   private exitHouse() {
     const loc = getLocation(store.state.currentLocation);
+    if (!this.property.owned) store.state.activeHomeId = store.state.primaryHomeId;
     const s = loc.city?.spawn ?? { tx: 66, ty: 48 };
     uiEvents.emit("sceneReset");
     this.scene.start(SceneKeys.World, {

@@ -34,13 +34,13 @@ export interface AdnocRankDef {
 
 export const ADNOC_RANKS: AdnocRankDef[] = [
   { id: "visitor", label: "Future Engineering Legend", shortLabel: "VISITOR", floor: "ground", salary: [0, 0] },
-  { id: "new_hire", label: "Graduate Engineer · New Hire", shortLabel: "NEW HIRE", floor: "engineering", salary: [20, 28] },
-  { id: "chemical_engineer", label: "Chemical Engineer", shortLabel: "ENGINEER", floor: "engineering", salary: [24, 32] },
-  { id: "senior_engineer", label: "Senior Chemical Engineer", shortLabel: "SENIOR", floor: "operations", salary: [31, 40] },
-  { id: "team_lead", label: "Engineering Team Lead", shortLabel: "TEAM LEAD", floor: "operations", salary: [36, 46] },
-  { id: "engineering_manager", label: "Engineering Manager", shortLabel: "MANAGER", floor: "management", salary: [43, 55] },
-  { id: "director", label: "Engineering Director", shortLabel: "DIRECTOR", floor: "executive", salary: [56, 70] },
-  { id: "ceo", label: "Chief Executive Officer", shortLabel: "CEO", floor: "executive", salary: [72, 88] },
+  { id: "new_hire", label: "Graduate Engineer · New Hire", shortLabel: "NEW HIRE", floor: "engineering", salary: [45, 60] },
+  { id: "chemical_engineer", label: "Chemical Engineer", shortLabel: "ENGINEER", floor: "engineering", salary: [55, 75] },
+  { id: "senior_engineer", label: "Senior Chemical Engineer", shortLabel: "SENIOR", floor: "operations", salary: [75, 100] },
+  { id: "team_lead", label: "Engineering Team Lead", shortLabel: "TEAM LEAD", floor: "operations", salary: [95, 125] },
+  { id: "engineering_manager", label: "Engineering Manager", shortLabel: "MANAGER", floor: "management", salary: [125, 160] },
+  { id: "director", label: "Engineering Director", shortLabel: "DIRECTOR", floor: "executive", salary: [165, 210] },
+  { id: "ceo", label: "Chief Executive Officer", shortLabel: "CEO", floor: "executive", salary: [220, 280] },
 ];
 
 export interface AdnocWorkTaskDef {

@@ -17,6 +17,11 @@ export class TitleScene extends Phaser.Scene {
 
     if (import.meta.env.DEV) {
       const query = new URLSearchParams(window.location.search);
+      const life = query.get("debugLife");
+      if (life === "wedding") { this.scene.start(SceneKeys.Wedding); return; }
+      if (life === "romance") { this.scene.start(SceneKeys.Romance, { activity: "romance_proposal" }); return; }
+      if (life === "home") { this.scene.start(SceneKeys.House, { propertyId: query.get("property") ?? "starter_yas", title: "BUILD MODE QA" }); return; }
+      if (life === "positano" || life === "santorini") { this.scene.start(SceneKeys.World, { locationId: life === "positano" ? "italy_positano" : "greece_santorini", driving: false }); return; }
       const activity = query.get("debugActivity") as QuestActivityId | "shopping_spree" | null;
       const activities: Array<QuestActivityId | "shopping_spree"> = ["shopping_spree", "apartment_1701", "chloe_thesis", "nour_visit", "fry_thief"];
       if (activity && activities.includes(activity)) {

@@ -52,6 +52,9 @@ function prerequisitesMet(def: QuestDef) {
   if (def.requiresAdnocRank && !adnocRankAtLeast(store.state.adnocRank, def.requiresAdnocRank)) return false;
   if (def.requiresAdnocXp && store.state.adnocXp < def.requiresAdnocXp) return false;
   if (def.requiresAdnocWorkdays && store.state.adnocWorkdays < def.requiresAdnocWorkdays) return false;
+  if (def.requiresMinDay && store.state.currentDay < def.requiresMinDay) return false;
+  if (def.requiresRelationship && store.getRelationship(def.requiresRelationship.npc) < def.requiresRelationship.min) return false;
+  if (def.requiresRelationshipStage && store.state.relationshipStage !== def.requiresRelationshipStage) return false;
   return true;
 }
 
@@ -244,6 +247,10 @@ export function onMessage(id: string): QuestDef | undefined {
 
 export function onDriveWith(npcId: string): QuestDef | undefined {
   return tryAdvance("driveWithPassenger", npcId);
+}
+
+export function onBuyProperty(propertyId: string): QuestDef | undefined {
+  return tryAdvance("buyProperty", propertyId);
 }
 
 export function activateFromMessage(questId: string) {

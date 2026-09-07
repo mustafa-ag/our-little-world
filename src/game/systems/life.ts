@@ -62,15 +62,23 @@ export function linesFor(npcId: string, fallback: string[]) {
   const voice = VOICES[npcId];
   if (!voice) return fallback;
   const band = bandFor(store.getRelationship(npcId));
-  const pool = voice[band];
+  const stageLines = npcId === "moomoo"
+    ? store.state.relationshipStage === "married"
+      ? ["There is my wife. Best part of the room.", "Come home with me after this. Our sofa misses being moved.", "Coffee, groceries, date night. I like our tiny domestic agenda."]
+      : store.state.relationshipStage === "engaged"
+        ? ["My fiancée is here. Sorry, I have to say it every time.", "Wedding plans later. Right now, stay with me a minute."]
+        : []
+    : [];
+  const pool = [...stageLines, ...voice[band]];
   const seed = store.state.currentDay + Math.floor(store.getRelationship(npcId) / 5);
   return [pickLine(pool, seed), pickLine(pool, seed + 3)].filter((a, i, arr) => arr.indexOf(a) === i);
 }
 
 export function homeComment(): string | null {
   const counts: Record<string, number> = {};
-  for (const f of store.state.furniture) counts[f.tex] = (counts[f.tex] ?? 0) + 1;
-  const total = store.state.furniture.length;
+  const furniture = store.state.properties[store.state.activeHomeId]?.furniture ?? store.state.furniture;
+  for (const f of furniture) counts[f.tex] = (counts[f.tex] ?? 0) + 1;
+  const total = furniture.length;
   const hits = HOME_COMMENTS.filter((c) => {
     try {
       return (c.test as (a: Record<string, number>, b: number) => boolean)(counts, total);

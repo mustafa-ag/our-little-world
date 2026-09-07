@@ -1,4 +1,5 @@
 import type { TimeOfDay } from "../systems/save";
+import type { RelationshipStage } from "../systems/save";
 
 export type WorldEventKind =
   | "balloon"
@@ -29,6 +30,7 @@ export interface WorldEventDefinition {
   weight: number;
   requiresCatStage?: number;
   maxCatStage?: number;
+  relationshipStage?: RelationshipStage;
   reward?: { hearts?: number; coins?: number; relationship?: { npc: string; amount: number }; memory?: string };
   completionLines: string[];
 }
@@ -38,6 +40,15 @@ export interface WorldEventDefinition {
  * day and renders one nearby, so this table stays cheap on mobile.
  */
 export const WORLD_EVENTS: WorldEventDefinition[] = [
+  { id: "world_moomoo_coffee", kind: "coffee_spill", title: "Surprise coffee", prompt: "Accept Moomoo's extremely subtle surprise", icon: "☕", allowedCities: ["abudhabi", "dubai", "italy", "greece"], cooldownDays: 3, weight: 1.4, reward: { hearts: 1, relationship: { npc: "moomoo", amount: 1 } }, completionLines: ["Moomoo appears with two coffees and the expression of someone who definitely planned this.", "Five quiet minutes. The world can manage itself."] },
+  { id: "world_sunset_date", kind: "street_dance", title: "Sunset detour", prompt: "Stay for one song", icon: "♥", allowedCities: ["dubai", "italy", "greece"], times: ["evening"], cooldownDays: 5, weight: 1.1, reward: { hearts: 1, relationship: { npc: "moomoo", amount: 1 } }, completionLines: ["One song becomes two.", "The sunset keeps the rest of the schedule." ] },
+  { id: "world_baba_call", kind: "lost_phone", title: "Baba calling", prompt: "Answer before the fourth ring", icon: "▯", allowedCities: ["abudhabi", "dubai"], cooldownDays: 4, weight: 1, reward: { relationship: { npc: "baba", amount: 1 } }, completionLines: ["Baba: Have you eaten?", "Juju: Wrong parent.", "Baba: I can also ask."] },
+  { id: "world_furniture_sale", kind: "delivery_boxes", title: "Furniture sample sale", prompt: "Balance the suspiciously affordable lamp", icon: "▤", allowedCities: ["abudhabi", "dubai"], cooldownDays: 4, weight: 1.1, reward: { coins: 12 }, completionLines: ["The lamp survives the wobble.", "Juju has saved twelve coins and invented three new room plans."] },
+  { id: "world_married_sofa", kind: "runaway_cart", title: "The sofa debate", prompt: "Catch Moomoo's runaway cushion", icon: "▰", allowedCities: ["abudhabi", "dubai", "italy", "greece"], relationshipStage: "married", cooldownDays: 4, weight: 1.4, reward: { relationship: { npc: "moomoo", amount: 1 } }, completionLines: ["Cushion recovered.", "Moomoo: This is why I said the sofa liked the other wall.", "Juju moves it again on principle."] },
+  { id: "world_italy_cafe", kind: "coffee_spill", title: "Espresso domino", prompt: "Save the tiny cups", icon: "☕", allowedCities: ["italy"], cooldownDays: 2, weight: 2, reward: { hearts: 1 }, completionLines: ["Four tiny cups rescued. One spoon makes a brave escape.", "The café owner offers a lemon biscuit and complete forgiveness."] },
+  { id: "world_italy_beach", kind: "balloon", title: "Beach hat escape", prompt: "Catch the runaway hat", icon: "◒", allowedCities: ["italy"], cooldownDays: 3, weight: 1.7, reward: { hearts: 1 }, completionLines: ["Juju catches it one step before the sea.", "The hat has reconsidered international travel."] },
+  { id: "world_greek_market", kind: "lost_bag", title: "Greek market tumble", prompt: "Catch the rolling oranges", icon: "●", allowedCities: ["greece"], cooldownDays: 2, weight: 2, reward: { coins: 7 }, completionLines: ["Every orange recovered except the one that chose the caldera view.", "The stall owner hands Juju a pastry anyway."] },
+  { id: "world_greek_sunset", kind: "street_dance", title: "Oia at gold hour", prompt: "Join the little square", icon: "♪", allowedCities: ["greece"], times: ["evening", "night"], cooldownDays: 3, weight: 1.8, reward: { hearts: 1 }, completionLines: ["A violin, three claps, one slow spin.", "The white walls turn gold and nobody rushes away."] },
   {
     id: "world_balloon",
     kind: "balloon",
@@ -201,4 +212,3 @@ export const WORLD_EVENTS: WorldEventDefinition[] = [
     completionLines: ["Left. Right. Tiny correction.", "The stack arrives upright. The delivery worker bows to the box-balancing champion."],
   },
 ];
-

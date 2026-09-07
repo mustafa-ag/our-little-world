@@ -8,6 +8,8 @@ const COUNTRY_BY_CITY: Record<string, string> = {
   edinburgh: "uk",
   leicester: "uk",
   germany: "germany",
+  italy: "italy",
+  greece: "greece",
 };
 
 export function recordCityVisit(cityId: string) {
@@ -67,6 +69,12 @@ export function recordQuestLifeConsequences(questId: string) {
       store.incrementStat("seagull_fries_stolen");
       store.unlockMemory("mem_seagull_crime");
       break;
+    case "q_desert_wedding":
+      store.state.stats.wedding_completed = 1;
+      store.state.flags.wedding_completed = true;
+      break;
+    case "q_first_property":
+      store.incrementStat("moving_days");
+      break;
   }
 }
-

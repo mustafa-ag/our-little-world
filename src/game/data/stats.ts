@@ -5,6 +5,17 @@ export interface LifeStatDef {
 }
 
 export const LIFE_STATS: LifeStatDef[] = [
+  { id: "properties_owned", label: "Properties owned", icon: "⌂" },
+  { id: "coins_spent_homes", label: "Coins spent on homes", icon: "◇" },
+  { id: "property_tours", label: "Property tours", icon: "⌂" },
+  { id: "furniture_bought", label: "Furniture bought", icon: "▰" },
+  { id: "blocks_placed", label: "Build blocks placed", icon: "■" },
+  { id: "blocks_removed", label: "Build blocks removed", icon: "□" },
+  { id: "rooms_redesigned", label: "Rooms redesigned", icon: "✦" },
+  { id: "dates_completed", label: "Dates completed", icon: "♥" },
+  { id: "moomoo_texts_sent", label: "Texts sent to Moomoo", icon: "▯" },
+  { id: "house_moves", label: "House moves", icon: "↗" },
+  { id: "wedding_completed", label: "Wedding completed", icon: "♡" },
   { id: "workdays_completed", label: "Workdays completed", icon: "▦" },
   { id: "coffees_made", label: "Coffees made", icon: "☕" },
   { id: "perfect_coffees", label: "Perfect coffees", icon: "✦" },

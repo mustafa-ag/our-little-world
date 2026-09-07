@@ -16,7 +16,7 @@ export function stableDailyRoll(seed: string) {
 export function dailyWorldEventAllowance() {
   if (new URLSearchParams(window.location.search).has("lifeDebug")) return 2;
   const roll = stableDailyRoll("world-event-allowance");
-  return roll < 0.2 ? 0 : roll < 0.82 ? 1 : 2;
+  return roll < 0.3 ? 0 : roll < 0.85 ? 1 : 2;
 }
 
 export function pickWorldEvent(locationId: string): WorldEventDefinition | null {
@@ -30,6 +30,7 @@ export function pickWorldEvent(locationId: string): WorldEventDefinition | null 
     if (event.times && !event.times.includes(store.state.timeOfDay)) return false;
     if (event.requiresCatStage !== undefined && store.state.cat.stage < event.requiresCatStage) return false;
     if (event.maxCatStage !== undefined && store.state.cat.stage > event.maxCatStage) return false;
+    if (event.relationshipStage && store.state.relationshipStage !== event.relationshipStage) return false;
     if ((event.kind === "cat_snack" || event.kind === "cat_friend") && store.state.cat.lastSeenDay >= store.state.currentDay) return false;
     return true;
   });
@@ -84,6 +85,12 @@ export function touristChoices(cityId: string) {
       { label: "Past the coffee square", correct: true },
       { label: "Follow the coldest breeze", correct: false },
       { label: "Wait for Nour", correct: false },
+    ],
+    italy: [
+      { label: "Down toward the sea", correct: true }, { label: "Up every staircase", correct: false }, { label: "Follow the lemon scent", correct: false },
+    ],
+    greece: [
+      { label: "Along the blue-door lane", correct: true }, { label: "Straight into the caldera", correct: false }, { label: "Ask the nearest cat", correct: false },
     ],
   };
   return choices[cityId] ?? [

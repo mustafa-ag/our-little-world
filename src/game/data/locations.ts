@@ -166,6 +166,8 @@ export const CITIES: CityMeta[] = [
   { id: "leicester", name: "Leicester", hub: "leicester", geo: { lat: 52.6, lng: -1.08 } },
   { id: "germany", name: "Frankfurt", hub: "germany", geo: { lat: 50.11, lng: 8.68 } },
   { id: "amman", name: "Amman", hub: "amman", geo: { lat: 31.95, lng: 35.93 } },
+  { id: "italy", name: "Positano", hub: "italy_positano", geo: { lat: 40.63, lng: 14.49 } },
+  { id: "greece", name: "Santorini", hub: "greece_santorini", geo: { lat: 36.46, lng: 25.38 } },
 ];
 
 const loc = (
@@ -1301,6 +1303,50 @@ const AMMAN: CityDef = {
   entry: { north: { tx: 50, ty: 14 } },
 };
 
+const POSITANO: CityDef = {
+  w: 112, h: 92, base: "t_sand", baseAlt: "t_grass2", road: "t_cobble", border: "rock", dense: true,
+  water: [{ x: 0, y: 72, w: 112, h: 20 }],
+  districts: [{ name: "Positano", x: 8, y: 8, w: 96, h: 62, ground: "t_paving_light", alt: "t_cobble" }],
+  surfaces: [plaza(40, 20, 30, 18, "t_paving_light")],
+  paths: [
+    ...boulevard([pt(8, 48), pt(104, 48)], 3, 2, "t_cobble", "t_paving_light"),
+    walkPath([pt(54, 12), pt(54, 68)], 2, "t_paving_light"),
+    promenade([pt(10, 67), pt(102, 67)], 3, "t_paving_light"),
+    alley([pt(30, 20), pt(30, 62)], 2, "t_cobble"),
+    alley([pt(78, 18), pt(78, 62)], 2, "t_cobble"),
+  ],
+  pois: [
+    { tex: "b_townhouse_cream", tx: 30, ty: 22, role: "home", name: "Positano Lemon House", desc: "A bright home above the water.", tag: "positano_home" },
+    { tex: "b_cafe", tx: 76, ty: 46, role: "cafe", name: "Lemon Terrace Café", tag: "positano_cafe" },
+    { tex: "b_townhouse_red", tx: 80, ty: 22, role: "shop", name: "Coastal Market", tag: "positano_market" },
+    { tex: "o_bench", tx: 54, ty: 65, role: "landmark", name: "Amalfi Viewpoint", desc: "Boats below. Bougainvillea above. Take the photo.", tag: "positano_view" },
+    ...mixRow(["b_townhouse_cream", "b_townhouse_red", "b_townhouse_cream"], 18, 56, 3, 30),
+    ...palms(12, 62, 6, 16), jeep(58, 52),
+  ],
+  spawn: { tx: 54, ty: 60 },
+};
+
+const SANTORINI_CITY: CityDef = {
+  w: 112, h: 92, base: "t_sand", baseAlt: "t_paving_light", road: "t_pavement", border: "rock", dense: true,
+  water: [{ x: 0, y: 0, w: 18, h: 92 }],
+  districts: [{ name: "Oia", x: 20, y: 8, w: 84, h: 74, ground: "t_paving_light", alt: "t_cobble" }],
+  surfaces: [plaza(48, 18, 30, 20, "t_paving_light")],
+  paths: [
+    ...boulevard([pt(24, 50), pt(104, 50)], 3, 2, "t_pavement", "t_paving_light"),
+    walkPath([pt(62, 10), pt(62, 82)], 2, "t_paving_light"),
+    promenade([pt(22, 14), pt(22, 80)], 3, "t_paving_light"),
+    alley([pt(40, 22), pt(40, 70)], 2, "t_cobble"),
+  ],
+  pois: [
+    { tex: "b_town_blue", tx: 42, ty: 22, role: "home", name: "Santorini Blue-Door Villa", desc: "White rooms and blue sea light.", tag: "santorini_villa" },
+    { tex: "b_cafe", tx: 82, ty: 48, role: "cafe", name: "Oia Coffee Steps", tag: "santorini_cafe" },
+    { tex: "b_shop", tx: 82, ty: 24, role: "shop", name: "Cyclades Market", tag: "santorini_market" },
+    { tex: "o_bench", tx: 24, ty: 40, role: "landmark", name: "Caldera Sunset", desc: "A blue-and-gold edge of the world.", tag: "santorini_view" },
+    ...mixRow(["b_town_blue", "b_town_blue2", "b_town_blue"], 34, 64, 3, 26), jeep(66, 55),
+  ],
+  spawn: { tx: 62, ty: 76 },
+};
+
 export const LOCATIONS: Record<string, LocationDef> = {
   abudhabi_yas: loc({
     id: "abudhabi_yas",
@@ -1538,6 +1584,16 @@ export const LOCATIONS: Record<string, LocationDef> = {
     landmarkName: "Amman Citadel",
     city: AMMAN,
     geo: { lat: 31.95, lng: 35.93 },
+  }),
+  italy_positano: loc({
+    id: "italy_positano", cityId: "italy", name: "Positano", subtitle: "Southern Italy · cliff streets and lemon light",
+    ground: "t_sand", groundAlt: "t_paving_light", path: "t_cobble", border: "rock", hasWater: true, hasHome: true,
+    homeName: "Positano Lemon House", homeTex: "b_townhouse_cream", city: POSITANO, geo: { lat: 40.63, lng: 14.49 },
+  }),
+  greece_santorini: loc({
+    id: "greece_santorini", cityId: "greece", name: "Oia, Santorini", subtitle: "Greece · white lanes above the caldera",
+    ground: "t_sand", groundAlt: "t_paving_light", path: "t_pavement", border: "rock", hasWater: true, hasHome: true,
+    homeName: "Santorini Blue-Door Villa", homeTex: "b_town_blue", city: SANTORINI_CITY, geo: { lat: 36.46, lng: 25.38 },
   }),
 };
 

@@ -79,6 +79,9 @@ export const Outfits: Record<string, { top: string; topShade: string; bottom: st
   engineer_blue: { label: "Engineering Blue", top: "#2f6fd0", topShade: "#22539f", bottom: "#2a334d", shoes: "#1a2230" },
   executive_blue: { label: "Executive Blue", top: "#244f9d", topShade: "#183a78", bottom: "#232b3b", shoes: "#111827" },
   ceo_blue: { label: "CEO Blue", top: "#173f83", topShade: "#102e62", bottom: "#1d2533", shoes: "#f4c95d" },
+  wedding_moroccan: { label: "Moroccan Celebration", top: "#198754", topShade: "#11633e", bottom: "#d4af37", shoes: "#fff4e6" },
+  wedding_jordanian: { label: "Jordanian Celebration", top: "#9f1f37", topShade: "#721528", bottom: "#17131c", shoes: "#d4af37" },
+  wedding_white: { label: "Wedding White", top: "#fffdf7", topShade: "#eadfe4", bottom: "#fffdf7", shoes: "#f4c95d" },
 };
 
 export type OutfitId = keyof typeof Outfits;

@@ -1,4 +1,5 @@
 import type { Career, TimeOfDay } from "../systems/save";
+import type { RelationshipStage } from "../systems/save";
 
 export interface MessageUnlock {
   minDay?: number;
@@ -16,6 +17,7 @@ export interface MessageUnlock {
   outfit?: string;
   time?: TimeOfDay;
   catStage?: number;
+  relationshipStage?: RelationshipStage;
 }
 
 export interface MessageDef {
@@ -27,6 +29,9 @@ export interface MessageDef {
 }
 
 export const MESSAGES: MessageDef[] = [
+  { id: "msg_engaged_moomoo", sender: "moomoo", body: "good morning, fiancée. sorry. needed to use the word immediately.", unlock: { onWake: true, relationshipStage: "engaged", minDay: 6 } },
+  { id: "msg_married_moomoo", sender: "moomoo", body: "wife update: coffee is ready. husband update: still very pleased with both words.", unlock: { onWake: true, relationshipStage: "married", minDay: 9 } },
+  { id: "msg_married_baba", sender: "baba", body: "Congratulations, my dear. Also please tell Moomoo the receipts are his problem now.", unlock: { relationshipStage: "married", questDone: "q_desert_wedding" } },
   {
     id: "msg_wake_1",
     sender: "moomoo",

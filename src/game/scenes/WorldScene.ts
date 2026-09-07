@@ -77,6 +77,7 @@ export class WorldScene extends Phaser.Scene {
   private cameraOffset = new Phaser.Math.Vector2();
   private cameraPose: "smile" | "peace" | "silly" | "hug" = "smile";
   private lastCameraCapture = 0;
+  private jeepCallReadyAt = 0;
 
   constructor() {
     super(SceneKeys.World);
@@ -196,6 +197,7 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.on("companionChanged", this.refreshCompanion, this);
     uiEvents.on("cameraStart", this.startCamera, this);
     uiEvents.on("cameraExit", this.exitCamera, this);
+    uiEvents.on("callJeep", this.callJeep, this);
     store.on("questUpdated", this.refreshQuestGuide, this);
 
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
@@ -380,6 +382,7 @@ export class WorldScene extends Phaser.Scene {
             uiEvents.emit("dialogue", "Moomoo", ["Warm. Two sugars. Exactly my order.", "You remembered without asking. Come sit—everything else can wait.", done?.complete ?? "Perfect."]);
             return;
           }
+          if (def.id === "moomoo" && this.startRomanceActivityIfReady()) return;
           const lines = linesFor(def.id, def.dialogue);
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
           const styleNote = outfitReaction(def.id);
@@ -617,6 +620,7 @@ export class WorldScene extends Phaser.Scene {
       prompt: `Talk to ${def.name}`,
       trigger: () => {
         companion.faceTowards(this.player.x, this.player.y);
+        if (def.id === "moomoo" && this.startRomanceActivityIfReady()) return;
         const res = quests.onTalk(def.id, linesFor(def.id, def.dialogue));
         worldEmote(this, companion.x, companion.y - 30, res.completedQuest ? "♥" : "☺", "#ffdbe7");
         uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
@@ -624,6 +628,17 @@ export class WorldScene extends Phaser.Scene {
     };
     this.companionInteractable = companionInteractable;
     this.interactables.push(companionInteractable);
+  }
+
+  private startRomanceActivityIfReady() {
+    const activities = ["romance_us", "romance_future", "romance_proposal", "wedding_planning_one", "wedding_planning_two", "desert_wedding"];
+    const active = quests.activeQuests().find((quest) => quest.step.type === "playMinigame" && activities.includes(quest.step.target));
+    if (!active) return false;
+    controls.locked = true;
+    uiEvents.emit("sceneReset");
+    if (active.step.target === "desert_wedding") this.scene.start(SceneKeys.Wedding);
+    else this.scene.start(SceneKeys.Romance, { activity: active.step.target });
+    return true;
   }
 
   private refreshCompanion() {
@@ -814,7 +829,7 @@ export class WorldScene extends Phaser.Scene {
           this.useOffice(z.tag);
           break;
         case "home":
-          this.scene.start(SceneKeys.House, { title: getLocation(this.locationId).homeName ?? "Home", interior: "cream" });
+          this.scene.start(SceneKeys.House, { title: getLocation(this.locationId).homeName ?? "Home", interior: "cream", propertyId: z.tag && store.state.properties[z.tag] ? z.tag : store.state.primaryHomeId, tour: !!z.tag && !store.state.properties[z.tag]?.owned });
           break;
         case "stairs": {
           const d = (z.data as { name?: string; tag?: string }) ?? {};
@@ -912,7 +927,12 @@ export class WorldScene extends Phaser.Scene {
         }
         case "info": {
           const d = z.data as { name: string; desc?: string } | undefined;
-          if (d) uiEvents.emit("dialogue", d.name, [d.desc ?? d.name]);
+          if (z.tag) quests.onInteract(z.tag);
+          if (d) {
+            if (z.tag === "positano_view") store.unlockMemory("mem_positano");
+            if (z.tag === "santorini_view") store.unlockMemory("mem_santorini");
+            uiEvents.emit("dialogue", d.name, [d.desc ?? d.name]);
+          }
           break;
         }
       }
@@ -1003,6 +1023,43 @@ export class WorldScene extends Phaser.Scene {
       this.jeepSpot.x = x;
       this.jeepSpot.y = y;
     }
+  }
+
+  private callJeep() {
+    if (!this.sys.isActive() || this.transitioning || controls.cameraMode || controls.locked) {
+      store.toast("Finish this little moment first.", "#a08a70");
+      return;
+    }
+    if (this.driving || store.state.inJeep) {
+      store.toast("You are already in the Jeep 😭", "#a08a70");
+      return;
+    }
+    if (this.time.now < this.jeepCallReadyAt) {
+      store.toast("Jeep is doing a tiny three-point turn.", "#a08a70");
+      return;
+    }
+    const candidates = [
+      [48, 12], [-48, 12], [12, 48], [12, -48], [72, 0], [-72, 0], [0, 72], [0, -72],
+    ];
+    const point = candidates.map(([dx, dy]) => ({ x: this.player.x + dx, y: this.player.y + dy })).find(({ x, y }) => {
+      if (x < 32 || y < 32 || x > this.worldW - 32 || y > this.worldH - 32) return false;
+      if (this.npcs.some((npc) => Phaser.Math.Distance.Between(x, y, npc.x, npc.y) < 36)) return false;
+      if (this.interactables.some((item) => item !== this.jeepSpot && Phaser.Math.Distance.Between(x, y, item.x, item.y) < 28)) return false;
+      return this.physics.overlapRect(x - 13, y - 10, 26, 20, true, true).length === 0;
+    });
+    if (!point) {
+      store.toast("Jeep says: nowhere safe to park here 😭", "#a08a70");
+      return;
+    }
+    this.jeepCallReadyAt = this.time.now + 2500;
+    this.parkJeepAt(point.x, point.y);
+    this.parkedJeep?.setScale(0.82).setAlpha(0.4);
+    this.tweens.add({ targets: this.parkedJeep, scaleX: 1, scaleY: 1, alpha: 1, y: point.y - 3, duration: 330, ease: "Back.out", onComplete: () => this.parkedJeep?.setY(point.y).setDepth(point.y) });
+    for (let index = 0; index < 5; index++) {
+      const dust = this.add.circle(point.x + Phaser.Math.Between(-14, 14), point.y + Phaser.Math.Between(-2, 8), Phaser.Math.Between(2, 4), 0xd9c09a, 0.65).setDepth(point.y - 1);
+      this.tweens.add({ targets: dust, x: dust.x + Phaser.Math.Between(-12, 12), y: dust.y - 10, alpha: 0, duration: 420 + index * 45, onComplete: () => dust.destroy() });
+    }
+    store.toast("Your Jeep found you ♡", "#2f6fd0");
   }
 
   private hopIn(opts?: { quiet?: boolean }) {
@@ -1164,7 +1221,8 @@ export class WorldScene extends Phaser.Scene {
 
   private applyZoom() {
     const { width, height } = this.scale.gameSize;
-    this.cameras.main.setZoom(Phaser.Math.Clamp(height / (42 * TILE), 1.35, 2.15));
+    const cozyZoom = Phaser.Math.Clamp(height / (30 * TILE), 1.6, 2.58);
+    this.cameras.main.setZoom(this.driving ? cozyZoom * 0.86 : cozyZoom);
     this.timeWash?.setSize(width, height);
     this.themeWash?.setSize(width, height);
   }
@@ -1309,6 +1367,7 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.off("companionChanged", this.refreshCompanion, this);
     uiEvents.off("cameraStart", this.startCamera, this);
     uiEvents.off("cameraExit", this.exitCamera, this);
+    uiEvents.off("callJeep", this.callJeep, this);
     store.off("questUpdated", this.refreshQuestGuide, this);
     this.scale.off("resize", this.applyZoom, this);
   }

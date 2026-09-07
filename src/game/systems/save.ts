@@ -5,6 +5,7 @@ import { ADNOC_RANKS, ADNOC_WORK_TASKS, type AdnocRank, type AdnocWorkTaskId } f
 
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
 export type Career = "explorer" | "chemical_engineer" | "ceo";
+export type RelationshipStage = "dating" | "engaged" | "married";
 
 export interface PlacedFurniture {
   tex: string;
@@ -35,6 +36,38 @@ export interface PhoneMessage {
   day: number;
   read: boolean;
   questId?: string;
+}
+
+export interface ChatEntry {
+  id: string;
+  contactId: string;
+  direction: "incoming" | "outgoing";
+  body: string;
+  day: number;
+  timeOfDay: TimeOfDay;
+  read: boolean;
+  questId?: string;
+}
+
+export interface HomeCell {
+  x: number;
+  y: number;
+  style: string;
+}
+
+export interface HomeLayout {
+  floors: HomeCell[];
+  walls: HomeCell[];
+  doors: HomeCell[];
+}
+
+export interface PropertyState {
+  owned: boolean;
+  visited: boolean;
+  purchasedDay?: number;
+  layout: HomeLayout;
+  furniture: PlacedFurniture[];
+  storedFurniture: string[];
 }
 
 export interface MemoryUnlock {
@@ -106,6 +139,11 @@ export interface GameState {
   relationships: Record<string, number>;
   inventory: Record<string, number>;
   messages: PhoneMessage[];
+  chatEntries: ChatEntry[];
+  relationshipStage: RelationshipStage;
+  properties: Record<string, PropertyState>;
+  activeHomeId: string;
+  primaryHomeId: string;
   memories: Record<string, MemoryUnlock>;
   photos: Record<string, SavedPhoto>;
   keepsakes: string[];
@@ -136,7 +174,7 @@ const SAVE_KEY = "ourlittleworld.save.v3";
 const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
 const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
 export const SAVE_SLOT_COUNT = 3;
-export const VERSION = 10;
+export const VERSION = 11;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
 
@@ -181,6 +219,13 @@ export function defaultState(): GameState {
     relationships: {},
     inventory: {},
     messages: [],
+    chatEntries: [],
+    relationshipStage: "dating",
+    properties: {
+      starter_yas: { owned: true, visited: true, layout: { floors: [], walls: [], doors: [] }, furniture: [], storedFurniture: [] },
+    },
+    activeHomeId: "starter_yas",
+    primaryHomeId: "starter_yas",
     memories: {},
     photos: {},
     keepsakes: [],
@@ -225,6 +270,34 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
   const messages = Array.isArray(raw.messages)
     ? raw.messages.filter((m) => m && typeof m.id === "string" && typeof m.body === "string")
     : d.messages;
+  const validTod = (value: unknown): TimeOfDay =>
+    value === "afternoon" || value === "evening" || value === "night" ? value : "morning";
+  const migratedChats: ChatEntry[] = messages.map((message) => ({
+    id: `legacy:${message.id}`,
+    contactId: message.sender,
+    direction: "incoming",
+    body: message.body,
+    day: Number.isFinite(message.day) ? Math.max(1, Math.floor(message.day)) : 1,
+    timeOfDay: "morning",
+    read: !!message.read,
+    questId: message.questId,
+  }));
+  const chatEntries: ChatEntry[] = Array.isArray(raw.chatEntries)
+    ? raw.chatEntries.flatMap((value) => {
+        const entry = value as Partial<ChatEntry>;
+        if (!entry || typeof entry.id !== "string" || typeof entry.contactId !== "string" || typeof entry.body !== "string") return [];
+        return [{
+          id: entry.id,
+          contactId: entry.contactId,
+          direction: entry.direction === "outgoing" ? "outgoing" as const : "incoming" as const,
+          body: entry.body.slice(0, 280),
+          day: Number.isFinite(entry.day) ? Math.max(1, Math.floor(Number(entry.day))) : 1,
+          timeOfDay: validTod(entry.timeOfDay),
+          read: !!entry.read,
+          questId: typeof entry.questId === "string" ? entry.questId : undefined,
+        }];
+      }).slice(-240)
+    : migratedChats;
 
   const memories: Record<string, MemoryUnlock> = { ...d.memories };
   if (raw.memories && typeof raw.memories === "object") {
@@ -408,6 +481,54 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
       }).slice(-12)
     : [];
 
+  const normalizeFurniture = (value: unknown): PlacedFurniture[] => Array.isArray(value)
+    ? value.flatMap((item) => {
+        const f = item as Partial<PlacedFurniture>;
+        if (!f || typeof f.tex !== "string" || !Number.isFinite(f.x) || !Number.isFinite(f.y)) return [];
+        return [{ tex: f.tex, x: Number(f.x), y: Number(f.y), rot: f.rot ? 1 : 0 }];
+      }).slice(0, 160)
+    : [];
+  const normalizeCells = (value: unknown): HomeCell[] => Array.isArray(value)
+    ? value.flatMap((item) => {
+        const cell = item as Partial<HomeCell>;
+        if (!cell || !Number.isFinite(cell.x) || !Number.isFinite(cell.y) || typeof cell.style !== "string") return [];
+        return [{ x: Math.floor(Number(cell.x)), y: Math.floor(Number(cell.y)), style: cell.style.slice(0, 32) }];
+      }).slice(0, 900)
+    : [];
+  const properties: Record<string, PropertyState> = {};
+  if (raw.properties && typeof raw.properties === "object") {
+    for (const [id, value] of Object.entries(raw.properties)) {
+      const property = value as Partial<PropertyState>;
+      if (!property || typeof property !== "object") continue;
+      const layout = property.layout as Partial<HomeLayout> | undefined;
+      properties[id] = {
+        owned: !!property.owned,
+        visited: !!property.visited,
+        purchasedDay: Number.isFinite(property.purchasedDay) ? Math.max(1, Math.floor(Number(property.purchasedDay))) : undefined,
+        layout: {
+          floors: normalizeCells(layout?.floors),
+          walls: normalizeCells(layout?.walls),
+          doors: normalizeCells(layout?.doors),
+        },
+        furniture: normalizeFurniture(property.furniture),
+        storedFurniture: Array.isArray(property.storedFurniture) ? uniq(property.storedFurniture) : [],
+      };
+    }
+  }
+  const legacyFurniture = normalizeFurniture(raw.furniture);
+  const legacyStored = Array.isArray(raw.storedFurniture) ? raw.storedFurniture.filter((s): s is string => typeof s === "string") : [];
+  if (!properties.starter_yas) {
+    properties.starter_yas = { owned: true, visited: true, layout: { floors: [], walls: [], doors: [] }, furniture: legacyFurniture, storedFurniture: legacyStored };
+  } else {
+    properties.starter_yas.owned = true;
+    properties.starter_yas.visited = true;
+    if ((raw.version ?? 0) < 11 && !properties.starter_yas.furniture.length) properties.starter_yas.furniture = legacyFurniture;
+    if ((raw.version ?? 0) < 11 && !properties.starter_yas.storedFurniture.length) properties.starter_yas.storedFurniture = legacyStored;
+  }
+  const primaryHomeId = typeof raw.primaryHomeId === "string" && properties[raw.primaryHomeId]?.owned ? raw.primaryHomeId : "starter_yas";
+  const activeHomeId = typeof raw.activeHomeId === "string" && properties[raw.activeHomeId] ? raw.activeHomeId : primaryHomeId;
+  const relationshipStage: RelationshipStage = raw.relationshipStage === "engaged" || raw.relationshipStage === "married" ? raw.relationshipStage : "dating";
+
   return {
     ...d,
     ...raw,
@@ -432,11 +553,16 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     quests,
     flags,
     collected: raw.collected && typeof raw.collected === "object" ? { ...raw.collected } : {},
-    furniture: Array.isArray(raw.furniture) ? raw.furniture : [],
-    storedFurniture: Array.isArray(raw.storedFurniture) ? raw.storedFurniture.filter((s) => typeof s === "string") : [],
+    furniture: properties.starter_yas.furniture,
+    storedFurniture: properties.starter_yas.storedFurniture,
     relationships: numMap(raw.relationships),
     inventory,
     messages,
+    chatEntries,
+    relationshipStage,
+    properties,
+    activeHomeId,
+    primaryHomeId,
     memories,
     photos,
     keepsakes: Array.isArray(raw.keepsakes) ? uniq(raw.keepsakes) : [],

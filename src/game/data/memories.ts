@@ -16,6 +16,11 @@ export interface MemoryDef {
 }
 
 export const MEMORIES: MemoryDef[] = [
+  { id: "mem_romance_us", title: "Us", description: "Two coffees, phones face-down, one crooked photograph.", cityId: "dubai", locationId: "dubai_oasis", npcs: ["moomoo"], photo: true, category: "friends", caption: "The ordinary magic.", sticker: "♡", spread: true },
+  { id: "mem_proposal", title: "One Question", description: "He forgot half the speech. She said yes before he could worry about it.", cityId: "dubai", locationId: "dubai_downtown", npcs: ["moomoo"], photo: true, category: "friends", caption: "Engaged under the city lights.", sticker: "◇", spread: true },
+  { id: "mem_wedding", title: "Our Desert Wedding", description: "Three looks, two rings, one friendly Dune Puff, forever.", cityId: "abudhabi", locationId: "abudhabi_yas", npcs: ["moomoo", "mama", "baba", "fadwa", "nour", "jad", "shan"], photo: true, category: "family", caption: "Their bigger little life begins.", sticker: "♥", spread: true },
+  { id: "mem_positano", title: "Lemon Light", description: "A balcony above Positano and two coffees going cold.", cityId: "italy", locationId: "italy_positano", npcs: ["moomoo"], photo: true, caption: "The sea kept going. So did they.", sticker: "☀", spread: true },
+  { id: "mem_santorini", title: "Blue Door, Gold Sky", description: "Oia at sunset. Their newest key in Juju's pocket.", cityId: "greece", locationId: "greece_santorini", npcs: ["moomoo"], photo: true, caption: "The balcony won.", sticker: "≈", spread: true },
   {
     id: "mem_yas_baba",
     title: "Baba at Yas",
