@@ -175,6 +175,7 @@ export class UIScene extends Phaser.Scene {
     store.on("questUpdated", () => this.refreshQuests());
     store.on("questStepComplete", (def: QuestDef, step: QuestStep) => this.showObjectiveComplete(def, step));
     store.on("questCompleted", (def: QuestDef) => this.showQuestComplete(def));
+    store.on("replayEnded", this.onReplayEnded, this);
     store.on("toast", (t: string, c: string) => this.showToast(t, c));
     store.on("time", () => this.clockText.setText(store.clockLabel()));
     store.on("newDay", () => this.clockText.setText(store.clockLabel()));
@@ -1446,7 +1447,7 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Mall) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping) || m.isActive(SceneKeys.Romance) || m.isActive(SceneKeys.Wedding);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Mall) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping) || m.isActive(SceneKeys.Romance) || m.isActive(SceneKeys.Wedding) || m.isActive(SceneKeys.TigorMission) || m.isActive(SceneKeys.TigorAirport);
   }
   private walkableScene() {
     const m = this.scene.manager;
@@ -1481,6 +1482,22 @@ export class UIScene extends Phaser.Scene {
     controls.moveY = 0;
     this.joyPointerId = -1;
     this.positionJoystick();
+  }
+
+  private onReplayEnded(replay: { returnLocation: string; returnInJeep: boolean; originScene?: string }) {
+    this.resetOverlays();
+    const active = this.scene.manager.getScenes(true).find((candidate) => candidate.scene.key !== SceneKeys.UI);
+    if (!active) return;
+    if (replay.originScene === SceneKeys.House) {
+      active.scene.start(SceneKeys.House, { propertyId: store.state.activeHomeId, title: "Home" });
+      return;
+    }
+    if (replay.originScene === SceneKeys.Mall) {
+      const mallId = replay.returnLocation === "dubai_hills" ? "dubai_hills_mall" : replay.returnLocation === "abudhabi_yasmall" ? "yas_mall" : "dubai_mall";
+      active.scene.start(SceneKeys.Mall, { mallId });
+      return;
+    }
+    active.scene.start(SceneKeys.World, { locationId: replay.returnLocation, driving: replay.returnInJeep });
   }
 
   private anyModal() {
@@ -1546,7 +1563,8 @@ export class UIScene extends Phaser.Scene {
     const driving = this.scene.manager.isActive(SceneKeys.Driving);
     const questActivity = this.scene.manager.isActive(SceneKeys.QuestActivity);
     const babaShopping = this.scene.manager.isActive(SceneKeys.BabaShopping);
-    const dedicated = controls.buildModeActive || this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || this.scene.manager.isActive(SceneKeys.Romance) || this.scene.manager.isActive(SceneKeys.Wedding) || questActivity || babaShopping;
+    const tigorCampaign = this.scene.manager.isActive(SceneKeys.TigorMission) || this.scene.manager.isActive(SceneKeys.TigorAirport);
+    const dedicated = controls.buildModeActive || this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || this.scene.manager.isActive(SceneKeys.Romance) || this.scene.manager.isActive(SceneKeys.Wedding) || questActivity || babaShopping || tigorCampaign;
     this.setDedicatedHud(dedicated);
     this.dedicatedStatus.setY(questActivity ? 24 : 64);
     this.dedicatedStatus.setVisible(dedicated && this.dedicatedStatusActive && !modal);
@@ -1557,15 +1575,15 @@ export class UIScene extends Phaser.Scene {
     this.actionBtn.setDepth(this.miniGameOpen ? 90 : 12);
     (this.actionBtn as ButtonImage).label?.setDepth(this.miniGameOpen ? 91 : 13);
     this.setButtonVisible(this.ultimateBtn, babaShopping && controls.shoppingUltimateReady && !controls.shoppingUltimateActive && !modal);
-    const showJoy = showTouch;
+    const showJoy = showTouch && !tigorCampaign;
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);
     // map + fit only in walkable scenes (not while driving)
     const showNav = this.walkableScene() && !controls.buildModeActive && !modal && !driving && !controls.cameraMode;
     this.setButtonVisible(this.mapBtn, showNav);
     this.setButtonVisible(this.fitBtn, showNav);
-    this.setButtonVisible(this.phoneBtn, showNav);
-    this.phoneBadge?.setVisible(showNav && store.unreadCount() > 0);
+    this.setButtonVisible(this.phoneBtn, showNav || (tigorCampaign && store.isQuestReplay && !modal));
+    this.phoneBadge?.setVisible((showNav || (tigorCampaign && store.isQuestReplay && !modal)) && store.unreadCount() > 0);
     this.drawMinimap();
   }
 }

@@ -221,6 +221,10 @@ export class MallScene extends Phaser.Scene {
           cancelLabel: "Browse normally",
           choices: [{ id: "replay", label: "Start the mall gauntlet", description: "Replay for chosen purchases and a new report. Quest rewards do not repeat.", icon: "▣" }],
           onChoose: () => {
+            if (!store.beginQuestReplay("q_baba_spree", SceneKeys.Mall)) {
+              store.toast("Finish or exit the current replay first.", "#a08a70");
+              return;
+            }
             uiEvents.emit("sceneReset");
             this.scene.start(SceneKeys.BabaShopping, { mallId: this.config.id, replay: true });
           },

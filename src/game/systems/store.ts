@@ -33,6 +33,12 @@ import { MEMORIES, memoryById, memoriesForCity } from "../data/memories";
 import { OUTFIT_UNLOCKS } from "../data/outfits";
 import { weekdayName } from "../data/schedules";
 import { RELATIONSHIP_MILESTONES } from "../data/relationshipMilestones";
+import {
+  activeQuestReplay,
+  beginQuestReplay as createQuestReplay,
+  finishQuestReplay,
+  type QuestReplaySession,
+} from "./questReplay";
 
 const TIME_ORDER: TimeOfDay[] = ["morning", "afternoon", "evening", "night"];
 
@@ -49,6 +55,7 @@ class Store extends Phaser.Events.EventEmitter {
   cloudEmail?: string;
   private cloudUserId?: string;
   private cloudSaveTimer?: number;
+  private replayExitTimer?: number;
 
   init() {
     this.state = loadState();
@@ -56,6 +63,7 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   async syncCloud() {
+    if (this.isQuestReplay) return;
     if (!cloudSaveEnabled) return;
     try {
       const user = await currentCloudUser();
@@ -69,6 +77,7 @@ class Store extends Phaser.Events.EventEmitter {
       this.setCloudStatus("syncing");
       const localArchive = getSaveArchive();
       const remoteArchive = await readCloudArchive(user.id);
+      if (this.isQuestReplay) return;
       const remoteState = remoteArchive ? restoreSaveArchive(remoteArchive) : undefined;
 
       if (!remoteArchive) {
@@ -122,6 +131,7 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   private queueCloudSave() {
+    if (this.isQuestReplay) return;
     if (!this.cloudUserId) return;
     if (this.cloudSaveTimer !== undefined) window.clearTimeout(this.cloudSaveTimer);
     this.cloudSaveTimer = window.setTimeout(() => {
@@ -131,8 +141,10 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   private async pushCloudSave() {
+    if (this.isQuestReplay) return;
     if (!this.cloudUserId) return;
     try {
+      if (this.isQuestReplay) return;
       await writeCloudArchive(this.cloudUserId, getSaveArchive());
       this.setCloudStatus("synced");
     } catch (error) {
@@ -150,6 +162,7 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   loadSaveSlot(id: string) {
+    if (this.isQuestReplay) this.exitQuestReplay(false);
     this.state = loadState(id);
     this.refreshOutfitUnlocks(false);
     this.emit("changed");
@@ -157,21 +170,73 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   startNewSaveSlot(id: string) {
+    if (this.isQuestReplay) this.exitQuestReplay(false);
     this.state = createNewSaveSlot(id);
     this.emit("changed");
     this.queueCloudSave();
   }
 
   save() {
+    if (this.isQuestReplay) return;
     saveState(this.state);
     this.queueCloudSave();
   }
 
   reset() {
+    if (this.isQuestReplay) this.exitQuestReplay(false);
     clearSave();
     this.state = defaultState();
     this.emit("changed");
     this.save();
+  }
+
+  // ---- quest replay sandbox ----
+  get questReplay(): QuestReplaySession | undefined {
+    return activeQuestReplay();
+  }
+
+  get isQuestReplay() {
+    return !!activeQuestReplay();
+  }
+
+  beginQuestReplay(questId: string, originScene?: string) {
+    if (this.isQuestReplay || this.state.quests[questId]?.status !== "done") return false;
+    // Flush the canonical state before swapping the shared pointer.
+    this.save();
+    const replay = createQuestReplay(this.state, questId, originScene);
+    if (!replay) return false;
+    this.state = replay.sandbox;
+    this.emit("replayMode", replay.session);
+    this.emit("questUpdated");
+    this.emit("changed");
+    this.emit("toast", "REPLAY MODE · progress will not be saved", "#8ecae6");
+    return true;
+  }
+
+  exitQuestReplay(completed = false) {
+    const replay = finishQuestReplay();
+    if (!replay) return false;
+    if (this.replayExitTimer !== undefined) {
+      window.clearTimeout(this.replayExitTimer);
+      this.replayExitTimer = undefined;
+    }
+    this.state = replay.canonical;
+    this.emit("changed");
+    this.emit("hearts", this.state.hearts);
+    this.emit("coins", this.state.coins);
+    this.emit("questUpdated");
+    this.emit("replayEnded", replay, completed);
+    this.emit("toast", completed ? "Replay complete ♡ Original story progress restored." : "Replay ended · original story progress restored.", "#8ecae6");
+    return true;
+  }
+
+  finishQuestReplaySoon(delayMs = 100) {
+    if (!this.isQuestReplay) return;
+    if (this.replayExitTimer !== undefined) window.clearTimeout(this.replayExitTimer);
+    this.replayExitTimer = window.setTimeout(() => {
+      this.replayExitTimer = undefined;
+      this.exitQuestReplay(true);
+    }, delayMs);
   }
 
   // ---- currencies ----
@@ -648,6 +713,44 @@ class Store extends Phaser.Events.EventEmitter {
   petCat() {
     this.state.stats.cat_pets = (this.state.stats.cat_pets ?? 0) + 1;
     this.emit("catPet", this.state.stats.cat_pets);
+    this.save();
+  }
+
+  // ---- Tigor (independent permanent pet) ----
+  setTigorChapter(chapter: number) {
+    this.state.tigor.missionChapter = Phaser.Math.Clamp(Math.floor(chapter), 0, 5);
+    this.save();
+  }
+
+  unlockTigor() {
+    const first = !this.state.tigor.unlocked;
+    this.state.tigor.unlocked = true;
+    this.state.tigor.atHome = true;
+    this.state.tigor.following = false;
+    this.state.tigor.missionChapter = 5;
+    if (first) {
+      this.state.stats.pets_brought_home = (this.state.stats.pets_brought_home ?? 0) + 1;
+      this.emit("toast", "NEW FAMILY MEMBER · TIGOR", "#f4c95d");
+    }
+    this.emit("petChanged", this.state.tigor);
+    this.save();
+    return first;
+  }
+
+  setTigorFollowing(following: boolean) {
+    if (!this.state.tigor.unlocked) return false;
+    this.state.tigor.following = following;
+    this.state.tigor.atHome = !following;
+    this.emit("petChanged", this.state.tigor);
+    this.emit("toast", following ? "Tigor is padding along with you." : "Tigor is waiting at home.", "#f4c95d");
+    this.save();
+    return true;
+  }
+
+  petTigor() {
+    if (!this.state.tigor.unlocked) return;
+    this.state.stats.tigor_pets = (this.state.stats.tigor_pets ?? 0) + 1;
+    this.emit("petTigor", this.state.stats.tigor_pets);
     this.save();
   }
 

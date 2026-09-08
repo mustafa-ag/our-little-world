@@ -40,6 +40,9 @@ export class HouseScene extends Phaser.Scene {
   private deliveryBoxes?: Phaser.GameObjects.Container;
   private homeCat?: Phaser.GameObjects.Image;
   private catInteractable?: Interactable;
+  private homeTigor?: Phaser.GameObjects.Image;
+  private tigorBowl?: Phaser.GameObjects.Ellipse;
+  private tigorInteractable?: Interactable;
   private visitor?: NPC;
   private visitorInteractable?: Interactable;
   private cameraOverlay?: Phaser.GameObjects.Container;
@@ -61,6 +64,9 @@ export class HouseScene extends Phaser.Scene {
     this.interactables = [];
     this.homeCat = undefined;
     this.catInteractable = undefined;
+    this.homeTigor = undefined;
+    this.tigorBowl = undefined;
+    this.tigorInteractable = undefined;
     this.visitor = undefined;
     this.visitorInteractable = undefined;
     this.cameraOverlay = undefined;
@@ -195,6 +201,7 @@ export class HouseScene extends Phaser.Scene {
     uiEvents.on("openMap", this.openMap, this);
     uiEvents.on("cameraStart", this.startCamera, this);
     uiEvents.on("cameraExit", this.exitCameraMode, this);
+    store.on("petChanged", this.refreshHomeTigor, this);
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
     uiEvents.emit("locationTitle", title, data.tour && !this.property.owned ? "PROPERTY TOUR · walk, build-preview, then buy from Homes" : `${propertyDef.location} · ${propertyDef.type}`);
     if (data.tour) {
@@ -213,6 +220,7 @@ export class HouseScene extends Phaser.Scene {
     if (!brown) {
       if (store.state.cat.adopted) this.spawnHomeCat();
       else if (store.state.cat.stage >= 3 && store.state.cat.lastSeenDay < store.state.currentDay) this.spawnAdoptionMoment();
+      if (store.state.tigor.unlocked && store.state.tigor.atHome) this.spawnHomeTigor();
       this.time.delayedCall(850, () => store.state.relationshipStage === "married" ? this.spawnMarriedMoomoo() : this.maybeWelcomeVisitor());
     }
 
@@ -228,6 +236,7 @@ export class HouseScene extends Phaser.Scene {
       this.input.off("pointermove");
       this.input.off("pointerup");
       store.off("furniturePlaced", this.onFurniturePlaced, this);
+      store.off("petChanged", this.refreshHomeTigor, this);
       this.buildMode?.destroy();
       this.playerCollider?.destroy();
     });
@@ -551,6 +560,37 @@ export class HouseScene extends Phaser.Scene {
         uiEvents.emit("dialogue", "Juju", ["Why.", "Mishmish: ..."]);
       });
     }
+  }
+
+  private spawnHomeTigor() {
+    if (this.homeTigor?.active) return;
+    const x = TILE * 12.4;
+    const y = TILE * 9.4;
+    this.homeTigor = this.add.image(x, y, getVisualTexture(this, "o_tigor")).setOrigin(0.5, 1).setDepth(y + 3).setScale(1.08);
+    const bowl = this.add.ellipse(x + 18, y + 1, 15, 6, 0x4d87a9).setDepth(y + 1).setStrokeStyle(1, 0x2b3d52);
+    this.tigorBowl = bowl;
+    this.tigorInteractable = this.addFurnitureInteract(x, y, 23, "Pet Tigor", () => {
+      store.petTigor();
+      this.tweens.add({ targets: this.homeTigor, y: y - 5, angle: 4, duration: 150, yoyo: true, repeat: 2 });
+      uiEvents.emit("dialogue", "Tigor", ["Tigor rolls onto the rug like he personally approved the house.", "Mishmish watches from a safe professional distance.", "Juju: Both of you live here. Please negotiate."]);
+    });
+    this.tweens.add({ targets: this.homeTigor, x: x + 8, y: y - 2, duration: 2400, yoyo: true, repeat: -1, ease: "Sine.inOut", onUpdate: () => {
+      if (!this.homeTigor) return;
+      this.homeTigor.setDepth(this.homeTigor.y + 3).setFlipX(this.homeTigor.x < x + 4);
+      if (this.tigorInteractable) { this.tigorInteractable.x = this.homeTigor.x; this.tigorInteractable.y = this.homeTigor.y; }
+      bowl.setDepth(y + 1);
+    } });
+  }
+
+  private refreshHomeTigor() {
+    if (!this.sys.isActive()) return;
+    if (this.tigorInteractable) this.interactables = this.interactables.filter((candidate) => candidate !== this.tigorInteractable);
+    this.tigorInteractable = undefined;
+    this.homeTigor?.destroy();
+    this.homeTigor = undefined;
+    this.tigorBowl?.destroy();
+    this.tigorBowl = undefined;
+    if (store.state.tigor.unlocked && store.state.tigor.atHome) this.spawnHomeTigor();
   }
 
   private maybeWelcomeVisitor() {

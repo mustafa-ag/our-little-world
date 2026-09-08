@@ -16,6 +16,8 @@ import { QuestActivityScene } from "./game/scenes/QuestActivityScene";
 import { BabaShoppingScene } from "./game/scenes/BabaShoppingScene";
 import { RomanceScene } from "./game/scenes/RomanceScene";
 import { WeddingScene } from "./game/scenes/WeddingScene";
+import { TigorMissionScene } from "./game/scenes/TigorMissionScene";
+import { TigorAirportScene } from "./game/scenes/TigorAirportScene";
 import { UIScene } from "./game/scenes/UIScene";
 
 const isAppleTouchDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -47,7 +49,7 @@ const config: Phaser.Types.Core.GameConfig = {
     },
   },
   // UI is last so it always renders on top of gameplay scenes.
-  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, AdnocHQScene, AdnocTaskScene, QuestActivityScene, BabaShoppingScene, RomanceScene, WeddingScene, UIScene],
+  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, AdnocHQScene, AdnocTaskScene, QuestActivityScene, BabaShoppingScene, RomanceScene, WeddingScene, TigorMissionScene, TigorAirportScene, UIScene],
 };
 
 const game = new Phaser.Game(config);

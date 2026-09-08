@@ -3,6 +3,7 @@ import { Depths, SceneKeys, TILE } from "../constants";
 import { districtsOf, getLocation, type Cardinal } from "../data/locations";
 import { NPCS } from "../data/npcs";
 import { Player } from "../objects/Player";
+import { PetCompanion } from "../objects/PetCompanion";
 import { NPC } from "../objects/NPC";
 import { generateWorld, blockedToRects, type WorldData } from "../worldgen";
 import { store } from "../systems/store";
@@ -53,6 +54,8 @@ export class WorldScene extends Phaser.Scene {
   private worldH = 0;
   private timeAcc = 0;
   private followingCat?: Phaser.GameObjects.Image;
+  private tigorPet?: PetCompanion;
+  private tigorInteractable?: Interactable;
   private timeWash?: Phaser.GameObjects.Rectangle;
   private themeWash?: Phaser.GameObjects.Rectangle;
   private visualTheme!: WorldVisualTheme;
@@ -99,6 +102,8 @@ export class WorldScene extends Phaser.Scene {
     this.themeWash = undefined;
     this.groundLayer = undefined;
     this.followingCat = undefined;
+    this.tigorPet = undefined;
+    this.tigorInteractable = undefined;
     this.focusedQuestId = undefined;
     this.questArrow = undefined;
     this.questArrowLabel = undefined;
@@ -177,6 +182,7 @@ export class WorldScene extends Phaser.Scene {
       this.addZoneInteractable(z);
     }
     this.placeFollowJeep(spawn.x, spawn.y, data.driving ?? store.state.inJeep);
+    this.spawnTigorPet(spawn.x, spawn.y);
     this.placeSecrets();
     this.placePhotoSpots();
     this.addCityAmbience(def.cityId);
@@ -199,6 +205,7 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.on("cameraExit", this.exitCamera, this);
     uiEvents.on("callJeep", this.callJeep, this);
     store.on("questUpdated", this.refreshQuestGuide, this);
+    store.on("petChanged", this.refreshTigorPet, this);
 
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
 
@@ -1066,6 +1073,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.driving) return;
     this.closeDriveMenu();
     this.driving = true;
+    this.refreshTigorPet();
     store.setInJeep(true);
     this.jeepReadyAt = this.time.now + 500;
     this.player.speed = this.baseSpeed * 2.8;
@@ -1084,6 +1092,7 @@ export class WorldScene extends Phaser.Scene {
   private hopOut() {
     if (!this.driving) return;
     this.driving = false;
+    this.refreshTigorPet();
     store.setInJeep(false);
     this.jeepReadyAt = this.time.now + 1000;
     this.player.speed = this.baseSpeed;
@@ -1275,6 +1284,7 @@ export class WorldScene extends Phaser.Scene {
       .filter((npc) => Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y) < 92)
       .map((npc) => npc.def.id);
     if (this.companionNpc && !nearby.includes(this.companionNpc.def.id)) nearby.push(this.companionNpc.def.id);
+    if (this.tigorPet && Phaser.Math.Distance.Between(this.player.x, this.player.y, this.tigorPet.x, this.tigorPet.y) < 92) nearby.push("tigor");
     const index = store.getStat("photos_taken") + 1;
     const location = getLocation(this.locationId);
     const roll = stableDailyRoll(`camera:${this.locationId}:${index}`);
@@ -1369,6 +1379,7 @@ export class WorldScene extends Phaser.Scene {
     uiEvents.off("cameraExit", this.exitCamera, this);
     uiEvents.off("callJeep", this.callJeep, this);
     store.off("questUpdated", this.refreshQuestGuide, this);
+    store.off("petChanged", this.refreshTigorPet, this);
     this.scale.off("resize", this.applyZoom, this);
   }
 
@@ -1412,6 +1423,11 @@ export class WorldScene extends Phaser.Scene {
     }
     const walkingSpeed = !this.driving && store.state.outfit === "red_bottom_boots" ? this.player.speed * 1.65 : this.player.speed;
     this.player.move(vx * walkingSpeed, vy * walkingSpeed);
+    this.tigorPet?.follow(this.player, time, this.game.loop.delta, Math.abs(vx) + Math.abs(vy) > 0.05);
+    if (this.tigorPet && this.tigorInteractable) {
+      this.tigorInteractable.x = this.tigorPet.x;
+      this.tigorInteractable.y = this.tigorPet.y;
+    }
 
     if (this.rideJeep) {
       this.rideJeep.setPosition(this.player.x, this.player.y);
@@ -1574,6 +1590,34 @@ export class WorldScene extends Phaser.Scene {
     const catTex = this.textures.exists("o_cat") ? "o_cat" : "ui_heart";
     this.followingCat = this.add.image(x, y, catTex).setOrigin(0.5, 1).setDepth(y);
     store.toast("A cat decided to follow you", "#f4a6c0");
+  }
+
+  private spawnTigorPet(x: number, y: number) {
+    if (!store.state.tigor.unlocked || !store.state.tigor.following || this.driving || this.tigorPet?.active) return;
+    this.tigorPet = new PetCompanion(this, x - 20, y + 8);
+    const interactable: Interactable = {
+      x: this.tigorPet.x,
+      y: this.tigorPet.y,
+      radius: 23,
+      prompt: "Pet Tigor",
+      trigger: () => {
+        store.petTigor();
+        this.tigorPet?.celebrate();
+        const lines = ["Tigor leans into Juju's hand like international bureaucracy never happened.", "Tigor: prrrrp.", "The tiny traveller requires a snack immediately."];
+        uiEvents.emit("dialogue", "Tigor", [lines[store.getStat("tigor_pets") % lines.length]]);
+      },
+    };
+    this.tigorInteractable = interactable;
+    this.interactables.push(interactable);
+  }
+
+  private refreshTigorPet() {
+    if (!this.sys.isActive()) return;
+    if (this.tigorInteractable) this.interactables = this.interactables.filter((candidate) => candidate !== this.tigorInteractable);
+    this.tigorInteractable = undefined;
+    this.tigorPet?.destroy(true);
+    this.tigorPet = undefined;
+    this.spawnTigorPet(this.player.x, this.player.y);
   }
 
   private maybeStartWorldEvent() {

@@ -12,6 +12,7 @@ function unlocked(def: MessageDef) {
   if (u.flag && !store.hasFlag(u.flag)) return false;
   if (u.memory && !store.hasMemory(u.memory)) return false;
   if (u.questDone && store.state.quests[u.questDone]?.status !== "done") return false;
+  if (u.questsDone && !u.questsDone.every((id) => store.state.quests[id]?.status === "done")) return false;
   if (u.questActive && store.state.quests[u.questActive]?.status !== "active") return false;
   if (u.relationship && store.getRelationship(u.relationship.npc) < u.relationship.min) return false;
   if (u.location && store.state.currentLocation !== u.location) return false;

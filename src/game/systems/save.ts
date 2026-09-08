@@ -98,6 +98,17 @@ export interface CatProgress {
   adopted: boolean;
 }
 
+export interface TigorProgress {
+  /** Permanently unlocked after Retrieve Tigor reaches the airport reunion. */
+  unlocked: boolean;
+  /** Whether Tigor is waiting in the active home. */
+  atHome: boolean;
+  /** Independent of the human companion slot. */
+  following: boolean;
+  /** 0 setup, 1 vet, 2 UAE forms, 3 all-nighter, 4 airport, 5 complete. */
+  missionChapter: number;
+}
+
 export interface ShoppingRunRecord {
   id: string;
   mallId: "dubai_mall" | "dubai_hills_mall" | "yas_mall";
@@ -163,6 +174,8 @@ export interface GameState {
   dailyFlags: Record<string, boolean>;
   lastPassenger?: string;
   cat: CatProgress;
+  /** Separate from Mishmish/the generic cat system: Tigor is his own pet. */
+  tigor: TigorProgress;
   souvenirs: string[];
   displayedSouvenirs: string[];
   /** Compact result cards only; product rewards live in their normal systems. */
@@ -174,7 +187,7 @@ const SAVE_KEY = "ourlittleworld.save.v3";
 const SAVE_SLOTS_KEY = "ourlittleworld.save-slots.v1";
 const SAVE_SLOTS_BACKUP_KEY = "ourlittleworld.save-slots.backup.v1";
 export const SAVE_SLOT_COUNT = 3;
-export const VERSION = 11;
+export const VERSION = 12;
 
 const STARTER_OUTFITS = ["casual", "cozy", "summer", "sporty", "elegant", "winter"];
 
@@ -242,6 +255,7 @@ export function defaultState(): GameState {
     equippedAccessory: undefined,
     dailyFlags: {},
     cat: { stage: 0, name: "Mishmish", lastSeenDay: 0, adopted: false },
+    tigor: { unlocked: false, atHome: false, following: false, missionChapter: 0 },
     souvenirs: [],
     displayedSouvenirs: [],
     shoppingHistory: [],
@@ -456,6 +470,21 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     lastSeenDay: Number.isFinite(rawCat?.lastSeenDay) ? Math.max(0, Math.floor(Number(rawCat?.lastSeenDay))) : 0,
     adopted: !!rawCat?.adopted || catStage >= 4,
   };
+  const rawTigor = raw.tigor as Partial<TigorProgress> | undefined;
+  const tigor: TigorProgress = {
+    unlocked: !!rawTigor?.unlocked,
+    atHome: !!rawTigor?.unlocked && rawTigor?.atHome !== false,
+    following: !!rawTigor?.unlocked && !!rawTigor?.following,
+    missionChapter: Number.isFinite(rawTigor?.missionChapter)
+      ? Math.min(5, Math.max(0, Math.floor(Number(rawTigor?.missionChapter))))
+      : 0,
+  };
+  if (quests.q_retrieve_tigor?.status === "done") {
+    tigor.unlocked = true;
+    tigor.missionChapter = 5;
+    if (!tigor.following) tigor.atHome = true;
+  }
+  if (tigor.following) tigor.atHome = false;
   const souvenirs = Array.isArray(raw.souvenirs) ? uniq(raw.souvenirs) : [];
   const displayedSouvenirs = Array.isArray(raw.displayedSouvenirs)
     ? uniq(raw.displayedSouvenirs).filter((id) => souvenirs.includes(id)).slice(0, 5)
@@ -581,6 +610,7 @@ export function normalizeState(raw: Partial<GameState> | null | undefined): Game
     dailyFlags: raw.dailyFlags && typeof raw.dailyFlags === "object" ? { ...raw.dailyFlags } : {},
     lastPassenger: typeof raw.lastPassenger === "string" ? raw.lastPassenger : undefined,
     cat,
+    tigor,
     souvenirs,
     displayedSouvenirs,
     shoppingHistory,

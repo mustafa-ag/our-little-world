@@ -13,7 +13,7 @@ import { KEEPSAKES } from "../data/relationshipMilestones";
 import { SECRETS } from "../data/secrets";
 import { QUESTS } from "../data/quests";
 import { store } from "../systems/store";
-import { activateFromMessage as startQuest } from "../systems/quests";
+import { activateFromMessage as startQuest, canStartQuest, prerequisiteHint } from "../systems/quests";
 import { controls, uiEvents } from "../systems/controls";
 import { LIFE_STATS } from "../data/stats";
 import { SOUVENIRS } from "../data/souvenirs";
@@ -23,7 +23,7 @@ import { PROPERTIES } from "../data/properties";
 import { buyProperty, propertyStatus, setPrimaryHome, visitProperty } from "../systems/properties";
 
 const FONT = "monospace";
-export type PhoneTab = "messages" | "camera" | "album" | "stats" | "map" | "contacts" | "car" | "homes" | "notes" | "bag" | "style" | "debug";
+export type PhoneTab = "messages" | "quests" | "camera" | "album" | "stats" | "map" | "contacts" | "car" | "homes" | "notes" | "bag" | "style" | "debug";
 
 export class PhoneOverlay {
   root: Phaser.GameObjects.Container;
@@ -37,6 +37,8 @@ export class PhoneOverlay {
   private selectedChat?: string;
   private chatContactPage = 0;
   private propertyPage = 0;
+  private questSection: "active" | "available" | "completed" = "active";
+  private questPage = 0;
 
   constructor(private scene: Phaser.Scene) {
     this.root = scene.add.container(0, 0).setScrollFactor(0).setDepth(70);
@@ -120,6 +122,7 @@ export class PhoneOverlay {
 
     const tabs: { id: PhoneTab; label: string }[] = [
       { id: "messages", label: "Msgs" },
+      { id: "quests", label: "Quests" },
       { id: "camera", label: "Cam" },
       { id: "album", label: "Album" },
       { id: "stats", label: "Stats" },
@@ -162,6 +165,7 @@ export class PhoneOverlay {
     const innerTop = py + 70 + tabRows * 25;
     const innerH = py + h - 52 - innerTop;
     if (this.tab === "messages") this.drawMessages(px + 16, innerTop, w - 32, innerH);
+    if (this.tab === "quests") this.drawQuests(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "camera") this.drawCamera(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "album") this.drawAlbum(px + 16, innerTop, w - 32, innerH);
     if (this.tab === "stats") this.drawStats(px + 16, innerTop, w - 32, innerH);
@@ -500,6 +504,21 @@ export class PhoneOverlay {
 
   private drawContacts(x: number, y: number, w: number, maxH: number) {
     let yy = y;
+    if (store.state.tigor.unlocked) {
+      const withYou = store.state.tigor.following;
+      this.add(this.scene.add.text(x, yy, "PETS", { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+      yy += 19;
+      this.add(this.scene.add.text(x, yy, `Tigor  ♡  ${withYou ? "Exploring with Juju" : "Waiting at home"}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", resolution: 2 }));
+      const petButton = this.scene.add.text(x + w - 4, yy - 4, withYou ? "Send home" : "Bring Tigor", {
+        fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: withYou ? "#8a7a6a" : "#d28b36",
+        padding: { x: 7, y: 5 }, resolution: 2,
+      }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      petButton.on("pointerdown", () => { store.setTigorFollowing(!withYou); this.rebuild(); });
+      this.add(petButton);
+      yy += 31;
+      this.add(this.scene.add.text(x, yy, "PEOPLE", { fontFamily: FONT, fontSize: "11px", color: "#e46d94", fontStyle: "bold", resolution: 2 }));
+      yy += 19;
+    }
     for (const n of NPCS) {
       if (yy > y + maxH - 34) break;
       const rel = store.getRelationship(n.id);
@@ -529,6 +548,105 @@ export class PhoneOverlay {
       yy += 24;
     }
     this.add(this.scene.add.text(x, yy + 4, "Talk, gift, travel. Stronger bonds unlock outings.", { fontFamily: FONT, fontSize: "10px", color: "#a08a70", wordWrap: { width: w }, resolution: 2 }));
+  }
+
+  private drawQuests(x: number, y: number, w: number, maxH: number) {
+    let yy = y;
+    const replay = store.questReplay;
+    if (replay) {
+      const target = QUESTS.find((quest) => quest.id === replay.questId);
+      this.add(this.scene.add.text(x, yy, `REPLAY MODE · ${target?.title ?? replay.questId}\nNothing here changes your real save.`, {
+        fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#2f6fd0", padding: { x: 7, y: 5 },
+        fixedWidth: w - 96, wordWrap: { width: w - 112 }, resolution: 2,
+      }));
+      const exit = this.scene.add.text(x + w, yy, "EXIT\nREPLAY", {
+        fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: "#b34b62", padding: { x: 8, y: 7 }, align: "center", resolution: 2,
+      }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      exit.on("pointerdown", () => { this.close(); store.exitQuestReplay(false); });
+      this.add(exit);
+      yy += 47;
+    }
+
+    const sections: Array<{ id: "active" | "available" | "completed"; label: string }> = [
+      { id: "active", label: "ACTIVE" }, { id: "available", label: "AVAILABLE" }, { id: "completed", label: "COMPLETED" },
+    ];
+    sections.forEach((section, index) => {
+      const selected = section.id === this.questSection;
+      const tab = this.scene.add.text(x + index * (w / 3), yy, section.label, {
+        fontFamily: FONT, fontSize: "8px", color: selected ? "#fff" : "#3a2b3a", backgroundColor: selected ? "#e46d94" : "#eee5da",
+        padding: { x: 3, y: 5 }, fixedWidth: w / 3 - 3, align: "center", resolution: 2,
+      }).setInteractive({ useHandCursor: true });
+      tab.on("pointerdown", () => { this.questSection = section.id; this.questPage = 0; this.rebuild(); });
+      this.add(tab);
+    });
+    yy += 26;
+
+    const list = QUESTS.filter((quest) => {
+      const status = store.state.quests[quest.id]?.status ?? "available";
+      return this.questSection === "completed" ? status === "done" : this.questSection === "active" ? status === "active" : status === "available";
+    });
+    const compactCards = maxH < 230;
+    const cardH = compactCards ? 45 : 76;
+    const pageSize = Math.max(1, Math.min(3, Math.floor((y + maxH - yy - 26) / cardH)));
+    const pages = Math.max(1, Math.ceil(list.length / pageSize));
+    this.questPage = Math.min(this.questPage, pages - 1);
+    const shown = list.slice(this.questPage * pageSize, (this.questPage + 1) * pageSize);
+    if (!shown.length) {
+      this.add(this.scene.add.text(x, yy + 14, this.questSection === "active" ? "No active quests. Pick an adventure from Available." : "Nothing here yet.", {
+        fontFamily: FONT, fontSize: "11px", color: "#7a6a5a", wordWrap: { width: w }, resolution: 2,
+      }));
+    }
+    for (const quest of shown) {
+      const progress = store.state.quests[quest.id];
+      const isReady = canStartQuest(quest.id);
+      const active = progress?.status === "active";
+      const step = active ? quest.steps[progress.step] : undefined;
+      const line = active ? step?.hint ?? "Ready" : this.questSection === "available" ? prerequisiteHint(quest) : quest.complete;
+      const card = this.scene.add.text(x, yy, `${quest.title}\n${line}`, {
+        fontFamily: FONT, fontSize: compactCards ? "8px" : "9px", color: "#3a2b3a", fontStyle: "bold", backgroundColor: "#f1e8dc", padding: { x: 7, y: compactCards ? 4 : 6 },
+        fixedWidth: w - 91, fixedHeight: cardH - (compactCards ? 4 : 7), wordWrap: { width: w - 108 }, resolution: 2,
+      });
+      this.add(card);
+      const actionLabel = active && quest.id === "q_retrieve_tigor" ? "PLAY" : this.questSection === "available" ? (isReady ? "START" : "LOCKED") : this.questSection === "completed" ? "REPLAY" : "ACTIVE";
+      const enabled = (active && quest.id === "q_retrieve_tigor") || (this.questSection === "available" && isReady) || (this.questSection === "completed" && !replay);
+      const action = this.scene.add.text(x + w, yy + 8, actionLabel, {
+        fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: enabled ? "#2f6fd0" : "#8a7a6a", padding: { x: 8, y: compactCards ? 7 : 10 },
+        fixedWidth: 82, fixedHeight: compactCards ? 35 : undefined, align: "center", resolution: 2,
+      }).setOrigin(1, 0);
+      if (enabled) {
+        action.setInteractive({ useHandCursor: true });
+        action.on("pointerdown", () => {
+          if (active && quest.id === "q_retrieve_tigor") this.launchQuestScene(quest.id);
+          else if (this.questSection === "available") { startQuest(quest.id); this.rebuild(); }
+          else if (this.questSection === "completed" && store.beginQuestReplay(quest.id, this.activeGameplaySceneKey())) this.launchQuestScene(quest.id);
+        });
+      }
+      this.add(action);
+      yy += cardH;
+    }
+    if (pages > 1) {
+      const pager = this.scene.add.text(x + w / 2, y + maxH - 20, `‹  ${this.questPage + 1}/${pages}  ›`, {
+        fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 12, y: 4 }, resolution: 2,
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      pager.on("pointerdown", () => { this.questPage = (this.questPage + 1) % pages; this.rebuild(); });
+      this.add(pager);
+    }
+  }
+
+  private activeGameplaySceneKey() {
+    return this.scene.scene.manager.getScenes(true).map((active) => active.scene.key).find((key) => key !== SceneKeys.UI);
+  }
+
+  private launchQuestScene(questId: string) {
+    this.close();
+    const active = this.scene.scene.manager.getScenes(true).find((candidate) => candidate.scene.key !== SceneKeys.UI);
+    if (!active) return;
+    if (questId === "q_retrieve_tigor") {
+      active.scene.start(SceneKeys.TigorMission);
+      return;
+    }
+    active.scene.start(SceneKeys.World, { locationId: store.state.currentLocation, driving: store.state.inJeep });
+    store.toast("Replay ready · follow the quest card", "#8ecae6");
   }
 
   private drawNotes(x: number, y: number, w: number, maxH: number) {

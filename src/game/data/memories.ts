@@ -16,6 +16,7 @@ export interface MemoryDef {
 }
 
 export const MEMORIES: MemoryDef[] = [
+  { id: "mem_tigor_home", title: "Retrieve Tigor", description: "Two governments, one flight, a flooded arrivals hall, and Tigor finally home in Abu Dhabi.", cityId: "abudhabi", locationId: "abudhabi_yas", npcs: ["chloe", "moomoo", "mama", "baba"], photo: true, category: "family", caption: "The smallest international arrival.", sticker: "🐾", spread: true },
   { id: "mem_romance_us", title: "Us", description: "Two coffees, phones face-down, one crooked photograph.", cityId: "dubai", locationId: "dubai_oasis", npcs: ["moomoo"], photo: true, category: "friends", caption: "The ordinary magic.", sticker: "♡", spread: true },
   { id: "mem_proposal", title: "One Question", description: "He forgot half the speech. She said yes before he could worry about it.", cityId: "dubai", locationId: "dubai_downtown", npcs: ["moomoo"], photo: true, category: "friends", caption: "Engaged under the city lights.", sticker: "◇", spread: true },
   { id: "mem_wedding", title: "Our Desert Wedding", description: "Three looks, two rings, one friendly Dune Puff, forever.", cityId: "abudhabi", locationId: "abudhabi_yas", npcs: ["moomoo", "mama", "baba", "fadwa", "nour", "jad", "shan"], photo: true, category: "family", caption: "Their bigger little life begins.", sticker: "♥", spread: true },

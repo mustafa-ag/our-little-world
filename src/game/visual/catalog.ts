@@ -71,7 +71,7 @@ const legacyBuildingKeys = ["b_adnoc", "b_cafe", "b_cream_comm", "b_dubai_hills_
 const legacyInteriorKeys = ["f_bed", "f_bookshelf", "f_chair", "f_desk", "f_fridge", "f_lamp", "f_plant", "f_rug", "f_sofa", "f_table", "f_tv"];
 const legacyVehicleKeys = ["v_car_red", "v_car_blue", "v_jeep_blue"];
 const legacyUiKeys = ["ui_btn", "ui_coin", "ui_heart", "ui_joy_base", "ui_joy_thumb", "ui_phone", "ui_star", "i_baba_card", "i_jewelry", "i_bangle"];
-const legacyPropKeys = ["o_bench", "o_bin", "o_bollard", "o_bus_red", "o_bush", "o_cab", "o_cat", "o_fence_h", "o_fence_v", "o_ferrari", "o_flower_pink", "o_flower_yellow", "o_foodtruck", "o_fountain", "o_lamp", "o_lamp_ldn", "o_note", "o_palm", "o_phonebox", "o_pine", "o_planter", "o_portal", "o_postcard", "o_railing", "o_rock", "o_shadow", "o_sign", "o_tree", "o_well"];
+const legacyPropKeys = ["o_bench", "o_bin", "o_bollard", "o_bus_red", "o_bush", "o_cab", "o_cat", "o_tigor", "o_fence_h", "o_fence_v", "o_ferrari", "o_flower_pink", "o_flower_yellow", "o_foodtruck", "o_fountain", "o_lamp", "o_lamp_ldn", "o_note", "o_palm", "o_phonebox", "o_pine", "o_planter", "o_portal", "o_postcard", "o_railing", "o_rock", "o_shadow", "o_sign", "o_tree", "o_well"];
 
 /**
  * The only source of truth for logical gameplay visual keys and their render metadata.

@@ -47,7 +47,7 @@ export function currentStep(id: string) {
   return progress && def ? def.steps[progress.step] : undefined;
 }
 
-function prerequisitesMet(def: QuestDef) {
+export function prerequisitesMet(def: QuestDef) {
   if (!(def.requiresQuests ?? []).every((id) => statusOf(id) === "done")) return false;
   if (def.requiresAdnocRank && !adnocRankAtLeast(store.state.adnocRank, def.requiresAdnocRank)) return false;
   if (def.requiresAdnocXp && store.state.adnocXp < def.requiresAdnocXp) return false;
@@ -58,9 +58,21 @@ function prerequisitesMet(def: QuestDef) {
   return true;
 }
 
+export function prerequisiteHint(def: QuestDef) {
+  const missing = (def.requiresQuests ?? []).filter((id) => statusOf(id) !== "done");
+  if (missing.length) return `Finish: ${missing.map((id) => questById(id)?.title ?? id).join(" + ")}`;
+  if (def.requiresAdnocRank && !adnocRankAtLeast(store.state.adnocRank, def.requiresAdnocRank)) return `ADNOC rank required: ${def.requiresAdnocRank.replace(/_/g, " ")}`;
+  if (def.requiresAdnocXp && store.state.adnocXp < def.requiresAdnocXp) return `${def.requiresAdnocXp} ADNOC XP required`;
+  if (def.requiresAdnocWorkdays && store.state.adnocWorkdays < def.requiresAdnocWorkdays) return `${def.requiresAdnocWorkdays} workdays required`;
+  if (def.requiresMinDay && store.state.currentDay < def.requiresMinDay) return `Available on day ${def.requiresMinDay}`;
+  if (def.requiresRelationship && store.getRelationship(def.requiresRelationship.npc) < def.requiresRelationship.min) return `Grow closer to ${def.requiresRelationship.npc}`;
+  if (def.requiresRelationshipStage && store.state.relationshipStage !== def.requiresRelationshipStage) return `Relationship stage required: ${def.requiresRelationshipStage}`;
+  return "Ready to begin";
+}
+
 export function canStartQuest(id: string) {
   const def = questById(id);
-  return !!def && statusOf(id) === "available" && prerequisitesMet(def);
+  return !store.isQuestReplay && !!def && statusOf(id) === "available" && prerequisitesMet(def);
 }
 
 /** Start one known quest explicitly, without accepting a different quest from the same giver. */
@@ -77,9 +89,14 @@ export function startQuest(id: string) {
   return def;
 }
 
+function eligibleQuestDefs() {
+  const replayId = store.questReplay?.questId;
+  return replayId ? QUESTS.filter((def) => def.id === replayId) : QUESTS;
+}
+
 export function activeQuests(): ActiveQuest[] {
   const out: ActiveQuest[] = [];
-  for (const def of QUESTS) {
+  for (const def of eligibleQuestDefs()) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
@@ -112,6 +129,7 @@ function completeQuest(def: QuestDef, p: QuestProgress) {
   store.emit("questCompleted", def);
   store.emit("questUpdated");
   store.save();
+  if (store.questReplay?.questId === def.id) store.finishQuestReplaySoon(def.id === "q_retrieve_tigor" ? 6000 : 100);
 }
 
 function advance(def: QuestDef, p: QuestProgress) {
@@ -136,7 +154,7 @@ function matchTarget(stepTarget: string, target: string) {
 
 // Try to advance any active quest whose current step matches (type,target).
 function tryAdvance(type: StepType, target: string): QuestDef | undefined {
-  for (const def of QUESTS) {
+  for (const def of eligibleQuestDefs()) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
@@ -163,7 +181,7 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
   const result: TalkResult = { lines: [] };
 
   // 1) advance an active talk-step targeting this npc
-  for (const def of QUESTS) {
+  for (const def of eligibleQuestDefs()) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
@@ -181,7 +199,7 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
 
   // 2) Offer one new story only when the player has room to follow it.
   // This keeps conversations warm instead of silently filling the tracker.
-  if (activeQuests().length < MAX_ACTIVE_QUESTS) {
+  if (!store.isQuestReplay && activeQuests().length < MAX_ACTIVE_QUESTS) {
     for (const def of QUESTS) {
       if (def.giver !== npcId) continue;
       if (statusOf(def.id) === "available" && prerequisitesMet(def)) {
@@ -254,16 +272,7 @@ export function onBuyProperty(propertyId: string): QuestDef | undefined {
 }
 
 export function activateFromMessage(questId: string) {
-  const def = questById(questId);
-  if (!def) return;
-  const p = ensure(def.id);
-  if (p.status !== "available") return;
-  p.status = "active";
-  p.step = 0;
-  p.progress = 0;
-  store.emit("questUpdated");
-  store.toast(`New quest: ${def.title}`, "#f4c95d");
-  store.save();
+  return startQuest(questId);
 }
 
 export { questById };

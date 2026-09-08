@@ -7,6 +7,7 @@ export interface MessageUnlock {
   location?: string;
   city?: string;
   questDone?: string;
+  questsDone?: string[];
   questActive?: string;
   relationship?: { npc: string; min: number };
   memory?: string;
@@ -29,6 +30,13 @@ export interface MessageDef {
 }
 
 export const MESSAGES: MessageDef[] = [
+  {
+    id: "msg_tigor_emergency",
+    sender: "chloe",
+    body: "Minor issue: Tigor is still in Oadby. Bigger issue: importing one cat apparently requires defeating two governments. Please help.",
+    questId: "q_retrieve_tigor",
+    unlock: { questsDone: ["q_chloe", "q_baba_card"] },
+  },
   { id: "msg_engaged_moomoo", sender: "moomoo", body: "good morning, fiancée. sorry. needed to use the word immediately.", unlock: { onWake: true, relationshipStage: "engaged", minDay: 6 } },
   { id: "msg_married_moomoo", sender: "moomoo", body: "wife update: coffee is ready. husband update: still very pleased with both words.", unlock: { onWake: true, relationshipStage: "married", minDay: 9 } },
   { id: "msg_married_baba", sender: "baba", body: "Congratulations, my dear. Also please tell Moomoo the receipts are his problem now.", unlock: { relationshipStage: "married", questDone: "q_desert_wedding" } },

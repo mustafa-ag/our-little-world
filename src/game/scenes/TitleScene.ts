@@ -19,6 +19,11 @@ export class TitleScene extends Phaser.Scene {
       const query = new URLSearchParams(window.location.search);
       const life = query.get("debugLife");
       if (life === "wedding") { this.scene.start(SceneKeys.Wedding); return; }
+      if (life === "tigor") {
+        store.state.tigor.missionChapter = Phaser.Math.Clamp(Number(query.get("chapter") ?? 0), 0, 4);
+        this.scene.start(store.state.tigor.missionChapter === 4 ? SceneKeys.TigorAirport : SceneKeys.TigorMission);
+        return;
+      }
       if (life === "romance") { this.scene.start(SceneKeys.Romance, { activity: "romance_proposal" }); return; }
       if (life === "home") { this.scene.start(SceneKeys.House, { propertyId: query.get("property") ?? "starter_yas", title: "BUILD MODE QA" }); return; }
       if (life === "positano" || life === "santorini") { this.scene.start(SceneKeys.World, { locationId: life === "positano" ? "italy_positano" : "greece_santorini", driving: false }); return; }

@@ -254,6 +254,22 @@ export const QUESTS: QuestDef[] = [
     rewardMemory: "mem_chloe_tea",
   },
   {
+    id: "q_retrieve_tigor",
+    title: "Retrieve Tigor",
+    giver: "chloe",
+    requiresQuests: ["q_chloe", "q_baba_card"],
+    intro: "Minor issue: Tigor is in Oadby and needs to become an international cat. Major issue: the paperwork has learned how to fight back.",
+    steps: [
+      { type: "playMinigame", target: "retrieve_tigor_campaign", hint: "Open Phone › Quests and launch the Retrieve Tigor mission" },
+    ],
+    complete: "Tigor is home in Abu Dhabi. The forms are defeated. Chloe is sleeping for approximately a year.",
+    rewardHearts: 12,
+    rewardCoins: 0,
+    rewardNpc: "chloe",
+    rewardRel: 8,
+    rewardMemory: "mem_tigor_home",
+  },
+  {
     id: "q_saadiyat",
     title: "Saadiyat glow",
     giver: "baba",

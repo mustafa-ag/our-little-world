@@ -18,6 +18,8 @@ export const SceneKeys = {
   BabaShopping: "BabaShopping",
   Romance: "Romance",
   Wedding: "Wedding",
+  TigorMission: "TigorMission",
+  TigorAirport: "TigorAirport",
   UI: "UI",
   Title: "Title",
 } as const;
