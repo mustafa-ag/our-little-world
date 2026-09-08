@@ -371,27 +371,27 @@ function buildProps(scene: Phaser.Scene) {
     px(ctx, 2, 10, 2, 3, "#c9a06a");
     px(ctx, 11, 10, 2, 3, "#c9a06a");
   });
-  // Tigor is intentionally his own warm ginger, white-pawed sprite rather
+  // Tigor is intentionally his own dark-grey, white-pawed sprite rather
   // than an alias of the generic Mishmish cat progression.
   createTex(scene, "o_tigor", 20, 16, (ctx) => {
-    px(ctx, 3, 5, 12, 7, "#d68132");
-    px(ctx, 4, 3, 4, 4, "#d68132");
-    px(ctx, 11, 3, 4, 4, "#d68132");
-    px(ctx, 4, 2, 3, 3, "#8a4e26");
-    px(ctx, 12, 2, 3, 3, "#8a4e26");
-    px(ctx, 6, 6, 2, 1, "#315741");
-    px(ctx, 11, 6, 2, 1, "#315741");
-    px(ctx, 8, 8, 3, 2, "#fff2df");
-    px(ctx, 9, 8, 1, 1, "#6b3a2a");
-    px(ctx, 5, 4, 1, 2, "#8a4e26");
-    px(ctx, 9, 4, 1, 2, "#8a4e26");
-    px(ctx, 13, 5, 1, 2, "#8a4e26");
-    px(ctx, 14, 8, 5, 2, "#d68132");
-    px(ctx, 17, 6, 2, 3, "#d68132");
-    px(ctx, 3, 11, 4, 3, "#fff2df");
-    px(ctx, 12, 11, 4, 3, "#fff2df");
-    px(ctx, 4, 14, 3, 1, "#8a4e26");
-    px(ctx, 13, 14, 3, 1, "#8a4e26");
+    px(ctx, 3, 5, 12, 7, "#4b505a");
+    px(ctx, 4, 3, 4, 4, "#4b505a");
+    px(ctx, 11, 3, 4, 4, "#4b505a");
+    px(ctx, 4, 2, 3, 3, "#252932");
+    px(ctx, 12, 2, 3, 3, "#252932");
+    px(ctx, 6, 6, 2, 1, "#70b98c");
+    px(ctx, 11, 6, 2, 1, "#70b98c");
+    px(ctx, 8, 8, 3, 2, "#edf0f4");
+    px(ctx, 9, 8, 1, 1, "#c98fa3");
+    px(ctx, 5, 4, 1, 2, "#252932");
+    px(ctx, 9, 4, 1, 2, "#252932");
+    px(ctx, 13, 5, 1, 2, "#252932");
+    px(ctx, 14, 8, 5, 2, "#4b505a");
+    px(ctx, 17, 6, 2, 3, "#4b505a");
+    px(ctx, 3, 11, 4, 3, "#edf0f4");
+    px(ctx, 12, 11, 4, 3, "#edf0f4");
+    px(ctx, 4, 14, 3, 1, "#252932");
+    px(ctx, 13, 14, 3, 1, "#252932");
   });
   createTex(scene, "o_note", 12, 14, (ctx) => {
     px(ctx, 1, 1, 10, 12, "#fff4e6");
