@@ -668,6 +668,14 @@ export class UIScene extends Phaser.Scene {
       }
       if (!this.gameplayActive() || this.anyModal()) return;
       const { width, height } = this.scale.gameSize;
+      const overButton = [
+        [width - 76, height - 78],
+        [width - 76, height - 168],
+        [width - 164, height - 76],
+        [width - 252, height - 76],
+        [width - 164, height - 168],
+      ].some(([x, y]) => Math.hypot(p.x - x, p.y - y) < 44);
+      if (overButton) return;
       // left ~half, lower ~65% => joystick zone
       if (p.x < width * 0.5 && p.y > height * 0.32 && this.joyPointerId === -1) {
         this.joyPointerId = p.id;
@@ -1300,7 +1308,7 @@ export class UIScene extends Phaser.Scene {
     this.shoppingHudStress?.setPosition(x + 10, y + 8).setText(`BABA STRESS  ${Math.round(spec.stress)}%`);
     this.shoppingHudUltimate?.setPosition(x + 18 + half, y + 8).setText(spec.ultimateActive ? "MOCK LIGHT SPEED" : `MOOMOO RESCUE  ${Math.round(spec.ultimate)}%`);
     const boss = spec.boss ? ` · ${spec.boss}${spec.receipts === undefined ? "" : ` · RECEIPTS ${spec.receipts}`}` : "";
-    this.shoppingHudMeta?.setPosition(x + panelW - 10, y + 43).setText(`${spec.stores}/8 STORES · ${spec.bags} BAGS · ${spec.time}${boss}`);
+    this.shoppingHudMeta?.setPosition(x + panelW - 10, y + 43).setText(`${spec.stores}/${spec.storeTotal ?? 8} STORES · ${spec.bags} BAGS · ${spec.time}${boss}`);
     this.shoppingHud?.setVisible(true);
   }
 
@@ -1438,11 +1446,11 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping) || m.isActive(SceneKeys.Romance) || m.isActive(SceneKeys.Wedding);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Mall) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping) || m.isActive(SceneKeys.Romance) || m.isActive(SceneKeys.Wedding);
   }
   private walkableScene() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Mall);
   }
   private resetOverlays() {
     try {
@@ -1471,6 +1479,8 @@ export class UIScene extends Phaser.Scene {
     controls.locked = false;
     controls.moveX = 0;
     controls.moveY = 0;
+    this.joyPointerId = -1;
+    this.positionJoystick();
   }
 
   private anyModal() {
@@ -1547,7 +1557,7 @@ export class UIScene extends Phaser.Scene {
     this.actionBtn.setDepth(this.miniGameOpen ? 90 : 12);
     (this.actionBtn as ButtonImage).label?.setDepth(this.miniGameOpen ? 91 : 13);
     this.setButtonVisible(this.ultimateBtn, babaShopping && controls.shoppingUltimateReady && !controls.shoppingUltimateActive && !modal);
-    const showJoy = showTouch && this.joyPointerId !== -1;
+    const showJoy = showTouch;
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);
     // map + fit only in walkable scenes (not while driving)

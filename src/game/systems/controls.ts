@@ -52,6 +52,7 @@ export interface ShoppingHudSpec {
   ultimate: number;
   bags: number;
   stores: number;
+  storeTotal?: number;
   time: string;
   boss?: string;
   receipts?: number;

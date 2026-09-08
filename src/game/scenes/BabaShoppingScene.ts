@@ -57,14 +57,24 @@ interface StairZone {
   h: number;
 }
 
+interface StoreGate {
+  storeId: string;
+  y: number;
+  barrier: Phaser.GameObjects.Container;
+  warnedAt: number;
+}
+
 type BabaMode = "none" | "intro" | "fight" | "won" | "avoided";
 
 const WORLD_W = 920;
-const WORLD_H = 3040;
+const WORLD_H = 16580;
 const CORRIDOR_LEFT = 214;
 const CORRIDOR_RIGHT = 706;
-const AUTO_RUN_SPEED = 112;
-const RUNNER_DART_SPEED = 230;
+const AUTO_RUN_SPEED = 92;
+const RUNNER_DART_SPEED = 255;
+const CHECKPOINT_Y = 11390;
+const CHECKOUT_Y = WORLD_H - 72;
+const STORE_GATE_OFFSET = 90;
 const FONT = "monospace";
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
@@ -110,12 +120,17 @@ export class BabaShoppingScene extends Phaser.Scene {
   private hazards: MallHazard[] = [];
   private escalators: EscalatorZone[] = [];
   private stairs: StairZone[] = [];
+  private storeGates: StoreGate[] = [];
   private receiptPool: Phaser.GameObjects.Container[] = [];
   private bossHazardPool: Phaser.GameObjects.Container[] = [];
   private baba?: Phaser.GameObjects.Sprite;
   private moomoo?: Phaser.GameObjects.Sprite;
   private babaMode: BabaMode = "none";
   private bossDefense = 0;
+  private bossDefenseMax = 54;
+  private bossPhase = 1;
+  private bossShieldUntil = 0;
+  private lastBossPlayerHit = 0;
   private receiptAmmo = 0;
   private bossTop = 0;
   private bossBottom = 0;
@@ -162,12 +177,16 @@ export class BabaShoppingScene extends Phaser.Scene {
     this.hazards = [];
     this.escalators = [];
     this.stairs = [];
+    this.storeGates = [];
     this.receiptPool = [];
     this.bossHazardPool = [];
     this.baba = undefined;
     this.moomoo = undefined;
     this.babaMode = "none";
     this.bossDefense = 0;
+    this.bossPhase = 1;
+    this.bossShieldUntil = 0;
+    this.lastBossPlayerHit = 0;
     this.receiptAmmo = 0;
     this.stress = 4;
     this.ultimate = 0;
@@ -195,7 +214,7 @@ export class BabaShoppingScene extends Phaser.Scene {
     this.addStores();
     this.addMallLife();
     const debugStage = import.meta.env.DEV ? Math.max(0, Math.floor(data.debugStage ?? 0)) : 0;
-    const startY = debugStage === 1 ? 330 : debugStage === 2 ? 1160 : debugStage === 3 ? 2380 : debugStage >= 5 ? WORLD_H - 92 : debugStage >= 4 ? 2605 : 126;
+    const startY = debugStage === 1 ? 650 : debugStage === 2 ? 4400 : debugStage === 3 ? CHECKPOINT_Y - 160 : debugStage >= 5 ? WORLD_H - 92 : debugStage >= 4 ? 12120 : 126;
     const startX = debugStage === 1 || debugStage === 2 ? CORRIDOR_LEFT + 24 : WORLD_W / 2;
     this.player = new Player(this, startX, startY, getVisualTexture(this, "char_her"));
     this.player.setDepth(this.player.y + 2);
@@ -204,7 +223,7 @@ export class BabaShoppingScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0, 0.14);
     this.applyCameraZoom();
 
-    this.addInteractable(WORLD_W / 2, WORLD_H - 72, 70, "A · CHECKOUT & EXIT", () => this.finishAtCheckout());
+    this.addInteractable(WORLD_W / 2, CHECKOUT_Y, 70, "A · CHECKOUT & EXIT", () => this.finishAtCheckout());
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("W,A,S,D,SPACE,E,Q,SHIFT") as Record<string, Phaser.Input.Keyboard.Key>;
     uiEvents.on("action", this.handleAction, this);
@@ -212,9 +231,9 @@ export class BabaShoppingScene extends Phaser.Scene {
     this.scale.on("resize", this.applyCameraZoom, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdownShopping, this);
     if (!this.scene.isActive(SceneKeys.UI)) this.scene.launch(SceneKeys.UI);
-    uiEvents.emit("locationTitle", "Baba's Shopping Nightmare", "One card · eight stores · no financial peace");
+    uiEvents.emit("locationTitle", "Baba's Shopping Nightmare", `One card · ${BABA_SHOPPING_STORES.length} mandatory stores · no financial peace`);
 
-    if (debugStage >= 3) this.seedDebugRun(debugStage);
+    if (debugStage >= 2) this.seedDebugRun(debugStage);
     this.startedAt = this.time.now;
     this.lastTimeStress = this.time.now;
     this.emitHud(true);
@@ -222,23 +241,25 @@ export class BabaShoppingScene extends Phaser.Scene {
       debugStage ? `Development preview · act ${debugStage}.` : "One store, Juju. One.",
       debugStage ? "All normal progression rules remain active." : "Juju: Of course, Baba.",
       "BABA STRESS has entered the mall.",
-      data.replay ? "The staff recognize her. This is not reassuring." : "Get four purchases before the Baba checkpoint. Optional stores wait after it.",
+      data.replay ? "The staff recognize her. This is not reassuring." : "Every store stamps the route. No purchase means the next corridor stays closed.",
+      `${BABA_SHOPPING_STORES.length} stops. Four floors. Baba is already checking the card.`,
     ], () => {
-      if (debugStage === 3 && this.babaMode === "none") this.startBabaBattle(2505);
+      if (debugStage === 3 && this.babaMode === "none") this.startBabaBattle(CHECKPOINT_Y + 45);
     }));
   }
 
   private seedDebugRun(stage: number) {
-    const count = stage >= 4 ? 6 : 4;
+    const count = stage >= 5 ? BABA_SHOPPING_STORES.length : stage >= 3 ? 9 : 3;
     for (const def of BABA_SHOPPING_STORES.slice(0, count)) {
       const product = def.products[0];
       this.purchasedStores.add(def.id);
       this.purchases.push({ store: def, product });
       this.storeMarks.get(def.id)?.setText("✓");
+      this.storeGates.find((gate) => gate.storeId === def.id)?.barrier.setVisible(false);
       this.spawnBag(def);
     }
     this.stress = stage >= 4 ? 88 : 82;
-    this.ultimate = count * 16;
+    this.ultimate = Math.min(100, count * 16);
     if (stage >= 4) {
       this.babaMode = "won";
       this.checkpointResolved = true;
@@ -260,10 +281,10 @@ export class BabaShoppingScene extends Phaser.Scene {
     const background = this.add.graphics().setDepth(0);
     background.fillStyle(0x17131c, 1).fillRect(0, 0, WORLD_W, WORLD_H);
     const zones = [
-      { y: 35, h: 830, floor: 0xf3eadb, edge: 0xd6ae78, name: "LEVEL 1 · THE SENSIBLE BEGINNING" },
-      { y: 1040, h: 680, floor: 0xe9e2ed, edge: 0x9c7cb3, name: "LEVEL 2 · RECEIPTS GET SERIOUS" },
-      { y: 1875, h: 570, floor: 0xe0ebea, edge: 0x6faaa2, name: "LEVEL 3 · BAG CHAOS" },
-      { y: 2520, h: 500, floor: 0xf2e5d8, edge: 0xc98255, name: "LEVEL 4 · FINAL SPRINT" },
+      { y: 35, h: 3620, floor: 0xf3eadb, edge: 0xd6ae78, name: "LEVEL 1 · THE SENSIBLE BEGINNING" },
+      { y: 3840, h: 3540, floor: 0xe9e2ed, edge: 0x9c7cb3, name: "LEVEL 2 · RECEIPTS GET SERIOUS" },
+      { y: 7580, h: 3500, floor: 0xe0ebea, edge: 0x6faaa2, name: "LEVEL 3 · BAG CHAOS" },
+      { y: 11720, h: 4815, floor: 0xf2e5d8, edge: 0xc98255, name: "LEVEL 4 · FINAL SPRINT" },
     ];
     for (const zone of zones) {
       background.fillStyle(zone.floor, 1).fillRoundedRect(18, zone.y, WORLD_W - 36, zone.h, 26);
@@ -283,19 +304,20 @@ export class BabaShoppingScene extends Phaser.Scene {
       }
     }
 
-    this.drawConnector(865, "ESCALATOR TO LEVEL 2", 1);
-    this.drawConnector(1720, "ATRIUM · ESCALATOR / STAIRS", 1);
-    background.fillStyle(0x2b2233, 1).fillRoundedRect(CORRIDOR_LEFT + 12, 2445, CORRIDOR_RIGHT - CORRIDOR_LEFT - 24, 70, 16);
-    background.lineStyle(4, 0xf4c95d, 1).strokeRoundedRect(CORRIDOR_LEFT + 12, 2445, CORRIDOR_RIGHT - CORRIDOR_LEFT - 24, 70, 16);
-    this.add.text(WORLD_W / 2, 2465, "BABA CHECKPOINT", { fontFamily: FONT, fontSize: "19px", color: "#ffe08a", fontStyle: "bold", resolution: 2 }).setOrigin(0.5).setDepth(2470);
-    this.add.text(WORLD_W / 2, 2491, "MINIMUM FOUR PURCHASES · EMOTIONAL RECEIPTS READY", { fontFamily: FONT, fontSize: "9px", color: "#fff4e6", resolution: 2 }).setOrigin(0.5).setDepth(2470);
+    this.drawConnector(3660, "ESCALATOR TO LEVEL 2", 1);
+    this.drawConnector(7390, "ATRIUM · ESCALATOR / STAIRS", 1);
+    this.drawConnector(11090, "FINAL ESCALATOR · BABA IS WAITING", 1);
+    background.fillStyle(0x2b2233, 1).fillRoundedRect(CORRIDOR_LEFT + 12, CHECKPOINT_Y, CORRIDOR_RIGHT - CORRIDOR_LEFT - 24, 92, 16);
+    background.lineStyle(4, 0xf4c95d, 1).strokeRoundedRect(CORRIDOR_LEFT + 12, CHECKPOINT_Y, CORRIDOR_RIGHT - CORRIDOR_LEFT - 24, 92, 16);
+    this.add.text(WORLD_W / 2, CHECKPOINT_Y + 25, "BABA CHECKPOINT", { fontFamily: FONT, fontSize: "19px", color: "#ffe08a", fontStyle: "bold", resolution: 2 }).setOrigin(0.5).setDepth(CHECKPOINT_Y + 100);
+    this.add.text(WORLD_W / 2, CHECKPOINT_Y + 57, "NINE RECEIPTS · THREE BATTLE PHASES · NO ESCAPE", { fontFamily: FONT, fontSize: "9px", color: "#fff4e6", resolution: 2 }).setOrigin(0.5).setDepth(CHECKPOINT_Y + 100);
 
     background.fillStyle(0x3a2b3a, 1).fillRoundedRect(WORLD_W / 2 - 150, WORLD_H - 126, 300, 92, 18);
     background.lineStyle(5, 0x7be0a3, 1).strokeRoundedRect(WORLD_W / 2 - 150, WORLD_H - 126, 300, 92, 18);
     this.add.text(WORLD_W / 2, WORLD_H - 103, "CHECKOUT / ESCAPE", { fontFamily: FONT, fontSize: "19px", color: "#fff", fontStyle: "bold", resolution: 2 }).setOrigin(0.5).setDepth(WORLD_H - 90);
     this.add.text(WORLD_W / 2, WORLD_H - 76, "Receipts printed. Baba notified.", { fontFamily: FONT, fontSize: "10px", color: "#7be0a3", resolution: 2 }).setOrigin(0.5).setDepth(WORLD_H - 90);
 
-    for (const [x, y, text] of [[WORLD_W / 2, 235, "← STORES · MAIN WALKWAY · STORES →"], [WORLD_W / 2, 1090, "JEWELRY  ←   DIRECTORY   →  BEAUTY"], [WORLD_W / 2, 1930, "BAGS THIS WAY · REGRETS EVERYWHERE"], [WORLD_W / 2, 2570, "ULTIMATE BONUS FLOOR"]] as [number, number, string][]) {
+    for (const [x, y, text] of [[WORLD_W / 2, 235, "← STORES · MAIN WALKWAY · STORES →"], [WORLD_W / 2, 4010, "JEWELRY  ←   DIRECTORY   →  BEAUTY"], [WORLD_W / 2, 7750, "BAGS THIS WAY · REGRETS EVERYWHERE"], [WORLD_W / 2, 11900, "ULTIMATE BONUS FLOOR"]] as [number, number, string][]) {
       this.add.text(x, y, text, { fontFamily: FONT, fontSize: "10px", color: "#fff", backgroundColor: "#6f6274", padding: { x: 8, y: 4 }, resolution: 2 }).setOrigin(0.5).setDepth(y + 1);
     }
   }
@@ -320,7 +342,26 @@ export class BabaShoppingScene extends Phaser.Scene {
   }
 
   private addStores() {
-    for (const def of BABA_SHOPPING_STORES) this.drawStore(def);
+    for (const def of BABA_SHOPPING_STORES) {
+      this.drawStore(def);
+      this.drawStoreGate(def);
+    }
+  }
+
+  private drawStoreGate(def: ShoppingStoreDef) {
+    const y = def.y + STORE_GATE_OFFSET;
+    const rail = this.add.rectangle(0, 0, CORRIDOR_RIGHT - CORRIDOR_LEFT - 14, 9, def.color, 0.92).setStrokeStyle(2, 0xffffff, 0.8);
+    const lights = this.add.text(0, 0, "✦   ✦   ✦   ✦   ✦", { fontFamily: FONT, fontSize: "10px", color: "#fff", resolution: 2 }).setOrigin(0.5);
+    const label = this.add.text(0, -19, `STOP ${this.storeGates.length + 1}/${BABA_SHOPPING_STORES.length} · ENTER ${def.name}`, { fontFamily: FONT, fontSize: "9px", color: "#3a2b3a", backgroundColor: "#fff4e6", padding: { x: 7, y: 3 }, resolution: 2 }).setOrigin(0.5);
+    const barrier = this.add.container(WORLD_W / 2, y, [rail, lights, label]).setDepth(y + 80);
+    this.tweens.add({ targets: lights, alpha: 0.3, duration: 480, yoyo: true, repeat: -1 });
+    this.storeGates.push({ storeId: def.id, y, barrier, warnedAt: 0 });
+  }
+
+  private unlockStoreGate(storeId: string) {
+    const gate = this.storeGates.find((entry) => entry.storeId === storeId);
+    if (!gate?.barrier.visible) return;
+    this.tweens.add({ targets: gate.barrier, scaleX: 0.08, alpha: 0, duration: 520, ease: "Back.in", onComplete: () => gate.barrier.setVisible(false) });
   }
 
   private drawStore(def: ShoppingStoreDef) {
@@ -352,26 +393,28 @@ export class BabaShoppingScene extends Phaser.Scene {
 
   private addMallLife() {
     const decor = this.add.graphics();
-    for (const y of [470, 760, 1280, 1510, 2140, 2300, 2730]) {
+    for (let y = 430; y < WORLD_H - 300; y += 690) {
       const left = y % 2 === 0;
       const x = left ? 260 : 660;
       const plant = this.add.image(x, y, getVisualTexture(this, "o_planter")).setScale(1.3).setDepth(y + 24);
       this.tweens.add({ targets: plant, angle: left ? 1.5 : -1.5, duration: 1600, yoyo: true, repeat: -1, ease: "Sine.inOut" });
       decor.fillStyle(0x3a2b3a, 0.55).fillEllipse(x, y + 9, 40, 12);
     }
-    for (const y of [520, 1330, 2210]) {
+    for (let y = 1120; y < WORLD_H - 500; y += 2050) {
       this.add.image(WORLD_W / 2 + (y % 3 ? 110 : -110), y, getVisualTexture(this, "o_bench")).setScale(1.15).setDepth(y + 4);
     }
-    for (const y of [790, 1545, 2250]) this.drawKiosk(y);
+    for (let y = 2450; y < WORLD_H - 700; y += 2600) this.drawKiosk(y);
 
     // Most traffic follows the long vertical promenade lanes from the blueprint;
     // a few crossing hazards stop the pattern from becoming mechanically flat.
-    const hazardDefs: Array<[number, number, MallHazard["kind"], number, number]> = [
-      [304, 455, "shopper", 0, 45], [390, 600, "couple", 0, -34], [548, 690, "cart", 0, 58],
-      [630, 780, "crossing", -50, 0], [320, 1210, "cleaner", 0, 42], [465, 1370, "shopper", 0, -31],
-      [610, 1530, "escalator", 0, 47], [365, 1920, "cart", 0, -55], [535, 2150, "couple", 0, 35],
-      [630, 2300, "crossing", -56, 0], [405, 2620, "shopper", 0, 42], [565, 2820, "cleaner", 0, -46],
-    ];
+    const kinds: MallHazard["kind"][] = ["shopper", "couple", "cart", "crossing", "cleaner", "escalator"];
+    const hazardDefs: Array<[number, number, MallHazard["kind"], number, number]> = [];
+    for (let i = 0, y = 470; y < WORLD_H - 260; i += 1, y += 470) {
+      const crossing = i % 5 === 3;
+      const x = crossing ? (i % 2 ? 625 : 295) : 290 + (i % 5) * 82;
+      const speed = 34 + (i % 4) * 8;
+      hazardDefs.push([x, y, kinds[i % kinds.length], crossing ? (i % 2 ? -speed : speed) : 0, crossing ? 0 : (i % 2 ? -speed : speed)]);
+    }
     hazardDefs.forEach(([x, y, kind, vx, vy]) => this.makeHazard(x, y, kind, vx, vy));
   }
 
@@ -457,11 +500,18 @@ export class BabaShoppingScene extends Phaser.Scene {
     this.addUltimate(16);
     this.spawnBag(def);
     this.sparkle(this.player.x, this.player.y - 10, def.id === "cartier" ? "✦" : "$", def.id === "cartier" ? "#ffe08a" : "#7be0a3");
-    this.speech(this.player.x, this.player.y - 30, `CHA-CHING · ${product.name} ✓`, "#ddf4e8");
-    if (def.flirtOnPurchase && !this.lingerieFlirtShown) {
-      this.lingerieFlirtShown = true;
-      this.time.delayedCall(480, () => this.offerFlirtyMoment("lingerie"));
-    }
+    this.afterDialogue(def.name, [
+      `CHA-CHING · ${product.name} ✓`,
+      `The assistant wraps bag ${this.bags.length}/${BABA_SHOPPING_STORES.length}. The handles are already bouncing.`,
+      `BABA STRESS +${product.stress} · route stamp approved.`,
+    ], () => {
+      this.unlockStoreGate(def.id);
+      this.speech(this.player.x, this.player.y - 30, "CORRIDOR OPEN · next store below", "#ddf4e8");
+      if (def.flirtOnPurchase && !this.lingerieFlirtShown) {
+        this.lingerieFlirtShown = true;
+        this.time.delayedCall(500, () => this.offerFlirtyMoment("lingerie"));
+      }
+    });
   }
 
   private spawnBag(def: ShoppingStoreDef) {
@@ -492,14 +542,13 @@ export class BabaShoppingScene extends Phaser.Scene {
         this.speech(this.player.x, this.player.y - 36, tierLine, this.stress >= 75 ? "#ff9ab3" : "#ffe08a");
       }
     }
-    if (this.stress >= 100 && this.babaMode === "none" && this.purchases.length >= 4) this.startBabaBattle(Math.min(2280, this.player.y + 120));
     this.emitHud(true);
   }
 
   private addUltimate(amount: number) {
     const before = this.ultimate;
     this.ultimate = Phaser.Math.Clamp(this.ultimate + amount, 0, 100);
-    if (before < 100 && this.ultimate >= 100 && this.checkpointResolved) this.ultimateReady();
+    if (before < 100 && this.ultimate >= 100 && (this.checkpointResolved || this.babaMode === "fight")) this.ultimateReady();
     this.emitHud(true);
   }
 
@@ -515,7 +564,7 @@ export class BabaShoppingScene extends Phaser.Scene {
     if (!this.moomoo?.active) {
       this.moomoo = this.add.sprite(defSideX(this.player.x), this.player.y + 10, getVisualTexture(this, "char_moomoo"), 0).setOrigin(0.5, 0.85).setScale(1.22).setDepth(this.player.y + 2);
       this.moomoo.play("char_moomoo-idle-down", true);
-      this.tweens.add({ targets: this.moomoo, x: this.player.x + 22, duration: 420, ease: "Back.out" });
+      this.tweens.add({ targets: this.moomoo, x: this.player.x + 32, duration: 900, ease: "Sine.easeOut" });
     }
     uiEvents.emit("choice", {
       kicker: kind === "lingerie" ? "SOFT SECRETS · MOOMOO HAS ARRIVED" : "ESCALATOR LANDING · TINY ROMANCE DELAY",
@@ -536,46 +585,73 @@ export class BabaShoppingScene extends Phaser.Scene {
   private finishFlirtyMoment(choice: string, kind: "first" | "lingerie") {
     this.flirtyMoments += 1;
     this.addUltimate(8);
-    const lines: Record<string, string> = {
-      kiss: "Juju kisses him back. Shopping can wait half a second.",
-      bite: "Moomoo: ...I was trying to discuss the bags.",
-      tease: "Moomoo: I support shopping. From a safe distance.",
-      pull: "Juju pulls him closer. Moomoo forgets the original question.",
+    const lines: Record<string, string[]> = {
+      kiss: ["Moomoo brushes her hair back and kisses her slowly.", "Juju kisses him back. The entire mall politely waits."],
+      bite: ["Juju pulls him close and gives him a tiny playful love bite.", "Moomoo: ...I was trying to discuss the bags."],
+      tease: ["Moomoo kisses her neck while she asks whether he volunteered to carry everything.", "Moomoo: That was a deeply unfair negotiating tactic."],
+      pull: ["Juju pulls him closer. He kisses her cheek, then her neck.", "Moomoo forgets the original question completely."],
     };
-    this.reactionEmoji();
-    this.speech(this.player.x, this.player.y - 36, kind === "lingerie" ? "Moomoo is now extremely invested. 🫪" : lines[choice] ?? "🫪", "#ffd7e6");
+    controls.locked = true;
     if (this.moomoo) {
       this.moomoo.setDepth(this.player.y + 3);
-      this.tweens.add({ targets: this.moomoo, x: defSideX(this.player.x), alpha: 0, duration: 850, delay: 650, onComplete: () => {
-        if (!controls.shoppingUltimateActive) { this.moomoo?.destroy(); this.moomoo = undefined; }
-      } });
+      const closeX = this.player.x + (this.player.flipX ? -10 : 10);
+      this.tweens.add({ targets: this.moomoo, x: closeX, y: this.player.y + (choice === "tease" || choice === "pull" ? 2 : 7), angle: choice === "bite" ? -8 : 5, scale: 1.3, duration: 720, ease: "Sine.easeInOut" });
     }
+    this.tweens.add({ targets: this.player, angle: choice === "bite" ? 5 : -4, duration: 520, yoyo: true, hold: 900, ease: "Sine.easeInOut" });
+    const heartA = this.add.text(this.player.x - 14, this.player.y - 35, "♥", { fontFamily: FONT, fontSize: "15px", color: "#ff5c8a", stroke: "#fff", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 60);
+    const heartB = this.add.text(this.player.x + 19, this.player.y - 27, "♥", { fontFamily: FONT, fontSize: "11px", color: "#ff91b2", stroke: "#fff", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 60);
+    this.tweens.add({ targets: [heartA, heartB], y: "-=12", scale: 1.22, duration: 620, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.time.delayedCall(850, () => {
+      if (!this.sys.isActive()) return;
+      const reaction = this.reactionEmoji(true);
+      const momentLines = lines[choice] ?? ["Moomoo kisses her. Juju has temporarily stopped processing mall directions."];
+      this.afterDialogue(kind === "lingerie" ? "Moomoo · extremely supportive" : "Moomoo", [
+        ...momentLines,
+        "Juju: 🫪",
+        "Tap NEXT when Juju remembers how walking works.",
+      ], () => {
+        reaction.destroy(true);
+        heartA.destroy();
+        heartB.destroy();
+        this.player.setAngle(0);
+        if (this.moomoo && !controls.shoppingUltimateActive) {
+          this.moomoo.play("char_moomoo-walk-side", true).setFlipX(this.moomoo.x < this.player.x);
+          this.tweens.add({ targets: this.moomoo, x: defSideX(this.player.x), alpha: 0, duration: 1600, ease: "Sine.easeIn", onComplete: () => {
+            if (!controls.shoppingUltimateActive) { this.moomoo?.destroy(); this.moomoo = undefined; }
+          } });
+        }
+      });
+    });
   }
 
-  private reactionEmoji() {
+  private reactionEmoji(held = false) {
     const heart = this.add.text(this.player.x + 7, this.player.y - 43, "♥", { fontFamily: FONT, fontSize: "18px", color: "#ff5c8a", stroke: "#fff", strokeThickness: 2, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 50);
     const emoji = this.add.text(this.player.x, this.player.y - 49, "🫪", { fontFamily: EMOJI_FONT, fontSize: "25px", color: "#fff", backgroundColor: "rgba(255,255,255,0.82)", padding: { x: 5, y: 2 }, resolution: 2 }).setOrigin(0.5).setDepth(this.player.y + 51);
-    this.tweens.add({ targets: [heart, emoji], y: "-=18", scale: 1.18, alpha: 0, duration: 1050, ease: "Cubic.out", onComplete: () => { heart.destroy(); emoji.destroy(); } });
+    const bubble = this.add.container(0, 0, [heart, emoji]).setDepth(this.player.y + 52);
+    if (held) this.tweens.add({ targets: bubble, scale: 1.13, duration: 520, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    else this.tweens.add({ targets: bubble, y: "-=18", scale: 1.18, alpha: 0, duration: 1050, ease: "Cubic.out", onComplete: () => bubble.destroy(true) });
+    return bubble;
   }
 
   private tryCheckpoint() {
     if (this.checkpointResolved || this.babaMode !== "none") return;
-    if (this.purchases.length < 4) {
-      this.player.y = Math.min(this.player.y, 2422);
+    const requiredBeforeBaba = BABA_SHOPPING_STORES.filter((def) => def.y < CHECKPOINT_Y).length;
+    if (this.purchases.length < requiredBeforeBaba) {
+      this.player.y = Math.min(this.player.y, CHECKPOINT_Y - 14);
       if (this.time.now - this.checkpointDeniedAt > 1500) {
         this.checkpointDeniedAt = this.time.now;
-        this.speech(this.player.x, this.player.y - 30, `Baba: You crossed three floors for ${this.purchases.length} bags? Go choose something.`, "#ffe08a");
+        this.speech(this.player.x, this.player.y - 30, `Baba: ${this.purchases.length}/${requiredBeforeBaba} receipts. You missed a store. Turn around.`, "#ffe08a");
       }
       return;
     }
-    if (this.stress >= 70) this.startBabaBattle(2505);
+    if (this.stress >= 50) this.startBabaBattle(CHECKPOINT_Y + 45);
     else this.runSensibleCheckpoint();
   }
 
   private runSensibleCheckpoint() {
     if (this.babaMode !== "none") return;
     this.babaMode = "intro";
-    this.baba = this.add.sprite(WORLD_W / 2, 2510, getVisualTexture(this, "char_baba"), 0).setOrigin(0.5, 0.85).setScale(1.25).setDepth(2514);
+    this.baba = this.add.sprite(WORLD_W / 2, CHECKPOINT_Y + 70, getVisualTexture(this, "char_baba"), 0).setOrigin(0.5, 0.85).setScale(1.25).setDepth(CHECKPOINT_Y + 74);
     this.baba.play("char_baba-idle-down", true);
     this.afterDialogue("Baba", ["...that's it?", "Juju: Do you want me to go back?", "Baba: KEEP WALKING."], () => {
       this.babaMode = "avoided";
@@ -589,13 +665,16 @@ export class BabaShoppingScene extends Phaser.Scene {
   private startBabaBattle(atY: number) {
     if (this.babaMode !== "none") return;
     this.babaMode = "intro";
-    this.bossTop = Phaser.Math.Clamp(atY - 110, 1000, WORLD_H - 520);
-    this.bossBottom = this.bossTop + 330;
+    this.bossTop = Phaser.Math.Clamp(atY - 180, 1000, WORLD_H - 720);
+    this.bossBottom = this.bossTop + 510;
     this.player.setPosition(WORLD_W / 2, this.bossTop + 58);
     this.baba = this.add.sprite(WORLD_W / 2, this.bossBottom - 46, getVisualTexture(this, "char_baba"), 0).setOrigin(0.5, 0.85).setScale(1.35).setDepth(this.bossBottom);
     this.baba.play("char_baba-idle-down", true);
-    this.bossDefense = Math.max(4, this.purchases.length);
-    this.receiptAmmo = this.bossDefense;
+    this.bossDefenseMax = 54;
+    this.bossDefense = this.bossDefenseMax;
+    this.bossPhase = 1;
+    this.bossShieldUntil = 0;
+    this.receiptAmmo = Math.max(this.bossDefenseMax, this.purchases.length * 6);
     this.buildBossPools();
     this.cameras.main.zoomTo(Math.max(0.92, this.cameras.main.zoom * 0.9), 350, "Sine.easeOut");
     this.bigMoment("BABA RECEIPT BATTLE", "CRUMPLED RECEIPTS VS BUDGET DEFENSE", "#ff6d91");
@@ -603,10 +682,12 @@ export class BabaShoppingScene extends Phaser.Scene {
       this.purchasedStores.has("cartier") ? "CARTIER??" : "YOU SAID ONE STORE.",
       "Juju: It was basically an investment.",
       "Baba: SHOW ME THE RECEIPTS.",
-      "ACTION · throw receipts. Move to dodge budget warnings.",
+      "THREE ROUNDS · ACTION throws receipts · move to dodge his warnings.",
+      "Use MOOMOO RESCUE during the fight to slow Baba's attacks and throw faster.",
     ], () => {
       this.babaMode = "fight";
       controls.locked = false;
+      if (this.ultimate >= 100) this.ultimateReady();
       this.emitHud(true);
     });
   }
@@ -618,7 +699,7 @@ export class BabaShoppingScene extends Phaser.Scene {
       const receipt = this.add.container(-100, -100, [paper, ink]).setVisible(false).setActive(false).setDepth(9000);
       this.receiptPool.push(receipt);
     }
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 14; i += 1) {
       const bubble = this.add.text(-100, -100, "", { fontFamily: FONT, fontSize: "9px", color: "#fff", align: "center", backgroundColor: i % 2 ? "#d84652" : "#3a2b3a", padding: { x: 7, y: 5 }, resolution: 2 }).setOrigin(0.5).setVisible(false).setActive(false).setDepth(8500);
       const go = this.add.container(-100, -100, [bubble]).setVisible(false).setActive(false).setDepth(8500);
       go.setData("vx", 0).setData("vy", 0);
@@ -627,7 +708,13 @@ export class BabaShoppingScene extends Phaser.Scene {
   }
 
   private throwReceipt() {
-    if (this.babaMode !== "fight" || this.receiptAmmo <= 0 || this.time.now - this.lastReceipt < 260 || !this.baba) return;
+    const cooldown = controls.shoppingUltimateActive ? 420 : 850;
+    if (this.babaMode !== "fight" || this.receiptAmmo <= 0 || this.time.now - this.lastReceipt < cooldown || !this.baba) return;
+    if (this.time.now < this.bossShieldUntil) {
+      this.lastReceipt = this.time.now;
+      this.speech(this.baba.x, this.baba.y - 28, "WALLET SHIELD · DODGE UNTIL IT BREAKS", "#ffe08a");
+      return;
+    }
     const receipt = this.receiptPool.find((entry) => !entry.active);
     if (!receipt) return;
     this.lastReceipt = this.time.now;
@@ -643,25 +730,41 @@ export class BabaShoppingScene extends Phaser.Scene {
       this.cameras.main.shake(70, 0.003);
       this.speech(this.baba?.x ?? tx, (this.baba?.y ?? ty) - 25, BABA_LINES[(this.purchases.length + this.bossDefense) % BABA_LINES.length], "#ffd3d3");
       if (this.bossDefense <= 0) this.finishBabaBattle();
+      else if (this.bossPhase === 1 && this.bossDefense <= 36) this.advanceBossPhase();
+      else if (this.bossPhase === 2 && this.bossDefense <= 18) this.advanceBossPhase();
       this.emitHud(true);
     } });
   }
 
+  private advanceBossPhase() {
+    this.bossPhase += 1;
+    this.bossShieldUntil = this.time.now + 10000;
+    this.lastBossHazard = 0;
+    const titles = ["", "", "PHASE 2 · WALLET SHIELD", "PHASE 3 · BABA HAS THE CALCULATOR"];
+    const subtitles = ["", "", "SURVIVE TEN SECONDS · RECEIPTS BOUNCE", "FASTER WARNINGS · FINAL ARGUMENT"];
+    this.bigMoment(titles[this.bossPhase], subtitles[this.bossPhase], this.bossPhase === 3 ? "#ff426d" : "#ffe08a");
+    this.speech(this.baba?.x ?? WORLD_W / 2, (this.baba?.y ?? this.player.y) - 30, this.bossPhase === 3 ? "I HAVE OPENED THE BANKING APP." : "YOU CANNOT RECEIPT YOUR WAY THROUGH A WALLET SHIELD.", "#ffd3d3");
+  }
+
   private updateBabaBattle(time: number, delta: number) {
     if (this.babaMode !== "fight" || !this.baba) return;
+    if (controls.locked) return;
     this.baba.x = WORLD_W / 2 + Math.sin(time * 0.0022) * 125;
     this.baba.setDepth(this.baba.y + 3);
-    if (time - this.lastBossHazard > 1250) {
+    const phaseInterval = this.bossPhase === 1 ? 1080 : this.bossPhase === 2 ? 760 : 520;
+    if (time - this.lastBossHazard > phaseInterval) {
       this.lastBossHazard = time;
       const hazard = this.bossHazardPool.find((entry) => !entry.active);
       if (hazard) {
         const labels = ["NO MORE\nSHOPPING", "80085", "BUDGET\nWARNING", "CALCULATOR", "WALLET\nSHIELD"];
         (hazard.first as Phaser.GameObjects.Text).setText(labels[(this.bossDefense + this.collisions) % labels.length]);
-        hazard.setActive(true).setVisible(true).setPosition(this.baba.x, this.baba.y - 12);
-        const dx = this.player.x - this.baba.x;
-        const dy = this.player.y - this.baba.y;
+        const sideAttack = this.bossPhase >= 2 && (this.bossDefense + this.collisions) % 3 === 0;
+        hazard.setActive(true).setVisible(true).setPosition(sideAttack ? (this.player.x < WORLD_W / 2 ? CORRIDOR_RIGHT : CORRIDOR_LEFT) : this.baba.x, sideAttack ? this.player.y + Phaser.Math.Between(-90, 90) : this.baba.y - 12);
+        const dx = this.player.x - hazard.x;
+        const dy = this.player.y - hazard.y;
         const length = Math.hypot(dx, dy) || 1;
-        hazard.setData("vx", (dx / length) * 112).setData("vy", (dy / length) * 112);
+        const attackSpeed = this.bossPhase === 1 ? 128 : this.bossPhase === 2 ? 164 : 205;
+        hazard.setData("vx", (dx / length) * attackSpeed).setData("vy", (dy / length) * attackSpeed);
       }
     }
     const speedScale = controls.shoppingUltimateActive ? 0.35 : 1;
@@ -670,12 +773,14 @@ export class BabaShoppingScene extends Phaser.Scene {
       hazard.x += Number(hazard.getData("vx")) * (delta / 1000) * speedScale;
       hazard.y += Number(hazard.getData("vy")) * (delta / 1000) * speedScale;
       hazard.angle += delta * 0.035;
-      if (Phaser.Math.Distance.Between(hazard.x, hazard.y, this.player.x, this.player.y) < 24) {
+      if (Phaser.Math.Distance.Between(hazard.x, hazard.y, this.player.x, this.player.y) < 24 && time - this.lastBossPlayerHit > 650) {
+        this.lastBossPlayerHit = time;
         hazard.setActive(false).setVisible(false);
         this.player.x = Phaser.Math.Clamp(this.player.x + (this.player.x < this.baba.x ? -28 : 28), CORRIDOR_LEFT + 15, CORRIDOR_RIGHT - 15);
         this.bagSwing = 26;
+        this.addStress(1);
         this.cameras.main.shake(90, 0.005);
-        this.speech(this.player.x, this.player.y - 28, "Wallet shield! The bags disagree.", "#ffe08a");
+        this.speech(this.player.x, this.player.y - 28, this.bossPhase === 3 ? "CALCULATOR COMBO! JUJU PLEASE." : "Budget warning! The bags disagree.", "#ffe08a");
       } else if (hazard.y < this.bossTop - 80 || hazard.y > this.bossBottom + 80 || hazard.x < CORRIDOR_LEFT - 40 || hazard.x > CORRIDOR_RIGHT + 40) {
         hazard.setActive(false).setVisible(false);
       }
@@ -698,7 +803,8 @@ export class BabaShoppingScene extends Phaser.Scene {
   }
 
   private activateUltimate() {
-    if (!controls.shoppingUltimateReady || this.ultimateUsed || this.resultsOpen || !this.checkpointResolved || this.babaMode === "fight" || this.babaMode === "intro") return;
+    const allowedNow = this.checkpointResolved || this.babaMode === "fight";
+    if (!controls.shoppingUltimateReady || this.ultimateUsed || this.resultsOpen || !allowedNow || this.babaMode === "intro") return;
     this.ultimateUsed = true;
     controls.shoppingUltimateReady = false;
     controls.shoppingUltimateActive = true;
@@ -826,6 +932,11 @@ export class BabaShoppingScene extends Phaser.Scene {
       this.speech(this.player.x, this.player.y - 28, "Baba checkpoint first. There is no financial escape hatch.", "#ffe08a");
       return;
     }
+    if (this.purchases.length < BABA_SHOPPING_STORES.length) {
+      const missing = BABA_SHOPPING_STORES.find((def) => !this.purchasedStores.has(def.id));
+      this.speech(this.player.x, this.player.y - 28, `${this.purchases.length}/${BABA_SHOPPING_STORES.length} stamps. ${missing?.name ?? "A store"} is still waiting upstairs.`, "#ffe08a");
+      return;
+    }
     this.resultsOpen = true;
     controls.locked = true;
     this.player.move(0, 0);
@@ -836,7 +947,7 @@ export class BabaShoppingScene extends Phaser.Scene {
       kicker: "THE CARD SURVIVED · BABA NEEDS TEA",
       title: "BABA SHOPPING REPORT",
       prompt: [
-        `${this.purchases.length}/8 stores · ${this.bags.length} bags · Baba Stress ${Math.round(this.stress)}%`,
+        `${this.purchases.length}/${BABA_SHOPPING_STORES.length} stores · ${this.bags.length} bags · Baba Stress ${Math.round(this.stress)}%`,
         `Baba battle: ${this.babaMode === "won" ? "WON" : "AVOIDED"} · Pedestrian collisions: ${this.collisions}`,
         `Flirty moments 🫪: ${this.flirtyMoments} · Ultimate: ${this.ultimateUsed ? "MOOMOO BAG RESCUE" : "saved for another day"}`,
         `Shopping time: ${this.formatTime(seconds)}`,
@@ -942,8 +1053,9 @@ export class BabaShoppingScene extends Phaser.Scene {
       bags: this.bags.length,
       stores: this.purchases.length,
       time: this.formatTime(seconds),
-      boss: this.babaMode === "fight" ? `BUDGET DEFENSE ${Math.max(0, this.bossDefense)}` : undefined,
+      boss: this.babaMode === "fight" ? `R${this.bossPhase}/3 BUDGET ${Math.max(0, this.bossDefense)}/${this.bossDefenseMax}${this.time.now < this.bossShieldUntil ? " SHIELD" : ""}` : undefined,
       receipts: this.babaMode === "fight" ? this.receiptAmmo : undefined,
+      storeTotal: BABA_SHOPPING_STORES.length,
       ultimateActive: controls.shoppingUltimateActive,
     });
   }
@@ -996,7 +1108,7 @@ export class BabaShoppingScene extends Phaser.Scene {
     // Juju is always advancing down the promenade. Up is a strong brake/reverse
     // for a missed storefront; Down turns the event into a full sprint.
     let moveY = runnerMode
-      ? (AUTO_RUN_SPEED + vy * 155) * penalty * speedBoost
+      ? (AUTO_RUN_SPEED + vy * 145) * penalty * speedBoost
       : canMove ? vy * this.player.speed * penalty * speedBoost : 0;
     let carriedY = 0;
     for (const escalator of this.escalators) {
@@ -1021,22 +1133,35 @@ export class BabaShoppingScene extends Phaser.Scene {
       this.player.y = Phaser.Math.Clamp(this.player.y, this.bossTop, this.bossBottom);
     }
 
+    if (runnerMode) {
+      const gate = this.storeGates.find((entry) => !this.purchasedStores.has(entry.storeId) && this.player.y >= entry.y - 5);
+      if (gate) {
+        this.player.y = gate.y - 8;
+        const def = BABA_SHOPPING_STORES.find((entry) => entry.id === gate.storeId);
+        if (time - gate.warnedAt > 1500) {
+          gate.warnedAt = time;
+          this.cameras.main.shake(55, 0.0025);
+          this.speech(this.player.x, this.player.y - 27, `STOP REQUIRED · enter ${def?.name ?? "the store"} before moving down`, "#ffe08a");
+        }
+      }
+    }
+
     this.updateHazards(time, delta);
     this.updateBabaBattle(time, delta);
     this.updateUltimate(time);
     this.updateBagVisuals(time);
-    if (!this.firstFlirtShown && this.player.y > 1120 && this.purchases.length >= 2 && this.babaMode === "none") {
+    if (!this.firstFlirtShown && this.player.y > 3950 && this.purchases.length >= 3 && this.babaMode === "none") {
       this.firstFlirtShown = true;
       this.offerFlirtyMoment("first");
     }
-    if (this.player.y > 2415 && !this.checkpointResolved && this.babaMode === "none") this.tryCheckpoint();
-    if (this.player.y > 2445 && !this.checkpointResolved && this.babaMode === "none") this.player.y = 2418;
+    if (this.player.y > CHECKPOINT_Y - 10 && !this.checkpointResolved && this.babaMode === "none") this.tryCheckpoint();
+    if (this.player.y > CHECKPOINT_Y + 8 && !this.checkpointResolved && this.babaMode === "none") this.player.y = CHECKPOINT_Y - 12;
 
     if (time - this.startedAt > 60000 && time - this.lastTimeStress > 30000 && this.stress < 99 && this.babaMode === "none") {
       this.lastTimeStress = time;
       this.addStress(1, "Baba checked the time. This is not a timer. It is judgment.");
     }
-    const act = this.player.y < 850 ? 1 : this.player.y < 1720 ? 2 : this.player.y < 2450 ? 3 : this.player.y < 2870 ? 4 : 5;
+    const act = this.player.y < 3700 ? 1 : this.player.y < 7500 ? 2 : this.player.y < CHECKPOINT_Y ? 3 : this.player.y < 15700 ? 4 : 5;
     if (!this.actShown.has(act)) {
       this.actShown.add(act);
       const titles = ["", "ACT 1 · NORMAL SHOPPING", "ACT 2 · BAG CHAOS", "ACT 3 · BABA", "ACT 4 · MOOMOO", "FINALE · CHECKOUT"];
