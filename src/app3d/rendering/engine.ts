@@ -38,7 +38,7 @@ export function createRenderHost(host: HTMLElement): RenderHost {
     !isMobile,
   );
   // Cap device pixel ratio: retina phones don't need 3x for a stylised scene.
-  engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
+  engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 2));
 
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.66, 0.8, 0.91, 1);

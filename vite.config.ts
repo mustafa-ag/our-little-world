@@ -1,6 +1,23 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import type { GetModuleInfo } from "rollup";
+
+// Is `id` statically reachable from an entry (i.e. not only via dynamic import)?
+// Lazily imported Babylon modules (glTF loader, instrumentation...) must stay in
+// their own async chunks instead of being forced into the eager "babylon" chunk.
+const staticCache = new Map<string, boolean>();
+function isStatic(id: string, getModuleInfo: GetModuleInfo, seen = new Set<string>()): boolean {
+  const hit = staticCache.get(id);
+  if (hit !== undefined) return hit;
+  if (seen.has(id)) return false;
+  seen.add(id);
+  const info = getModuleInfo(id);
+  if (!info) return false;
+  const r = info.isEntry || info.importers.some((p) => isStatic(p, getModuleInfo, seen));
+  staticCache.set(id, r);
+  return r;
+}
 
 export default defineConfig({
   base: "./",
@@ -15,12 +32,12 @@ export default defineConfig({
         legacy: fileURLToPath(new URL("./legacy.html", import.meta.url)),
       },
       output: {
-        manualChunks(id) {
+        manualChunks(id, { getModuleInfo }) {
           // keep Vite's shared runtime helpers (e.g. dynamic-import preload) out of the
           // vendor chunks so the legacy 2D entry never pulls in Babylon and vice versa
           if (id.startsWith("\0vite/") || id.includes("vite/preload-helper")) return "vite-runtime";
-          if (id.includes("node_modules/@babylonjs/")) return "babylon";
           if (id.includes("node_modules/phaser/")) return "phaser";
+          if (id.includes("node_modules/@babylonjs/")) return isStatic(id, getModuleInfo) ? "babylon" : undefined;
         },
       },
     },

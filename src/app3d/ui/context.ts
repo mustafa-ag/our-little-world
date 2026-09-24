@@ -1,6 +1,6 @@
 // Shared state for the overlay modules (which overlay is open, touch mode...).
 import { EventEmitter } from "../../core/events";
-import { controls } from "../../game/systems/controls";
+import { controls, uiEvents } from "../../game/systems/controls";
 import type { Disposer } from "./dom";
 
 export type ModalKind = "shop" | "phone" | "map" | "localMap" | "minigame" | "gift";
@@ -41,8 +41,14 @@ export class UIContext {
     controls.moveY = 0;
   }
 
-  /** Release the lock only when nothing else still needs it. */
+  /**
+   * Release the lock only when nothing else still needs it. Emits "uiClosed"
+   * so the world can ignore the same press (e.g. the touch action that closed
+   * the last dialogue line) instead of re-triggering the NPC/zone.
+   */
   unlockIfIdle() {
-    if (!this.anyModal()) controls.locked = false;
+    if (this.anyModal()) return;
+    controls.locked = false;
+    uiEvents.emit("uiClosed");
   }
 }

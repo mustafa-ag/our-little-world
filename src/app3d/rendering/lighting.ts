@@ -93,7 +93,8 @@ export interface Lighting {
   /** Materials whose emissive turns on in the evening/night (lamps, windows). */
   registerGlow(mat: StandardMaterial, litHex: string, darkHex?: string): void;
   /** Meshes shown only while lamps are lit (evening/night). */
-  registerNightMesh(mesh: AbstractMesh): void;
+  /** Show `mesh` only at night. Returns an unregister function. */
+  registerNightMesh(mesh: AbstractMesh): () => void;
   /** Keep the shadow frustum centred on the player. */
   follow(x: number, z: number): void;
   apply(time?: TimeOfDay): void;
@@ -168,7 +169,8 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
 
   const onTime = (t: TimeOfDay) => apply(t);
   store.on("time", onTime);
-  store.on("changed", () => apply());
+  const onChanged = () => apply();
+  store.on("changed", onChanged);
   apply();
 
   return {
@@ -189,12 +191,18 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     registerNightMesh(mesh) {
       nightMeshes.push(mesh);
       mesh.setEnabled(PRESETS[current].lamps);
+      return () => {
+        const i = nightMeshes.indexOf(mesh);
+        if (i >= 0) nightMeshes.splice(i, 1);
+      };
     },
     follow,
     apply,
     isNight: () => PRESETS[current].lamps,
     dispose() {
       store.off("time", onTime);
+      store.off("changed", onChanged);
+      nightMeshes.length = 0;
       shadows?.dispose();
       sun.dispose();
       hemi.dispose();

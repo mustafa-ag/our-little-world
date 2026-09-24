@@ -3,7 +3,7 @@
 // Babylon. Event names/args match the 2D UIScene contract exactly.
 
 import { TILE } from "../../game/constants";
-import { getLocation, type Cardinal } from "../../game/data/locations";
+import { getLocation, type Cardinal, type LocationDef } from "../../game/data/locations";
 import { NPCS, type NpcDef } from "../../game/data/npcs";
 import { secretsFor } from "../../game/data/secrets";
 import { store } from "../../game/systems/store";
@@ -42,17 +42,28 @@ export class WorldController {
   private timeAcc = 0;
   private arriveAt = 0;
   private now = 0;
-  private def = getLocation(this.locationId);
+  // assigned in the constructor: a field initializer would run before the
+  // parameter properties are set (useDefineForClassFields)
+  private def: LocationDef;
 
   constructor(
     readonly locationId: string,
     private world: WorldData,
     private interaction: InteractionSystem,
     private hooks: WorldViewHooks,
-  ) {}
+  ) {
+    this.def = getLocation(locationId);
+  }
 
   // -------------------------------------------------------------------------
-  setup(nowMs: number) {
+  /**
+   * Gameplay side of arriving (save writes, quests, messages, encounters).
+   * `travelled`: entered via an exit this session; `fresh`: a save that had
+   * not been started before this session (or a New game). Otherwise the save's
+   * currentLocation is only overwritten when it is itself a ported location,
+   * so a started save sitting in a non-ported place is left untouched.
+   */
+  setup(nowMs: number, opts: { travelled?: boolean; fresh?: boolean } = {}) {
     this.now = nowMs;
     this.arriveAt = nowMs + 600;
     controls.locked = false;
@@ -66,7 +77,7 @@ export class WorldController {
     }
 
     const def = this.def;
-    store.setLocation(def.id);
+    if (opts.travelled || opts.fresh || PORTED_LOCATIONS.has(store.state.currentLocation)) store.setLocation(def.id);
     store.unlockLocation(def.cityId);
     store.unlockLocation(def.id);
 
@@ -82,6 +93,7 @@ export class WorldController {
 
     // "openMap" is handled by the UI layer (map panel); the world only emits it.
     uiEvents.on("action", this.tryInteract, this);
+    uiEvents.on("uiClosed", this.onUiClosed, this);
 
     quests.onVisit(def.id);
     quests.onVisit(def.cityId);
@@ -101,6 +113,7 @@ export class WorldController {
 
   dispose() {
     uiEvents.off("action", this.tryInteract, this);
+    uiEvents.off("uiClosed", this.onUiClosed, this);
     this.interaction.clear();
   }
 
@@ -502,11 +515,17 @@ export class WorldController {
   }
 
   // -------------------------------------------------------------------------
+  /** A dialogue/modal just closed: the press that closed it must not also interact. */
+  private onUiClosed() {
+    this.lastInteract = performance.now();
+  }
+
   private tryInteract() {
     if (controls.locked || this.transitioning) return;
-    if (this.now - this.lastInteract < 250) return;
+    const t = performance.now();
+    if (t - this.lastInteract < 250) return;
     if (this.interaction.currentPrompt) {
-      this.lastInteract = this.now;
+      this.lastInteract = t;
       this.interaction.triggerCurrent();
     }
   }

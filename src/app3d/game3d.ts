@@ -44,11 +44,17 @@ interface Loaded {
   cat: PickupView | null;
   effects: ((dt: number) => boolean)[];
   timers: number[];
+  /** Gameplay setup still pending (world pre-built behind the title). */
+  setupPending: boolean;
+  travelled: boolean;
+  unregisterGlow: (() => void) | null;
 }
 
 export interface LoadOptions {
   from?: Cardinal;
   spawn?: { x: number; y: number };
+  /** Build visuals only; gameplay setup waits for `beginSession()`. */
+  deferSetup?: boolean;
 }
 
 export const DEFAULT_LOCATION = "edinburgh_oldtown";
@@ -104,7 +110,7 @@ export class Game3D {
       dressWorld(bctx, built);
       built.placer.flush(this.am);
       const glow = this.am.thinInstances("lamp-glow", built.lamps);
-      if (glow) this.lighting.registerNightMesh(glow);
+      const unregisterGlow = glow ? this.lighting.registerNightMesh(glow) : null;
 
       // spawn (WorldScene.create semantics)
       let spawn = opts.spawn ?? built.world.spawn;
@@ -127,24 +133,8 @@ export class Game3D {
       this.lighting.follow(sp.x, sp.z);
 
       const interaction = new InteractionSystem();
-      const loaded: Loaded = {
-        id,
-        world: built.world,
-        collider,
-        env,
-        built,
-        controller: null as unknown as WorldController,
-        player,
-        playerView,
-        npcs: new Map(),
-        pickups: new Map(),
-        labels: [],
-        cat: null,
-        effects: [],
-        timers: [],
-      };
-      this.loaded = loaded;
 
+      // the hooks only run from setup()/update(), after `loaded` below exists
       const groundY = (x: number, z: number) => env.heightAt(Math.floor(x), Math.floor(-z));
       const controller = new WorldController(id, built.world, interaction, {
         spawnNpc: (ndef: NpcDef, x, z) => loaded.npcs.set(ndef.id, new NpcView(this.kit, ndef, x, z, groundY(x, z))),
@@ -176,8 +166,25 @@ export class Game3D {
           loaded.timers.push(t);
         },
       });
-      loaded.controller = controller;
-      controller.setup(performance.now());
+      const loaded: Loaded = {
+        id,
+        world: built.world,
+        collider,
+        env,
+        built,
+        controller,
+        player,
+        playerView,
+        npcs: new Map(),
+        pickups: new Map(),
+        labels: [],
+        cat: null,
+        effects: [],
+        timers: [],
+        setupPending: true,
+        travelled: !!opts.from,
+        unregisterGlow,
+      };
 
       // building / district labels (building names float above their roof)
       for (const l of built.world.labels) {
@@ -187,9 +194,21 @@ export class Game3D {
         lab.setPosition(p.x, l.big ? 2.4 : b?.kind === "castle" ? 8.5 : b?.tex === "b_tenement" ? 6.6 : 4.6, p.z);
         loaded.labels.push(lab);
       }
+
+      // publish only once everything is built
+      this.loaded = loaded;
+      if (!opts.deferSetup) this.beginSession();
     } finally {
       this.loading = false;
     }
+  }
+
+  /** Run the pending gameplay setup of a pre-built location (save writes, quests, encounters). */
+  beginSession(opts: { fresh?: boolean } = {}) {
+    const l = this.loaded;
+    if (!l || !l.setupPending) return;
+    l.setupPending = false;
+    l.controller.setup(performance.now(), { travelled: l.travelled, fresh: opts.fresh });
   }
 
   unload() {
@@ -197,7 +216,8 @@ export class Game3D {
     if (!l) return;
     this.loaded = null;
     for (const t of l.timers) window.clearTimeout(t);
-    l.controller.dispose();
+    l.unregisterGlow?.();
+    l.controller?.dispose();
     l.player.detach();
     l.playerView.dispose();
     for (const n of l.npcs.values()) n.dispose();
@@ -216,7 +236,7 @@ export class Game3D {
     const s = l.player.state;
     const gy = l.env.heightAt(Math.floor(s.x), Math.floor(-s.z));
     l.playerView.update(dt, s, gy);
-    l.controller.update(dtMs, now);
+    if (!l.setupPending) l.controller.update(dtMs, now); // no rules (time ticks, exits) behind the title
     this.camera.setTarget(s.x, s.z);
     this.camera.update(dt);
     this.lighting.follow(s.x, s.z);

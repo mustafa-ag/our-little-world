@@ -14,16 +14,27 @@ function boot() {
   const ui = mountUI(host);
   const game = new Game3D(host);
 
-  // build the session's location behind the title screen
-  let ready: Promise<void> = game.loadLocation(Game3D.sessionLocation());
+  // build the session's location behind the title screen: visuals only, the
+  // gameplay setup (save writes, quests, messages, encounters) waits for Start
+  let ready: Promise<void> = game.loadLocation(Game3D.sessionLocation(), { deferSetup: true });
   let started = false;
+  // A save that had not been started before this session (or was reset via
+  // "New game", which replaces store.state) is fresh: its first 3D location
+  // becomes currentLocation. Captured now because the title flips
+  // state.started before emitting "startGame".
+  const bootState = store.state;
+  const bootFresh = !store.state.started;
   const start = () => {
     if (started) return;
     started = true;
     void ready.then(() => {
-      // a New game may have reset the save while the world was pre-built
+      // a New game may have reset the save while the world was pre-built; the
+      // save-dependent entities (pickups, secrets, NPCs...) are only created
+      // by the deferred setup, so rebuilding is needed only if the location changed
+      const fresh = bootFresh || store.state !== bootState;
       const want = Game3D.sessionLocation();
-      if (game.current?.id !== want) ready = game.loadLocation(want);
+      if (game.current?.id !== want) ready = game.loadLocation(want, { deferSetup: true }).then(() => game.beginSession({ fresh }));
+      else game.beginSession({ fresh });
     });
   };
   uiEvents.on("startGame", start);
