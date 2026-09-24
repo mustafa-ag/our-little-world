@@ -79,7 +79,7 @@ export class WorldScene extends Phaser.Scene {
     store.unlockLocation(def.cityId);
     store.unlockLocation(def.id);
 
-    const world = generateWorld(this, def);
+    const world = generateWorld(def);
     this.worldW = world.w * TILE;
     this.worldH = world.h * TILE;
 

@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import { EventEmitter } from "../../core/events";
 
 // Shared control state so the on-screen joystick (owned by the UI scene) can
 // drive the player in whichever gameplay scene is active. Keyboard is handled
@@ -10,7 +10,7 @@ export const controls = {
 };
 
 // Global UI event bus (button presses, dialogue requests, menu toggles).
-export const uiEvents = new Phaser.Events.EventEmitter();
+export const uiEvents = new EventEmitter();
 
 export interface MiniGameSpec {
   kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "shopping" | "safe" | "lab" | "pitch";

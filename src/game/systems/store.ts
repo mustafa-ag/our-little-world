@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import { EventEmitter } from "../../core/events";
 import {
   defaultState,
   loadState,
@@ -18,6 +18,10 @@ import { weekdayName } from "../data/schedules";
 
 const TIME_ORDER: TimeOfDay[] = ["morning", "afternoon", "evening", "night"];
 
+function clamp(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v));
+}
+
 function npcName(id: string) {
   return NPCS.find((n) => n.id === id)?.name ?? id;
 }
@@ -25,7 +29,7 @@ function npcName(id: string) {
 // A single shared store for the whole game. Because it's a module-level
 // singleton it survives across scene changes. Emits events so the UI can
 // react (hearts/coins changes, quest updates, toasts...).
-class Store extends Phaser.Events.EventEmitter {
+class Store extends EventEmitter {
   state: GameState = defaultState();
 
   init() {
@@ -270,7 +274,7 @@ class Store extends Phaser.Events.EventEmitter {
   }
 
   setRelationship(npcId: string, value: number) {
-    this.state.relationships[npcId] = Phaser.Math.Clamp(Math.round(value), 0, REL_MAX);
+    this.state.relationships[npcId] = clamp(Math.round(value), 0, REL_MAX);
     this.emit("relationship", npcId, this.state.relationships[npcId]);
     this.save();
     this.refreshOutfitUnlocks();

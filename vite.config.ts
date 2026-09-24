@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -6,6 +7,23 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        legacy: fileURLToPath(new URL("./legacy.html", import.meta.url)),
+      },
+      output: {
+        manualChunks(id) {
+          // keep Vite's shared runtime helpers (e.g. dynamic-import preload) out of the
+          // vendor chunks so the legacy 2D entry never pulls in Babylon and vice versa
+          if (id.startsWith("\0vite/") || id.includes("vite/preload-helper")) return "vite-runtime";
+          if (id.includes("node_modules/@babylonjs/")) return "babylon";
+          if (id.includes("node_modules/phaser/")) return "phaser";
+        },
+      },
+    },
   },
   plugins: [
     VitePWA({
@@ -45,7 +63,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       },
       devOptions: {
         enabled: false,

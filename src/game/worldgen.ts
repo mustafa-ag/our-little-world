@@ -1,5 +1,5 @@
-import Phaser from "phaser";
 import { TILE } from "./constants";
+import { PROP_SIZES } from "./propSizes";
 import type { Cardinal, CityDef, LocationDef, PathSpec, Poi } from "./data/locations";
 import { opposite, getLocation } from "./data/locations";
 import { stroke } from "./data/mapkit";
@@ -57,10 +57,16 @@ export interface WorldData {
   spawn: { x: number; y: number };
 }
 
-function texSize(scene: Phaser.Scene, key: string) {
-  if (!scene.textures.exists(key)) return { w: TILE, h: TILE };
-  const src = scene.textures.get(key).getSourceImage() as { width?: number; height?: number } | undefined;
-  return { w: src?.width || TILE, h: src?.height || TILE };
+export { PROP_SIZES };
+
+/** Pixel size of a generated texture (falls back to one tile, as Phaser did for unknown keys). */
+function texSize(key: string) {
+  const s = PROP_SIZES[key];
+  return { w: s?.w || TILE, h: s?.h || TILE };
+}
+
+function clamp(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v));
 }
 
 function hash(x: number, y: number, seed: number) {
@@ -139,7 +145,7 @@ function proceduralCity(def: LocationDef): CityDef {
 // ---------------------------------------------------------------------------
 // Lay a CityDef (authored or procedural) into concrete WorldData.
 // ---------------------------------------------------------------------------
-function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): WorldData {
+function layoutCity(def: LocationDef, city: CityDef): WorldData {
   const { w, h } = city;
   const seed = seedOf(def.id);
   const ground: string[][] = [];
@@ -279,7 +285,7 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   // ---- helper to place a POI ----
   const placePoi = (p: Poi) => {
     const role = p.role ?? "deco";
-    const { w: pw, h: ph } = texSize(scene, p.tex);
+    const { w: pw, h: ph } = texSize(p.tex);
     const wTiles = Math.max(1, Math.round(pw / TILE));
     const leftTx = p.tx - Math.floor(wTiles / 2);
     const cx = p.tx * TILE + TILE / 2;
@@ -412,8 +418,8 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   const anchored = new Set(npcSpots.map((s) => s.id));
   const rest = NPCS.filter((n) => n.location === def.id && !anchored.has(n.id));
   rest.forEach((n) => {
-    const tx = Phaser.Math.Clamp(n.tx, 3, w - 4);
-    const ty = Phaser.Math.Clamp(n.ty, 3, h - 4);
+    const tx = clamp(n.tx, 3, w - 4);
+    const ty = clamp(n.ty, 3, h - 4);
     if (inB(tx, ty)) blocked[ty][tx] = false;
     npcSpots.push({ id: n.id, x: centerPx(tx), y: (ty + 1) * TILE });
   });
@@ -476,8 +482,8 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   let placed = 0;
   for (let ring = 2; ring < 14 && placed < 8; ring++) {
     for (let a = 0; a < 8 && placed < 8; a++) {
-      const tx = Phaser.Math.Clamp(city.spawn.tx + Math.round(Math.cos((a / 8) * Math.PI * 2) * ring), 2, w - 3);
-      const ty = Phaser.Math.Clamp(city.spawn.ty + Math.round(Math.sin((a / 8) * Math.PI * 2) * ring), 2, h - 3);
+      const tx = clamp(city.spawn.tx + Math.round(Math.cos((a / 8) * Math.PI * 2) * ring), 2, w - 3);
+      const ty = clamp(city.spawn.ty + Math.round(Math.sin((a / 8) * Math.PI * 2) * ring), 2, h - 3);
       if (blocked[ty][tx] || ground[ty][tx] === "t_water" || ground[ty][tx] === city.road) continue;
       const id = `${def.id}_flower_${tx}_${ty}`;
       collectibles.push({ id, tex: placed % 2 ? "o_flower_yellow" : "o_flower_pink", x: centerPx(tx), y: (ty + 1) * TILE, tag: "flower" });
@@ -516,9 +522,9 @@ function layoutCity(scene: Phaser.Scene, def: LocationDef, city: CityDef): World
   };
 }
 
-export function generateWorld(scene: Phaser.Scene, def: LocationDef): WorldData {
+export function generateWorld(def: LocationDef): WorldData {
   const city = def.city ?? proceduralCity(def);
-  return layoutCity(scene, def, city);
+  return layoutCity(def, city);
 }
 
 /** Merge a blocked grid into a small set of rectangles for arcade static bodies. */
