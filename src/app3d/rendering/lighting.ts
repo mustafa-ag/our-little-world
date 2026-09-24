@@ -1,0 +1,203 @@
+// Sky, sun, fog and shadows, driven by store.state.timeOfDay.
+// Night stays cozy and readable (blue-ish ambient, warm lamps), never black.
+
+import type { Scene } from "@babylonjs/core/scene";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Scene as SceneClass } from "@babylonjs/core/scene";
+import { store } from "../../game/systems/store";
+import type { TimeOfDay } from "../../game/systems/save";
+
+interface Preset {
+  sky: string;
+  fog: string;
+  fogDensity: number;
+  sunDir: Vector3;
+  sunColor: string;
+  sunIntensity: number;
+  hemiSky: string;
+  hemiGround: string;
+  hemiIntensity: number;
+  lamps: boolean;
+}
+
+const PRESETS: Record<TimeOfDay, Preset> = {
+  morning: {
+    sky: "#b9d4ea",
+    fog: "#d7e3ec",
+    fogDensity: 0.011,
+    sunDir: new Vector3(-0.72, -0.62, 0.18),
+    sunColor: "#fff1d6",
+    sunIntensity: 1.15,
+    hemiSky: "#cfe0f2",
+    hemiGround: "#a48a6a",
+    hemiIntensity: 0.55,
+    lamps: false,
+  },
+  afternoon: {
+    sky: "#a8cbe8",
+    fog: "#c9dcec",
+    fogDensity: 0.009,
+    sunDir: new Vector3(-0.55, -0.78, 0.12),
+    sunColor: "#fff6e4",
+    sunIntensity: 1.25,
+    hemiSky: "#bfd6ee",
+    hemiGround: "#9c8767",
+    hemiIntensity: 0.55,
+    lamps: false,
+  },
+  evening: {
+    sky: "#e6a98a",
+    fog: "#e9b89c",
+    fogDensity: 0.012,
+    sunDir: new Vector3(0.7, -0.4, 0.3),
+    sunColor: "#ffb476",
+    sunIntensity: 1.0,
+    hemiSky: "#d7a4b3",
+    hemiGround: "#6d5a5e",
+    hemiIntensity: 0.5,
+    lamps: true,
+  },
+  night: {
+    sky: "#2a3a5c",
+    fog: "#33456a",
+    fogDensity: 0.014,
+    sunDir: new Vector3(0.3, -0.8, 0.4),
+    sunColor: "#8ea4d6",
+    sunIntensity: 0.45,
+    hemiSky: "#6d80b2",
+    hemiGround: "#3a3f5a",
+    hemiIntensity: 0.55,
+    lamps: true,
+  },
+};
+
+interface GlowEntry {
+  mat: StandardMaterial;
+  lit: Color3;
+  dark: Color3;
+}
+
+export interface Lighting {
+  hemi: HemisphericLight;
+  sun: DirectionalLight;
+  shadows: ShadowGenerator | null;
+  /** Add a shadow caster (buildings, trees, characters near the camera). */
+  addCaster(mesh: AbstractMesh): void;
+  /** Materials whose emissive turns on in the evening/night (lamps, windows). */
+  registerGlow(mat: StandardMaterial, litHex: string, darkHex?: string): void;
+  /** Meshes shown only while lamps are lit (evening/night). */
+  registerNightMesh(mesh: AbstractMesh): void;
+  /** Keep the shadow frustum centred on the player. */
+  follow(x: number, z: number): void;
+  apply(time?: TimeOfDay): void;
+  isNight(): boolean;
+  dispose(): void;
+}
+
+export function createLighting(scene: Scene, isMobile: boolean): Lighting {
+  const hemi = new HemisphericLight("hemi", new Vector3(0.2, 1, 0.1), scene);
+  const sun = new DirectionalLight("sun", PRESETS.afternoon.sunDir.clone(), scene);
+  sun.position = new Vector3(0, 40, 0);
+  sun.autoUpdateExtends = false;
+  sun.shadowMinZ = 5;
+  sun.shadowMaxZ = 90;
+  const ext = 22;
+  sun.orthoLeft = -ext;
+  sun.orthoRight = ext;
+  sun.orthoTop = ext;
+  sun.orthoBottom = -ext;
+
+  let shadows: ShadowGenerator | null = null;
+  try {
+    shadows = new ShadowGenerator(isMobile ? 1024 : 2048, sun);
+    shadows.usePercentageCloserFiltering = true;
+    shadows.filteringQuality = isMobile ? ShadowGenerator.QUALITY_LOW : ShadowGenerator.QUALITY_MEDIUM;
+    shadows.bias = 0.0015;
+    shadows.normalBias = 0.02;
+    shadows.darkness = 0.45;
+  } catch {
+    shadows = null;
+  }
+
+  scene.fogMode = SceneClass.FOGMODE_EXP2;
+  scene.fogStart = 30;
+  scene.fogEnd = 90;
+
+  const glows: GlowEntry[] = [];
+  const nightMeshes: AbstractMesh[] = [];
+  let current: TimeOfDay = store.state.timeOfDay;
+  let focus = { x: 0, z: 0 };
+
+  const apply = (time: TimeOfDay = store.state.timeOfDay) => {
+    current = time;
+    const p = PRESETS[time] ?? PRESETS.afternoon;
+    scene.clearColor = Color4.FromHexString(p.sky + "ff");
+    scene.fogColor = Color3.FromHexString(p.fog);
+    scene.fogDensity = p.fogDensity;
+    scene.ambientColor = Color3.FromHexString(p.hemiSky).scale(0.25);
+    sun.direction = p.sunDir.clone().normalize();
+    sun.diffuse = Color3.FromHexString(p.sunColor);
+    sun.specular = Color3.Black();
+    sun.intensity = p.sunIntensity;
+    hemi.diffuse = Color3.FromHexString(p.hemiSky);
+    hemi.groundColor = Color3.FromHexString(p.hemiGround);
+    hemi.specular = Color3.Black();
+    hemi.intensity = p.hemiIntensity;
+    if (shadows) shadows.darkness = time === "night" ? 0.7 : time === "evening" ? 0.5 : 0.45;
+    for (const g of glows) {
+      g.mat.unfreeze();
+      g.mat.emissiveColor = p.lamps ? g.lit : g.dark;
+      g.mat.freeze();
+    }
+    for (const m of nightMeshes) m.setEnabled(p.lamps);
+    follow(focus.x, focus.z);
+  };
+
+  const follow = (x: number, z: number) => {
+    focus = { x, z };
+    const d = sun.direction;
+    sun.position.set(x - d.x * 45, -d.y * 45, z - d.z * 45);
+  };
+
+  const onTime = (t: TimeOfDay) => apply(t);
+  store.on("time", onTime);
+  store.on("changed", () => apply());
+  apply();
+
+  return {
+    hemi,
+    sun,
+    shadows,
+    addCaster(mesh) {
+      shadows?.addShadowCaster(mesh, false);
+    },
+    registerGlow(mat, litHex, darkHex = "#000000") {
+      const e = { mat, lit: Color3.FromHexString(litHex), dark: Color3.FromHexString(darkHex) };
+      glows.push(e);
+      const p = PRESETS[current];
+      mat.unfreeze();
+      mat.emissiveColor = p.lamps ? e.lit : e.dark;
+      mat.freeze();
+    },
+    registerNightMesh(mesh) {
+      nightMeshes.push(mesh);
+      mesh.setEnabled(PRESETS[current].lamps);
+    },
+    follow,
+    apply,
+    isNight: () => PRESETS[current].lamps,
+    dispose() {
+      store.off("time", onTime);
+      shadows?.dispose();
+      sun.dispose();
+      hemi.dispose();
+    },
+  };
+}
