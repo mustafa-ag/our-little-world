@@ -1,6 +1,6 @@
-# Run: <python with bpy 4.2> tools/blender/characters/build_characters.py [--only juju|npc] [--preview OUTDIR]
+# Run: <python with bpy 4.2> tools/blender/characters/build_characters.py [--only juju|npc|male] [--preview OUTDIR]
 #   e.g. .../bpy-venv/bin/python tools/blender/characters/build_characters.py
-#   writes public/assets/models/juju.glb and public/assets/models/npc-base.glb (deterministic).
+#   writes public/assets/models/juju.glb and public/assets/models/npc-base.glb + npc-male.glb (deterministic).
 #   --preview OUTDIR also renders Cycles preview PNGs (front / 3-4 / side / back / walk / wave).
 """Our Little World -- storybook characters, modelled + rigged + animated in Blender.
 
@@ -42,11 +42,13 @@ OUT_DIR = os.path.join(REPO, "public", "assets", "models")
 TARGET_HEIGHT = 1.05
 FPS = 24
 # in-place stride of the authored walk, world units per loop at playback rate 1 (see build_walk)
-WALK_STEP = 0.23
+WALK_STEP = 0.27
 # run: stance foot travel per contact and the stance share of a loop (flight in between);
 # loop length (design units) = RUN_REACH / RUN_STANCE, 16 frames per loop
-RUN_REACH = 0.32
-RUN_STANCE = 0.27
+# (a bouncy, light jog: short contacts and a real flight phase so a 0.3-unit leg
+# covers ~0.8 u per step at the player's stroll speed without frantic cadence)
+RUN_REACH = 0.30
+RUN_STANCE = 0.19
 RUN_FRAMES = 16
 
 # ----------------------------------------------------------------------------
@@ -311,6 +313,19 @@ class Design:
         self.knee = Vector((0.056, -0.004, 0.20))
         self.ankle = Vector((0.056, 0.004, 0.062))
         self.toe = Vector((0.056, -0.062, 0.016))
+        if kind == "male":
+            # a boyish build on the same rig: no bust, straighter waist, broader
+            # chest / shoulders, narrower hips
+            ts = {0.40: 0.098, 0.44: 0.094, 0.475: 0.092, 0.505: 0.094, 0.535: 0.099,
+                  0.562: 0.106, 0.588: 0.112, 0.612: 0.115, 0.632: 0.100}
+            self.torso = [(z, ts.get(z, rx), yf if z < 0.53 else min(yf, 0.060), yb, yo)
+                          for (z, rx, yf, yb, yo) in self.torso]
+            self.pelvis = [(z, rx * 0.97 if z > 0.34 else rx, yf, yb, yo) for (z, rx, yf, yb, yo) in self.pelvis]
+            self.thigh_r = 0.056
+            self.shoulder = Vector((0.110, 0.0, 0.606))
+            self.elbow = Vector((0.152, 0.006, 0.478))
+            self.wrist = Vector((0.172, -0.002, 0.367))
+            self.hand_tip = Vector((0.178, -0.010, 0.312))
 
 
 def torso_ring_point(row, th):
@@ -1077,7 +1092,7 @@ def build_clip(D):
 # face texture (numpy SDF painter, 256 px, transparent background)
 # ----------------------------------------------------------------------------
 
-def paint_face(D, size=256, npc=False):
+def paint_face(D, size=256, npc=False, male=False):
     fz0 = D.HC.z - 0.13
     px = FACE_W / size
     ii, jj = np.meshgrid(np.arange(size), np.arange(size))  # jj: rows bottom->top (Blender pixel order)
@@ -1156,7 +1171,7 @@ def paint_face(D, size=256, npc=False):
         over((1, 1, 1), 0.9 * aa(ellipse_sdf(cx + 0.006, ez - 0.0085, 0.0024, 0.0024)))
         # upper lid line with a little flick of lashes at the outer corner
         lid = [(cx - s * ew * 1.02, ez + eh * 0.2)] + [(cx + s * ew * u, ez + eh * 0.72 - 0.004 * u * u + eh * 0.28 * (1 - u * u)) for u in np.linspace(-0.85, 0.95, 9)] + [(cx + s * (ew * 1.25), ez + eh * 0.62)]
-        lash_w = 0.0012 if npc else 0.0019
+        lash_w = (0.0009 if male else 0.0012) if npc else 0.0019
         over((0.12, 0.06, 0.05), aa(stroke_sdf(lid, 0.0008, lash_w)))
         if not npc:
             for k, (dx, dz) in enumerate([(1.3, 0.85), (1.12, 1.05)]):
@@ -1181,7 +1196,7 @@ def paint_face(D, size=256, npc=False):
     zl = np.interp(X, [p[0] for p in lower], [p[1] for p in lower], left=9, right=9)
     lsdf = np.maximum(Z - zu, zl - Z)
     lsdf = np.where(np.abs(X) < 0.0155, lsdf, 1)
-    lip_col = (0.84, 0.42, 0.44) if not npc else (0.78, 0.46, 0.44)
+    lip_col = (0.84, 0.42, 0.44) if not npc else ((0.72, 0.47, 0.42) if male else (0.78, 0.46, 0.44))
     over(lip_col, 0.95 * aa(lsdf * 0.5 + 0.0002))
     # upper lip: thin cupid's bow above the line
     ub = curve((-0.0165, mz + 0.0022), (0.0, mz + 0.0035), (0.0165, mz + 0.0022), 12)
@@ -1700,10 +1715,10 @@ def build_run(P, D, S):
         if stl or str_:
             st_foot = fl if stl else fr
             ts = tl if stl else tr
-            h = math.sqrt(max(0.0, leg_len ** 2 - st_foot.y ** 2)) - 0.012 * math.sin(math.pi * ts)
+            h = math.sqrt(max(0.0, leg_len ** 2 - st_foot.y ** 2)) - 0.016 * math.sin(math.pi * ts)
         else:
             tf = ((ph % 0.5) - RUN_STANCE) / (0.5 - RUN_STANCE)
-            h = math.sqrt(max(0.0, leg_len ** 2 - (RUN_REACH / 2) ** 2)) + 0.022 * math.sin(math.pi * tf)
+            h = math.sqrt(max(0.0, leg_len ** 2 - (RUN_REACH / 2) ** 2)) + 0.034 * math.sin(math.pi * tf)
         hip_z = D.ankle.z + h
         dz = hip_z - D.hip_j.z
         yaw = 7.0 * math.cos(2 * math.pi * ph)
@@ -1799,7 +1814,7 @@ def build_character(kind, tmpdir):
     skin.extend(body)
     objs["skin"] = make_object("skin", skin, "olw_skin")
 
-    rgba = paint_face(D, npc=not juju)
+    rgba = paint_face(D, npc=not juju, male=kind == "male")
     img = face_image(f"{kind}_face", rgba, os.path.join(tmpdir, f"{kind}_face.png"))
     objs["face"] = make_object("face", build_face_decal(D, head_rings), "olw_face", img)
 
@@ -1823,7 +1838,8 @@ def build_character(kind, tmpdir):
         objs["jewelry"] = make_object("jewelry", build_jewelry(D), "olw_accent")
         objs["clip"] = make_object("clip", build_clip(D), "olw_accent")
     else:
-        for style in ("long", "bob", "short", "bun", "ponytail", "curly"):
+        styles = ("short", "curly") if kind == "male" else ("long", "bob", "short", "bun", "ponytail", "curly")
+        for style in styles:
             objs["hair_" + style] = hair_object("hair_" + style, build_hair_npc(D, style))
 
     # uniform scale to the target height (hair top), feet at 0
@@ -1943,12 +1959,12 @@ def render_previews(rig, objs, outdir, prefix, hide=()):
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["juju", "npc"], default=None)
+    ap.add_argument("--only", choices=["juju", "npc", "male"], default=None)
     ap.add_argument("--preview", default=None)
     ap.add_argument("--out", default=OUT_DIR)
     args = ap.parse_args(argv)
     tmpdir = tempfile.mkdtemp(prefix="olw_chars_")
-    for kind, fname in (("juju", "juju.glb"), ("npc", "npc-base.glb")):
+    for kind, fname in (("juju", "juju.glb"), ("npc", "npc-base.glb"), ("male", "npc-male.glb")):
         if args.only and args.only != kind:
             continue
         rig, objs, tris, scale = build_character(kind, tmpdir)
@@ -1961,7 +1977,8 @@ def main():
             if kind == "juju":
                 render_previews(rig, objs, args.preview, kind, hide=("jeans", "cardigan"))
             else:
-                render_previews(rig, objs, args.preview, kind, hide=("jeans", "hair_bob", "hair_short", "hair_bun", "hair_ponytail", "hair_curly"))
+                hide = ("skirt", "legs", "cardigan", "hair_curly") if kind == "male" else ("jeans", "hair_bob", "hair_short", "hair_bun", "hair_ponytail", "hair_curly")
+                render_previews(rig, objs, args.preview, kind, hide=hide)
 
 
 if __name__ == "__main__":

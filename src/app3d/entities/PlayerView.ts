@@ -14,6 +14,7 @@ import { store } from "../../game/systems/store";
 import type { AssetManager, KitContext } from "../assets/AssetManager";
 import { createPlayerRig, type CharacterRig } from "../assets/kit/characters";
 import type { PlayerState } from "../systems/playerController";
+import { DECAL_ALPHA_INDEX } from "../rendering/occlusion";
 
 export function playerColors(): CharColors {
   const o = Outfits[store.state.outfit as keyof typeof Outfits];
@@ -35,6 +36,7 @@ export function createBlobShadow(k: KitContext, d = 0.8): Mesh {
   }
   disc.material = mat;
   disc.isPickable = false;
+  disc.alphaIndex = DECAL_ALPHA_INDEX; // before a faded building's depth twin
   return disc;
 }
 

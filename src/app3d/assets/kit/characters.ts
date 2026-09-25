@@ -27,6 +27,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { CharColors } from "../../../game/palette";
 import { Outfits } from "../../../game/palette";
 import { JUJU_HEIGHT } from "../../world/scale";
+import { DECAL_ALPHA_INDEX } from "../../rendering/occlusion";
 import { type AnimatedInstance, type AssetManager, type HierarchyInstance, type KitContext, remapSlots } from "../AssetManager";
 import { heroCtx } from "../hero/slots";
 import { buildCharacter, rigFromRoot, type CharacterBuild, type CharacterColors, type CharacterOpts, type HairStyle, HAIR_STYLES, retintCharacter, CHAR_HEIGHT as HERO_HEIGHT } from "../hero/character";
@@ -58,15 +59,23 @@ export const HEAD_Y = 0.875;
 
 export const JUJU_KEY = "juju";
 export const NPC_BASE_KEY = "npc-base";
+/** Same rig + clips as npc-base with a boyish build (broader shoulders, no bust) and short / curly hair. */
+export const NPC_MALE_KEY = "npc-male";
+/** People who use the npc-male body (their hair must be "short" or "curly"). */
+const MALE_IDS = new Set(["baba", "moomoo"]);
 const glb = (n: string) => `assets/models/${n}.glb`;
 
 // Authored locomotion (printed by build_characters.py): in-place loops whose
 // stance foot slides back at constant speed, so rate = speed / natural speed
 // keeps the feet planted.
-/** walk: 0.4674 u per 1.0 s loop (two steps). */
-export const WALK_SPEED = 0.4674;
-/** run: 1.2044 u per 0.6667 s loop (two steps with a little flight). */
-export const RUN_SPEED = 1.2044 / 0.6667;
+/** walk: 0.5487 u per 1.0 s loop (two steps); used below ~1.3 u/s (half-pushed joystick). */
+export const WALK_SPEED = 0.5487;
+/**
+ * run: a light, bouncy jog, 1.6043 u per 0.6667 s loop (two steps with a real
+ * flight phase) = 2.41 u/s at rate 1, i.e. exactly the keyboard stroll
+ * (STROLL_SPEED) - ~3 steps/s; the Shift / full-joystick jog plays it at 1.5x.
+ */
+export const RUN_SPEED = 1.6043 / 0.6667;
 
 /** Fallback builder is 1.5 u tall; the world contract says 1.05. */
 const PROC_SCALE = JUJU_HEIGHT / HERO_HEIGHT;
@@ -95,7 +104,7 @@ export interface Appearance {
 
 /** Juju's own look: warm tan skin, very long dark-brown hair (vertex colours add darker roots / chestnut ends). */
 export const JUJU_SKIN = "#d9a27c";
-export const JUJU_HAIR = "#6a4430";
+export const JUJU_HAIR = "#523428";
 
 export interface JujuLook {
   top: string;
@@ -233,7 +242,10 @@ function dress(k: KitContext, ai: AnimatedInstance, a: Appearance) {
     else if (name === "jewelry" || name === "clip") on = !!a.accessories;
     m.setEnabled(on);
     const slot = meta.olwSlot;
-    if (slot === "olw_face") m.material = faceMaterial(k, meta.olwFaceSrc ?? null);
+    if (slot === "olw_face") {
+      m.material = faceMaterial(k, meta.olwFaceSrc ?? null);
+      m.alphaIndex = DECAL_ALPHA_INDEX; // before a faded building's depth twin
+    }
     else if (col[slot]) m.material = k.mats.flat(col[slot]!);
   }
 }
@@ -297,7 +309,7 @@ class ClipMixer {
   update(dt: number, v: number) {
     const k = Math.min(1, dt * 10);
     const loco = smooth(0.06, 0.4, v);
-    const runT = smooth(1.1, 2.3, v);
+    const runT = smooth(0.95, 1.7, v);
     let gw = 0;
     if (this.gestureKind) {
       this.gestureT -= dt;
@@ -330,7 +342,7 @@ function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, 
   return {
     meshes: ai.meshes,
     animate(dt: number, moving: number, speed?: number) {
-      const v = speed ?? moving * 5.6;
+      const v = speed ?? moving * RUN_SPEED;
       mixer.update(Math.min(dt, 0.1), v);
     },
     dress(a: Appearance) {
@@ -514,7 +526,7 @@ export function createCharacter(k: KitContext, colors: CharColors, name = "char"
 export function createNpcRig(k: KitContext, am: AssetManager, id: string, colors: CharColors, name = `npc:${id}`): CharacterRig {
   const opts = styleFor(id);
   let cur = colors;
-  const rig = hybridRig(k, am, NPC_BASE_KEY, name, () => npcAppearance(cur, opts), () => {
+  const rig = hybridRig(k, am, MALE_IDS.has(id) && am.hasAnimated(NPC_MALE_KEY) ? NPC_MALE_KEY : NPC_BASE_KEY, name, () => npcAppearance(cur, opts), () => {
     const b = buildCharacter(heroCtx(k.scene), { name, hair: "long", skirt: true, ...opts });
     for (const m of b.meshes) remapSlots(k, m);
     return { impl: proceduralRig(k, b, colors, () => b.root.dispose(false, true)), node: b.root };
@@ -547,7 +559,7 @@ export function characterAssets(): AssetManager | null {
   return registeredAssets;
 }
 
-/** Register the characters: the skinned GLBs (loading starts now) + the player hero fallback. */
+/** Register the characters: the skinned GLBs (Game3D preloads CHARACTER_KEYS) + the player hero fallback. */
 export function registerCharacters(am: AssetManager) {
   registeredAssets = am;
   am.registerHero("player", (k: KitContext) => {
@@ -557,7 +569,8 @@ export function registerCharacters(am: AssetManager) {
   });
   am.registerAnimated(JUJU_KEY, glb("juju"));
   am.registerAnimated(NPC_BASE_KEY, glb("npc-base"));
-  void am.preloadAnimated([JUJU_KEY, NPC_BASE_KEY]).then((fell) => {
-    if (fell.length) console.info(`characters using procedural fallback: ${fell.join(", ")}`);
-  });
+  am.registerAnimated(NPC_MALE_KEY, glb("npc-male"));
 }
+
+/** The skinned character GLBs Game3D waits for (behind the title) before the world appears. */
+export const CHARACTER_KEYS = [JUJU_KEY, NPC_BASE_KEY, NPC_MALE_KEY];

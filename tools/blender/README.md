@@ -14,6 +14,7 @@ tools/blender/
   assets/props/        street furniture          (E1)
   assets/nature/       trees, bushes, flowers    (E2)
   assets/vehicles/     car                       (E2)
+  characters/          juju.glb, npc-base.glb, npc-male.glb (rigged + animated; run directly or via build.mjs)
 ```
 
 ## Setup
@@ -77,10 +78,12 @@ points), `blob` (lumpy foliage/ivy/moss mass), `mesh` (raw verts/faces),
 COLOR_0: per-face noise (`vary`, `hue`), AO darkening near the ground
 (`ao_height`, `ao_min`), convex-edge highlight and concave cavity darkening,
 lighter tops / darker undersides. `color_fn(pos, normal, rng)` per part for
-gradients (moss on eaves…). For the runtime-textured slots (`olw_stone`,
-`olw_roof_tile`, `olw_slate`, `olw_wood`) COLOR_0 is stored relative to the
-slot's runtime texture tint (the runtime multiplies); all other slots store the
-absolute colour (runtime material = white x vertex colour).
+gradients (moss on eaves…). COLOR_0 is always the **absolute** colour. The
+runtime-textured slots (`olw_stone`, `olw_stone_dark`, `olw_roof_tile`,
+`olw_slate`, `olw_wood`, `olw_wood_dark`) are exported as `<slot>_abs`
+materials: the game multiplies COLOR_0 by a hue-neutral detail texture painted
+at `DETAIL_HEX` (#e8e8e8), so their COLOR_0 is stored ÷ 0.91 (`DETAIL_TINT`).
+All other slots are white × COLOR_0.
 
 **Material slots:** `olw_stone olw_stone_dark olw_roof_tile olw_slate olw_wood
 olw_wood_dark olw_paint olw_metal olw_glass olw_glass_emissive olw_awning

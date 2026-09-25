@@ -22,7 +22,7 @@ import * as architecture from "./assets/kit/architecture";
 import { registerProps } from "./assets/kit/props";
 import { registerFoliage } from "./assets/kit/foliage";
 import { registerVehicles } from "./assets/kit/vehicles";
-import { registerCharacters } from "./assets/kit/characters";
+import { CHARACTER_KEYS, registerCharacters } from "./assets/kit/characters";
 import { createGridCollider, type GridCollider } from "./world/gridCollider";
 import { buildWorld, type BuiltWorld } from "./world/worldBuilder";
 import { dressWorld } from "./world/dressing";
@@ -107,8 +107,12 @@ export class Game3D {
     registerVehicles(this.am);
     registerCharacters(this.am);
     this.registerArchitectureHeroes();
-    this.heroReady = this.am.preload(HERO_PRELOAD_KEYS).then((fell) => {
+    // hero props + the skinned characters load together behind the title
+    // screen; the first location waits for both (each bounded by
+    // GLB_TIMEOUT_MS) so Juju and the NPCs appear with their real rigs
+    this.heroReady = Promise.all([this.am.preload(HERO_PRELOAD_KEYS), this.am.preloadAnimated(CHARACTER_KEYS)]).then(([fell, fellChars]) => {
       if (fell.length) console.info(`hero assets using procedural fallback: ${fell.join(", ")}`);
+      if (fellChars.length) console.info(`characters not loaded yet (procedural until they arrive): ${fellChars.join(", ")}`);
     });
     this.stopUpdate = this.host.onUpdate((dt, now) => this.update(dt, now));
     this.host.start();
@@ -221,7 +225,23 @@ export class Game3D {
           // parked side-on (parallel to the street): the 3/4 side silhouette reads as a
           // car from the high camera (nose-on it read as a teal bell); nudged east so its
           // tail clears the spawn point (the zone radius still covers it)
-          this.am.thinInstances("car", [{ x: x + 0.7, y: groundY(x, z), z, rotationY: Math.PI / 2 + 0.06 }]);
+          // Kerbside: if the spot is on a sidewalk / square with a street within
+          // 2.5 tiles north or south, the car parks on the street's near lane
+          // against the kerb instead of on the paving (visual only).
+          const tx = Math.floor(x);
+          const ty0 = Math.floor(-z);
+          let cz = z;
+          if (!env.isRoad(tx, ty0)) {
+            for (const d of [-1, 1, -2, 2]) {
+              const ty = ty0 + d;
+              if (env.isRoad(tx, ty) && env.isRoad(tx + 1, ty) && env.isRoad(tx - 1, ty)) {
+                // tile ty spans z in (-(ty+1), -ty]; hug its kerb-side edge
+                cz = d < 0 ? -(ty + 1) + 0.62 : -ty - 0.62;
+                break;
+              }
+            }
+          }
+          this.am.thinInstances("car", [{ x: x + 0.7, y: groundY(x, cz), z: cz, rotationY: Math.PI / 2 + 0.06 }]);
         },
         petalBurst: (x, z) => petalBurst(this.host.scene, this.kit, x, groundY(x, z), z, (tick) => loaded.effects.push(tick)),
         requestTravel: (to, from) => {

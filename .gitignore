@@ -8,3 +8,7 @@ dist-ssr
 # generated PWA icons (created by scripts/generate-icons.mjs)
 public/icons/
 dev-dist
+
+# local WIP captures (never commit)
+docs/screenshots/wip/
+__pycache__/

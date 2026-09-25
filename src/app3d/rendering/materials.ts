@@ -48,6 +48,13 @@ export const PALETTE = {
 
 export type PaletteKey = keyof typeof PALETTE;
 
+/**
+ * Hue-neutral light grey the Blender "detail" textures are painted with: the
+ * *_abs slots multiply it by COLOR_0 (absolute colour ÷ 0.91, see
+ * tools/blender/lib/olw.py DETAIL_HEX / DETAIL_TINT).
+ */
+export const DETAIL_HEX = "#e8e8e8";
+
 let seed = 1234;
 function rnd() {
   seed = (seed * 1664525 + 1013904223) >>> 0;

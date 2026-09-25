@@ -95,6 +95,9 @@ export const HERO_ASSETS = {
   "flower-cluster-a": { url: glb("flower-cluster-a"), shadow: false, source: "blender" },
   "flower-cluster-b": { url: glb("flower-cluster-b"), shadow: false, source: "blender" },
   "flower-cluster-c": { url: glb("flower-cluster-c"), shadow: false, source: "blender" },
+  // Blender nature (E2) with fallbacks registered by kit/foliage.ts
+  "tree-cypress": { url: glb("tree-cypress"), source: "blender", variant: foliageVariant },
+  heather: { url: glb("heather"), shadow: false, source: "blender" },
 } satisfies Record<string, HeroEntry>;
 
 export type HeroKey = keyof typeof HERO_ASSETS;

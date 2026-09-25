@@ -160,6 +160,8 @@ export interface Environment {
   meshes: Mesh[];
   /** Height of the ground surface at a tile (for placing props flush). */
   heightAt(tx: number, ty: number): number;
+  /** Whether a tile is carriageway (road / street setts, not a raised sidewalk). */
+  isRoad(tx: number, ty: number): boolean;
   dispose(): void;
 }
 
@@ -602,6 +604,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   return {
     meshes,
     heightAt: (tx, ty) => heights[ty]?.[tx] ?? 0,
+    isRoad: (tx, ty) => tx >= 0 && ty >= 0 && tx < W && ty < H && isRoadPaint(paint[ty * W + tx]),
     dispose() {
       for (const m of meshes) m.dispose();
       for (const m of ownMats) m.dispose();

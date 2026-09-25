@@ -3,7 +3,7 @@
     "barrel": {
       "key": "barrel",
       "path": "public/assets/models/barrel.glb",
-      "kb": 30.6,
+      "kb": 30.5,
       "tris": 688,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -25,7 +25,7 @@
     "bench": {
       "key": "bench",
       "path": "public/assets/models/bench.glb",
-      "kb": 55.4,
+      "kb": 55.3,
       "tris": 1188,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -95,7 +95,7 @@
     "cafe-chair": {
       "key": "cafe-chair",
       "path": "public/assets/models/cafe-chair.glb",
-      "kb": 27.4,
+      "kb": 27.3,
       "tris": 586,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -117,7 +117,7 @@
     "cafe-hero": {
       "key": "cafe-hero",
       "path": "public/assets/models/cafe-hero.glb",
-      "kb": 389,
+      "kb": 402.5,
       "tris": 7908,
       "script": "tools/blender/assets/architecture/cafe.py",
       "size": [
@@ -147,7 +147,7 @@
     "cafe-table": {
       "key": "cafe-table",
       "path": "public/assets/models/cafe-table.glb",
-      "kb": 19.5,
+      "kb": 19.4,
       "tris": 406,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -193,7 +193,7 @@
     "cottage-hero-a": {
       "key": "cottage-hero-a",
       "path": "public/assets/models/cottage-hero-a.glb",
-      "kb": 366.6,
+      "kb": 388.4,
       "tris": 7650,
       "script": "tools/blender/assets/architecture/cottage_a.py",
       "size": [
@@ -224,7 +224,7 @@
     "cottage-hero-b": {
       "key": "cottage-hero-b",
       "path": "public/assets/models/cottage-hero-b.glb",
-      "kb": 387.7,
+      "kb": 403.7,
       "tris": 7990,
       "script": "tools/blender/assets/architecture/cottage_b.py",
       "size": [
@@ -299,7 +299,7 @@
     "fence-gate": {
       "key": "fence-gate",
       "path": "public/assets/models/fence-gate.glb",
-      "kb": 48.9,
+      "kb": 48.8,
       "tris": 908,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -439,7 +439,7 @@
     "planter": {
       "key": "planter",
       "path": "public/assets/models/planter.glb",
-      "kb": 66.7,
+      "kb": 66.6,
       "tris": 1192,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -483,7 +483,7 @@
     "signpost": {
       "key": "signpost",
       "path": "public/assets/models/signpost.glb",
-      "kb": 56.4,
+      "kb": 57,
       "tris": 1170,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [
@@ -505,7 +505,7 @@
     "stone-wall": {
       "key": "stone-wall",
       "path": "public/assets/models/stone-wall.glb",
-      "kb": 65.4,
+      "kb": 74.1,
       "tris": 1460,
       "script": "tools/blender/assets/props/street_props.py",
       "size": [

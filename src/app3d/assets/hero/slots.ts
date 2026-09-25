@@ -33,6 +33,14 @@ export const SLOTS = [
   "olw_bark", // flat white × vertex colour
   "olw_rubber", // flat white × vertex colour (tyres)
   "olw_light_emissive", // lamp / headlight glow, like olw_glass_emissive
+  // Blender textured slots: COLOR_0 is the ABSOLUTE colour (÷0.91), multiplied
+  // by a hue-neutral detail texture (tools/blender/lib/olw.py DETAIL_HEX)
+  "olw_stone_abs",
+  "olw_stone_dark_abs",
+  "olw_roof_tile_abs",
+  "olw_slate_abs",
+  "olw_wood_abs",
+  "olw_wood_dark_abs",
 ] as const;
 
 export type Slot = (typeof SLOTS)[number];
@@ -68,6 +76,12 @@ const PREVIEW: Record<Slot, string> = {
   olw_bark: "#ffffff",
   olw_rubber: "#ffffff",
   olw_light_emissive: "#ffd98a",
+  olw_stone_abs: "#e8e8e8",
+  olw_stone_dark_abs: "#e8e8e8",
+  olw_roof_tile_abs: "#e8e8e8",
+  olw_slate_abs: "#e8e8e8",
+  olw_wood_abs: "#e8e8e8",
+  olw_wood_dark_abs: "#e8e8e8",
 };
 
 /** The per-scene placeholder material for a slot (cached by name). */

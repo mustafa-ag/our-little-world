@@ -33,7 +33,7 @@ import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import "@babylonjs/core/Meshes/instancedMesh";
 import type { Materials } from "../rendering/materials";
-import { PALETTE } from "../rendering/materials";
+import { DETAIL_HEX, PALETTE } from "../rendering/materials";
 import type { Lighting } from "../rendering/lighting";
 import { type Slot, heroCtx, isSlot } from "./hero/slots";
 import { slotsOf, tagSlots } from "./hero/geo";
@@ -140,7 +140,12 @@ interface AnimatedRegistration {
   promise?: Promise<boolean>;
 }
 
-export const GLB_TIMEOUT_MS = 4000;
+/**
+ * How long a GLB may take before its key falls back to the procedural builder
+ * for the session. Boot preloading runs behind the title screen, so this can
+ * be generous: a slow first (uncached) load should still get the real asset.
+ */
+export const GLB_TIMEOUT_MS = 12000;
 
 let glowRegistered: WeakSet<Material> = new WeakSet();
 
@@ -161,6 +166,17 @@ export function slotMaterial(k: KitContext, slot: Slot): Material {
     case "olw_wood":
     case "olw_wood_dark":
       return m.textured("planks", PALETTE.woodLight, 1.5);
+    // Blender GLBs: absolute COLOR_0 × a neutral detail texture of the same style
+    case "olw_stone_abs":
+    case "olw_stone_dark_abs":
+      return m.textured("stone", DETAIL_HEX, 1.2);
+    case "olw_roof_tile_abs":
+      return m.textured("roof", DETAIL_HEX, 1);
+    case "olw_slate_abs":
+      return m.textured("slate", DETAIL_HEX, 1);
+    case "olw_wood_abs":
+    case "olw_wood_dark_abs":
+      return m.textured("planks", DETAIL_HEX, 1.5);
     case "olw_glass":
       return m.flat(PALETTE.glass);
     case "olw_glass_emissive":
@@ -237,7 +253,7 @@ export class AssetManager {
    * Start loading registered skinned GLBs. Resolves with the keys not ready
    * within `timeoutMs` (they keep loading: see `whenAnimated`). Never rejects.
    */
-  async preloadAnimated(keys: string[], timeoutMs = GLB_TIMEOUT_MS * 2): Promise<string[]> {
+  async preloadAnimated(keys: string[], timeoutMs = GLB_TIMEOUT_MS): Promise<string[]> {
     const res = await Promise.all(
       keys.map(async (k) => {
         const ok = await Promise.race([this.whenAnimated(k), new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs))]);
@@ -269,6 +285,12 @@ export class AssetManager {
       );
     }
     return reg.promise;
+  }
+
+  /** Whether a skinned GLB is registered under `key` (and has not failed). */
+  hasAnimated(key: string) {
+    const r = this.animatedRegs.get(key);
+    return !!r && !r.failed;
   }
 
   /** Whether `key` is loaded and `instantiateAnimated` will succeed. */

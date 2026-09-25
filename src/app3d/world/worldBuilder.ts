@@ -362,6 +362,9 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
     if (!m) continue;
     const tx = Math.floor(p.x / TILE);
     const ty = Math.floor(p.y / TILE) - 1;
+    // the 2D map's single decorative flowers only grow in soil: on paving / the
+    // street a lone 3D stem reads as litter (the dressing plants beds there)
+    if (m.key === "flower-cluster" && (env.heightAt(tx, ty) > 0 || env.isRoad(tx, ty))) continue;
     const fx = m.footprint?.w ?? 1;
     const fd = m.footprint?.d ?? 1;
     if (m.solid) {

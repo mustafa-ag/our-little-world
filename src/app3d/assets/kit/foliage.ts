@@ -313,9 +313,6 @@ export function flowerBedSpots(x: number, z: number, length: number, depth: numb
 
 // ---------------------------------------------------------------- registration
 
-/** Blender GLBs registered here that are not in HERO_PRELOAD_KEYS (preloaded by registerFoliage itself). */
-export const FOLIAGE_EXTRA_GLB_KEYS = ["tree-cypress", "heather"] as const;
-
 export function registerFoliage(am: AssetManager) {
   // hero pieces (GLB + fallback); `c=#hex` variants retint the foliage slot
   am.registerHero("tree-oak-a");
@@ -325,13 +322,13 @@ export function registerFoliage(am: AssetManager) {
   am.registerHero("bush-a");
   am.registerHero("bush-b");
   am.registerHero("ivy-card");
-  am.registerGlb("tree-cypress", glbUrl("tree-cypress"), { fallback: heroFactory(buildCypress), variant: (m, v) => hexOf(v) && retintFoliage(m, hexOf(v)!) });
+  am.registerHero("tree-cypress", heroFactory(buildCypress));
   // flower clusters (Blender GLB + procedural twin); `c=#hex` pulls the petals toward a colour
   for (const key of FLOWER_CLUSTER_KEYS) {
     const fallback: PieceFactory = heroFactory(buildFlowerCluster(key));
     am.registerGlb(key, glbUrl(key), { fallback, shadow: false, variant: flowerVariant(key) });
   }
-  am.registerGlb("heather", glbUrl("heather"), { fallback: heatherFallback, shadow: false });
+  am.registerHero("heather", heatherFallback);
   // legacy keys used by dressing/propMap
   am.registerAlias("tree-a", "tree-oak-a");
   am.registerAlias("tree-b", "tree-pine");
@@ -342,6 +339,4 @@ export function registerFoliage(am: AssetManager) {
   // procedural ground clutter
   am.register("grass-tuft", grassTuft, { shadow: false });
   am.register("flower-bed", flowerBed, { shadow: false });
-  // the extra GLBs are not in HERO_PRELOAD_KEYS: start loading them now (falls back silently)
-  void am.preload([...FOLIAGE_EXTRA_GLB_KEYS]);
 }

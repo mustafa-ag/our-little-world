@@ -9,8 +9,19 @@ import type { Facing } from "../../game/data/npcs";
 import type { GridCollider } from "../world/gridCollider";
 import { lerpAngle, yawFor } from "../world/coords";
 
-/** 90 px/s in the 2D game -> 5.625 units/s. */
-export const BASE_SPEED = 90 / 16;
+/**
+ * Ground speeds in world units/s (1 u = 1 tile ~ 1.6 m; Juju is 1.05 u tall).
+ * The 2D game's 90 px/s (5.625 u/s) reads as a frantic sprint at her scale.
+ * Keyboard = a bouncy stroll (STROLL_SPEED); Shift or a fully pushed joystick
+ * = a jog (JOG_SPEED); a half-pushed joystick walks. The clip playback rates
+ * in assets/kit/characters.ts follow the actual ground speed.
+ */
+export const STROLL_SPEED = 2.4;
+export const JOG_SPEED = 3.6;
+/** Top speed (full joystick / Shift). */
+export const BASE_SPEED = JOG_SPEED;
+/** Keyboard input magnitude without Shift (STROLL / JOG). */
+const KEYBOARD_STROLL = STROLL_SPEED / JOG_SPEED;
 export const PLAYER_RADIUS = 0.28;
 
 export interface PlayerState {
@@ -91,6 +102,12 @@ export class PlayerController {
     if (k.has("ArrowRight") || k.has("d")) ix += 1;
     if (k.has("ArrowUp") || k.has("w")) iy -= 1;
     if (k.has("ArrowDown") || k.has("s")) iy += 1;
+    if (ix || iy) {
+      // keys stroll; Shift jogs
+      const m = (k.has("Shift") ? 1 : KEYBOARD_STROLL) / Math.hypot(ix, iy);
+      ix *= m;
+      iy *= m;
+    }
     ix += controls.moveX;
     iy += controls.moveY;
     const len = Math.hypot(ix, iy);

@@ -84,8 +84,10 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   // "street" = the driveable/path core only (lamps, planters etc. may sit on plazas)
   const STREET = new Set(["t_path", "t_road", "t_asphalt", "t_road_lane", "t_crossing", "t_brick_path"]);
   const street = (tx: number, ty: number) => STREET.has(tex(tx, ty));
-  /** tiles the dressing keeps clear (the parked car's kerb) */
+  /** tiles the dressing keeps clear (walkable, no dressing) */
   const keep = new Set<number>();
+  /** front-garden tiles (claimed, planted; loose flowers are allowed there even on raised paving) */
+  const gardenTiles = new Set<number>();
   const open = (tx: number, ty: number) => inB(tx, ty) && !collider.isBlockedTile(tx, ty) && !reserved.has(tileKey(tx, ty)) && !keep.has(tileKey(tx, ty));
   const free = (tx: number, ty: number) => open(tx, ty) && !street(tx, ty);
   const freeBuild = (tx: number, ty: number) => open(tx, ty) && !road(tx, ty);
@@ -102,6 +104,13 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     return true;
   };
   const thin = (k: string, variant: string, p: ThinPlacement, meta: PlaceMeta = {}) => {
+    if (k.startsWith("flower-cluster") || k === "heather") {
+      // loose flowers only grow in soil or inside a front garden: on paving /
+      // the street a lone stem reads as litter (paving gets beds and planters)
+      const tx = Math.floor(p.x);
+      const ty = Math.floor(-p.z);
+      if ((env.heightAt(tx, ty) > 0 || env.isRoad(tx, ty)) && !gardenTiles.has(tileKey(tx, ty))) return;
+    }
     placer.add(k, variant, p, meta);
     if (k === K.lamp) built.lamps.push({ x: p.x, y: p.y ?? 0, z: p.z });
   };
@@ -215,7 +224,6 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   // COTTAGE → garden (flowers, heather, low fence / wall, gate at the door) →
   // sidewalk → curb → road. The garden is the tile row right in front of the
   // façade; it is claimed (not walkable) except the gate tile.
-  const gardenTiles = new Set<number>();
   const hasFlowerKeys = am.has("flower-cluster-a");
   const flower = (x: number, z: number, y: number, r: number, scale: number) => {
     if (hasFlowerKeys) thin(`flower-cluster-${"abc"[Math.floor(r * 3) % 3]}`, "", { x, z, y, rotationY: r * 17, scale: scale * 0.9 });
@@ -232,6 +240,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       const p = local(b, lx, -hd - 0.5);
       const t = tileOf(p.x, p.z);
       if (!free(t.tx, t.ty) || keep.has(tileKey(t.tx, t.ty))) return false;
+      // never on the kerb: a garden that touches a street would eat the only sidewalk tile
+      if (street(t.tx + 1, t.ty) || street(t.tx - 1, t.ty) || street(t.tx, t.ty + 1) || street(t.tx, t.ty - 1)) return false;
       tiles.push({ ...t, lx });
     }
     const gate = Math.max(0, Math.min(w - 1, Math.floor((b.doorX ?? 0) + hw)));
@@ -249,8 +259,12 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       thin(edgeKey, "", { x: e.x, z: e.z, y, rotationY: b.rotationY + (edge === "wall" ? (hash01(seed, t.tx, salt) - 0.5) * 0.04 : 0) }, { solid: true, src: "garden" });
       // planting: a low bed against the façade, clusters + heather toward the fence
       const r = hash01(seed, t.tx, t.ty, salt);
-      const bp = local(b, t.lx + (r - 0.5) * 0.2, -hd - 0.3);
-      thin("flower-bed", `c=${FLOWERS[Math.floor(r * 97) % FLOWERS.length]},d=${FLOWERS[Math.floor(r * 53 + 2) % FLOWERS.length]}`, { x: bp.x, z: bp.z, y, rotationY: b.rotationY + (r > 0.5 ? 0 : Math.PI), scale: 0.85 + r * 0.2 });
+      // (Blender clusters against the façade: the procedural flower-bed's petal
+      // cups read as beige saucers from the low close-up camera)
+      for (const off of [-0.25, 0.22]) {
+        const bp = local(b, t.lx + off + (r - 0.5) * 0.12, -hd - 0.28);
+        flower(bp.x, bp.z, y, (r + off + 1) % 1, 0.8 + r * 0.25);
+      }
       for (let k = 0; k < 2; k++) {
         const rk = hash01(seed, t.tx, t.ty, salt, k + 3);
         const fp = local(b, t.lx + (rk - 0.5) * 0.7, -hd - 0.55 - rk * 0.12);
@@ -273,10 +287,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   // South side: sidewalk rows 48-49, planted verge + lamps row 50, dry-stone
   // wall row 51 with a gate, cottage garden beyond. Placed first so it wins.
   if (def.id === "edinburgh_oldtown") {
-    // the parked car (spawn-relative: worldController.placeJeep + game3d's +0.7 nudge) keeps its kerb clear
-    const carX = (world.spawn.x + 22) / 16 + 0.7;
-    const carRow = (world.spawn.y + 8) / 16;
-    for (let x = Math.floor(carX - 1.45); x <= Math.floor(carX + 1.45); x++) for (let y = Math.floor(carRow - 0.75); y <= Math.floor(carRow + 0.75); y++) keep.add(tileKey(x, y));
+    // (the parked car sits on the Mile's south lane at the kerb - game3d spawnJeep - so the sidewalk needs no clearance)
     // cottage group north of the Mile: hero GLBs when loaded, kit presets otherwise
     placeBuilding(93, 40, 4, 3, 0, "stoneCrow", "hero", 1, "cottage-hero-a");
     placeBuilding(99, 40, 5, 3, 0, "greyDormer", "hero", 2, "cottage-hero-b");
@@ -306,6 +317,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     for (let x = 98; x <= 106; x++) {
       if (x === 101) {
         set(K.gate, x, 51, 0, "", 1, false, 0, 0.3);
+        keep.add(tileKey(x, 51)); // walkable, and no auto edge wall through the gate
         continue;
       }
       set(K.wall, x, 51, 0, "", 1, true, 0, 0.3);
@@ -324,7 +336,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     set(K.planter, 102, 52, 0, "", 0.85, false, 0.3, -0.1);
     set(K.bushB, 99, 53, 0.5, bushVariant(true), 0.85);
     set(K.bushA, 106, 56, 1.2, bushVariant(false), 0.9);
-    // verge: lamps + a bench at the back of the south sidewalk (clear of the parked car)
+    // verge: lamps + a bench at the back of the south sidewalk
     set(K.lamp, 97, 50, 0, "", 1, true, 0, 0.1);
     set(K.lamp, 105, 50, 0, "", 1, true, 0, 0.1);
     set(K.bench, 98, 50, Math.PI, "", 1, true, 0, 0.12);
@@ -568,7 +580,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     }
     // benchmark: a planted island on the café plaza so the terrace view has a
     // green foreground instead of an empty sweep of flags
-    set(K.small, 30, 56, 0.4, oakVariant(2), smallScale * 1.05);
+    // (low planting only: a tree here hid the café front from the terrace view)
+    set(K.bushB, 30, 56, 0.4, bushVariant(true), 0.85);
     set(K.bushA, 33, 56, 1.1, bushVariant(true), 0.8);
     for (const x of [28, 29, 31, 32]) bed(x, 56, 0.1, 0, 100 + x, 0.95);
     set(K.planter, 26, 54, 0.2, "", 0.9);

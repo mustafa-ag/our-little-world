@@ -52,7 +52,8 @@ def preview_material(slot: str, attr: str):
     mul.data_type = "RGBA"
     mul.blend_type = "MULTIPLY"
     mul.inputs["Factor"].default_value = 1.0
-    base = olw.TEXTURED_BASE.get(slot, "#ffffff")
+    # COLOR_0 is absolute; textured slots render ~DETAIL_TINT x COLOR_0 in game
+    base = olw.DETAIL_HEX if slot.endswith("_abs") else "#ffffff"
     if slot == "olw_glass":
         base = olw.PALETTE["glass"]
     mul.inputs[6].default_value = (*olw.hex_linear(base), 1)

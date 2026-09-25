@@ -87,7 +87,20 @@ function flowerPickup(k: KitContext, hex: string) {
     parts.push(pt);
   }
   parts.push(tint(sphere(s, 0.1, white, 0, 0.38, 0, 5), "#d9a83a"));
-  return merge("flowerPickup", parts);
+  // a little tuft at the foot so it reads as a flower growing between the flags
+  for (const [x, z, d, c] of [
+    [0, 0, 0.17, "#6f8a4c"],
+    [0.07, 0.04, 0.12, "#7f9a58"],
+    [-0.06, -0.03, 0.11, "#5f7f4a"],
+  ] as const) {
+    const t = tint(blob(s, d, white, x, 0.02, z, 0.5, 4), c);
+    parts.push(t);
+  }
+  const f = merge("flowerPickup", parts);
+  // ~0.3 u tall: a flower at Juju's knee, not a sunflower (baked: the idle sway scales y)
+  f.scaling.setAll(0.8);
+  f.bakeCurrentTransformIntoVertices();
+  return f;
 }
 
 function shadeHex(hex: string, t: number) {
@@ -96,31 +109,70 @@ function shadeHex(hex: string, t: number) {
   return "#" + [f((n >> 16) & 255), f((n >> 8) & 255), f(n & 255)].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * The little ginger cat that follows you: sitting, big head, pointed ears,
+ * cream muzzle / chest, a tail curled round its paws. One material, vertex
+ * colours (one draw call).
+ */
 export function catMesh(k: KitContext) {
   const s = k.scene;
-  const fur = k.mats.flat("#f0a860");
-  const dark = k.mats.flat("#c47f3a");
+  const white = k.mats.flat("#ffffff");
+  const tint = <T extends Mesh>(m: T, c: string) => (tintVertices(m, c), m);
+  const FUR = "#e89a52";
+  const DARK = "#c0712f";
+  const CREAM = "#f6e3c6";
   const parts: Mesh[] = [];
-  const body = sphere(s, 0.4, fur, 0, 0.22, 0.05, 8);
-  body.scaling.set(1, 0.8, 1.4);
+  // sitting body (egg), cream chest
+  const body = tint(sphere(s, 0.3, white, 0, 0.16, 0.04, 10), FUR);
+  body.scaling.set(1, 1.1, 1.05);
   parts.push(body);
-  parts.push(sphere(s, 0.3, fur, 0, 0.36, -0.25, 8));
-  for (const x of [-0.08, 0.08]) {
-    const ear = cyl(s, 0.01, 0.1, 0.12, dark, x, 0.46, -0.26, 4);
+  const chest = tint(sphere(s, 0.17, white, 0, 0.2, -0.08, 8), CREAM);
+  chest.scaling.set(1, 1.3, 0.7);
+  parts.push(chest);
+  // head
+  const head = tint(sphere(s, 0.27, white, 0, 0.41, -0.05, 10), FUR);
+  head.scaling.set(1.08, 0.94, 1);
+  parts.push(head);
+  const muzzle = tint(sphere(s, 0.12, white, 0, 0.37, -0.16, 8), CREAM);
+  muzzle.scaling.set(1.2, 0.8, 0.8);
+  parts.push(muzzle);
+  parts.push(tint(sphere(s, 0.03, white, 0, 0.395, -0.215, 5), "#d77a86")); // nose
+  for (const x of [-0.07, 0.07]) {
+    // pointed ears (3-sided cones) with a pink inside
+    const ear = tint(cyl(s, 0.0, 0.1, 0.11, white, x * 1.25, 0.56, -0.04, 3), FUR);
+    ear.rotation.z = -x * 2.2;
+    ear.rotation.y = Math.PI / 6;
     parts.push(ear);
-    parts.push(sphere(s, 0.05, k.mats.flat("#2a2230"), x, 0.38, -0.38, 4));
+    const inner = tint(cyl(s, 0.0, 0.06, 0.07, white, x * 1.25, 0.55, -0.06, 3), "#e7a1a0");
+    inner.rotation.z = -x * 2.2;
+    inner.rotation.y = Math.PI / 6;
+    parts.push(inner);
+    // eyes
+    const eye = tint(sphere(s, 0.045, white, x, 0.44, -0.16, 6), "#2a2230");
+    eye.scaling.set(1, 1.25, 0.6);
+    parts.push(eye);
+    // front paws
+    const paw = tint(sphere(s, 0.08, white, x * 0.9, 0.03, -0.11, 6), CREAM);
+    paw.scaling.set(1, 0.7, 1.3);
+    parts.push(paw);
   }
-  const tail = cyl(s, 0.05, 0.07, 0.4, dark, 0, 0.3, 0.3, 5);
-  tail.rotation.x = -0.9;
-  parts.push(tail);
-  for (const [x, z] of [
-    [-0.1, -0.12],
-    [0.1, -0.12],
-    [-0.1, 0.18],
-    [0.1, 0.18],
-  ])
-    parts.push(cyl(s, 0.08, 0.08, 0.14, fur, x, 0, z, 5));
-  return merge("cat", parts);
+  // tabby stripes on the back
+  for (const y of [0.13, 0.21]) {
+    const st = tint(cyl(s, 0.315, 0.315, 0.025, white, 0, y, 0.04, 10), DARK);
+    st.scaling.set(1.02, 1, 0.9);
+    parts.push(st);
+  }
+  // tail curled round the paws on the ground
+  for (let i = 0; i < 6; i++) {
+    const a = -0.4 + i * 0.42;
+    const r = 0.19;
+    parts.push(tint(sphere(s, 0.075 - i * 0.004, white, Math.sin(a) * r, 0.035, 0.08 - Math.cos(a) * r * 0.9, 6), i === 5 ? DARK : FUR));
+  }
+  const cat = merge("cat", parts);
+  // ~0.45 u sitting (Juju is 1.05): baked so the idle breathing scale stays relative
+  cat.scaling.setAll(0.78);
+  cat.bakeCurrentTransformIntoVertices();
+  return cat;
 }
 
 export class PickupView {

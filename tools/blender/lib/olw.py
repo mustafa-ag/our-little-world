@@ -21,11 +21,16 @@ authored (so a door authored at x=+0.8 is at x=+0.8 in Babylon).
 
 COLOURS: every part carries a base hex colour; `finish()` writes it to the
 COLOR_0 corner attribute with per-face noise, AO near the ground and a light
-edge highlight / cavity darkening. For the runtime-TEXTURED slots (olw_stone,
-olw_roof_tile, olw_slate, olw_wood) the vertex colour is stored RELATIVE to the
-slot's runtime base colour (target / base, clamped to 1) because the runtime
-multiplies it over a tinted texture; every other slot stores the absolute
-colour (runtime material is white x vertex colour).
+edge highlight / cavity darkening. COLOR_0 is always the ABSOLUTE colour.
+The runtime-TEXTURED slots (olw_stone, olw_stone_dark, olw_roof_tile,
+olw_slate, olw_wood, olw_wood_dark) are exported as "<slot>_abs" materials;
+the game maps those to a neutral light-grey DETAIL texture (brush strokes /
+courses / tiles only, no hue) so the result is COLOR_0 x detail. To keep the
+authored colour, textured-slot vertex colours are divided by DETAIL_TINT
+(~0.91) - that only clamps colours above ~0.91 per channel, and equally on
+all channels for near-neutral detail, so hues never shift (the old
+target / slot-tint encoding clamped slate and stone toward teal / grey).
+Every other slot stores the colour as-is (runtime = white x COLOR_0).
 """
 
 from __future__ import annotations
@@ -79,14 +84,26 @@ SLOTS = [
     "olw_paint", "olw_metal", "olw_glass", "olw_glass_emissive", "olw_awning", "olw_foliage", "olw_flower",
 ]
 
-# runtime textured slots -> the hex the runtime texture is painted with
-# (src/app3d/assets/AssetManager.ts slotMaterial / rendering/materials.ts PALETTE)
+# runtime textured slots: exported as "<slot>_abs"; the game multiplies COLOR_0
+# by a neutral detail texture painted with DETAIL_HEX
+# (src/app3d/assets/AssetManager.ts slotMaterial / rendering/materials.ts DETAIL_HEX)
+TEXTURED_SLOTS = ("olw_stone", "olw_stone_dark", "olw_roof_tile", "olw_slate", "olw_wood", "olw_wood_dark")
+DETAIL_HEX = "#e8e8e8"
+DETAIL_TINT = int(DETAIL_HEX[1:3], 16) / 255.0
+# preview colours for the textured slots (Blender material colour, contact sheets)
 TEXTURED_BASE = {
     "olw_stone": "#c9b89a",
+    "olw_stone_dark": "#8f877a",
     "olw_roof_tile": "#b8694a",
     "olw_slate": "#6f7480",
     "olw_wood": "#a8764f",
+    "olw_wood_dark": "#6e4a33",
 }
+
+
+def export_name(slot: str) -> str:
+    """Material name written to the GLB for an authored slot."""
+    return slot + "_abs" if slot in TEXTURED_SLOTS else slot
 
 
 def srgb_to_linear(c: float) -> float:
@@ -134,17 +151,16 @@ def reset():
 
 
 def material(name: str) -> bpy.types.Material:
-    """Material slot by name (created once). Export colour = slot preview colour
-    for textured slots (vertex colour is relative there), white otherwise."""
-    m = bpy.data.materials.get(name)
+    """Material for an authored slot (created once), named export_name(slot).
+    White base colour: COLOR_0 carries the absolute colour (textured slots are
+    only ~9 % brighter, see DETAIL_TINT)."""
+    m = bpy.data.materials.get(export_name(name))
     if m:
         return m
-    m = bpy.data.materials.new(name)
+    m = bpy.data.materials.new(export_name(name))
     m.use_nodes = True
     bsdf = m.node_tree.nodes.get("Principled BSDF")
-    base = TEXTURED_BASE.get(name, "#ffffff")
-    if name == "olw_glass":
-        base = "#ffffff"
+    base = "#ffffff"
     rgb = hex_linear(base)
     bsdf.inputs["Base Color"].default_value = (*rgb, 1)
     bsdf.inputs["Metallic"].default_value = 0.0
@@ -531,8 +547,7 @@ class Builder:
             vao[v.index] = ao_min + (1 - ao_min) * t * t * (3 - 2 * t)
         for f in master.faces:
             slot = mats[f.material_index]
-            rel = TEXTURED_BASE.get(slot)
-            relc = col(rel) if rel else None
+            rel = DETAIL_TINT if slot in TEXTURED_SLOTS else None
             up = f.normal.z
             for l in f.loops:
                 c = list(l[col_layer])[:3]
@@ -545,8 +560,8 @@ class Builder:
                 # top faces a touch lighter (painted sunlight), undersides darker
                 k *= 1.0 + 0.05 * up if up > 0 else 1.0 + 0.12 * up
                 c = [min(1.0, x * k) for x in c]
-                if relc:
-                    c = [min(1.0, c[i] / max(relc[i], 1e-3)) for i in range(3)]
+                if rel:
+                    c = [min(1.0, x / rel) for x in c]
                 # store as linear (Blender FLOAT_COLOR is linear; exporter writes linear COLOR_0)
                 l[col_layer] = (*[srgb_to_linear(x) for x in c], 1.0)
 

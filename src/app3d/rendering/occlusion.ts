@@ -6,16 +6,23 @@
 //    sides of the waist, AABBs inflated by a small radius) are slab-tested
 //    against the occluder AABBs (a flat scan: a location has ~100-200
 //    buildings). A building the camera itself is almost inside (closer than
-//    `nearRadius`) fades too, so near façades never wall off the frame;
+//    `nearRadius`) fades out completely, so near façades never veil the frame;
 //  - a standalone mesh (hero GLB building) simply animates `mesh.visibility`
 //    (Babylon then renders it in the alpha-blended pass);
 //  - a thin instance can't be faded on its own, so it is "lifted out": its
 //    matrix in the batch is collapsed to zero scale and a proxy mesh sharing the
 //    batch's geometry, sub-meshes and (frozen) materials draws that one copy with
-//    `visibility` < 1. The proxy keeps casting the shadow. (Material clones with
-//    a depth pre-pass were tried to hide inner walls, but clones of the kit /
-//    GLB materials rendered black, so the faded house shows a soft ghost of its
-//    interior faces.)
+//    `visibility` < 1. The proxy keeps casting the shadow.
+//  - clean shells: every faded mesh gets a DEPTH TWIN (same geometry and world
+//    matrix, one shared colour-write-off material) drawn in the transparent
+//    pass just before it, so only the nearest surface of the faded building
+//    blends (no ghost of its interior walls, roof underside or far façade).
+//    The twin is ordered by alphaIndex (TWIN_ALPHA_INDEX / FADE_ALPHA_INDEX):
+//    it runs after every opaque mesh (Juju is already drawn) and characters'
+//    alpha-blended decals (faces, blob shadows) use a lower alphaIndex
+//    (DECAL_ALPHA_INDEX) so the twin's depth never hides them. (Cloning the
+//    shared kit materials with needDepthPrePass is avoided: the frozen,
+//    cached materials are shared by hundreds of instances.)
 //    Proxies are cached per occluder; batch buffers are made dynamic the first
 //    time one of their instances fades.
 
@@ -24,7 +31,13 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
+
+/** Transparent-pass order: character decals, then depth twins, then faded buildings, then everything else. */
+export const DECAL_ALPHA_INDEX = 0;
+const TWIN_ALPHA_INDEX = 1e6;
+const FADE_ALPHA_INDEX = 1e6 + 1;
 
 /** A building (or other big static piece) that may hide the player. */
 export interface OccluderInfo {
@@ -69,6 +82,8 @@ interface State {
   /** original matrix of the thin instance (16 floats) */
   saved: Float32Array | null;
   lifted: boolean;
+  /** depth-only twins drawn right before the faded mesh(es) */
+  twins: Mesh[];
 }
 
 const tmpDir = new Vector3();
@@ -128,6 +143,34 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
     }
   };
 
+  let depthMat: StandardMaterial | null = null;
+  const depthMaterial = () => {
+    if (depthMat) return depthMat;
+    const m = new StandardMaterial("occlusion:depth", scene);
+    m.disableColorWrite = true;
+    m.forceDepthWrite = true;
+    m.disableLighting = true;
+    m.alpha = 0.99; // transparent queue, so it runs after the opaque pass
+    m.backFaceCulling = true;
+    m.freeze();
+    depthMat = m;
+    return m;
+  };
+
+  /** A depth-only copy of `src`'s geometry at `world`. */
+  const makeTwin = (st: State, src: Mesh, world: Matrix): Mesh | null => {
+    if (!src.geometry) return null;
+    const t = new Mesh(`${st.occ.id}:depth`, scene);
+    src.geometry.applyToMesh(t);
+    t.material = depthMaterial();
+    t.isPickable = false;
+    t.alphaIndex = TWIN_ALPHA_INDEX;
+    t.freezeWorldMatrix(world);
+    t.refreshBoundingInfo();
+    t.setEnabled(false);
+    return t;
+  };
+
   const makeProxy = (st: State): Mesh | null => {
     const src = st.occ.mesh;
     const data = matrixData(src);
@@ -140,9 +183,13 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
     proxy.material = src.material;
     proxy.isPickable = false;
     proxy.receiveShadows = src.receiveShadows;
-    proxy.freezeWorldMatrix(Matrix.FromArray(data, i * 16));
+    const world = Matrix.FromArray(data, i * 16);
+    proxy.freezeWorldMatrix(world);
     proxy.refreshBoundingInfo();
+    proxy.alphaIndex = FADE_ALPHA_INDEX;
     proxy.setEnabled(false);
+    const twin = makeTwin(st, src, world);
+    if (twin) st.twins.push(twin);
     return proxy;
   };
 
@@ -157,12 +204,26 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
   const setAlpha = (st: State, a: number) => {
     st.alpha = a;
     const thin = st.occ.thinIndex !== undefined;
+    const showTwins = (on: boolean) => {
+      for (const t of st.twins) if (t.isEnabled() !== on) t.setEnabled(on);
+    };
     if (!thin) {
-      for (const m of meshesOf(st.occ.mesh)) {
-        m.visibility = a >= 0.999 ? 1 : a;
+      const list = meshesOf(st.occ.mesh);
+      if (a < 0.999 && !st.twins.length) {
+        for (const m of list) {
+          if (!(m instanceof Mesh) || !m.geometry) continue;
+          const t = makeTwin(st, m, m.computeWorldMatrix(true).clone());
+          if (t) st.twins.push(t);
+        }
       }
+      for (const m of list) {
+        m.visibility = a >= 0.999 ? 1 : a;
+        m.alphaIndex = a >= 0.999 ? Number.MAX_VALUE : FADE_ALPHA_INDEX;
+      }
+      showTwins(a < 0.999 && a > 0.01);
       return;
     }
+    showTwins(a < 0.999 && a > 0.01 && (st.lifted || !!st.proxy));
     if (a >= 0.999) {
       if (st.lifted && st.saved) {
         writeInstance(st.occ.mesh, st.occ.thinIndex!, st.saved);
@@ -184,8 +245,10 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
       st.proxy.setEnabled(true);
       opts.addCaster?.(st.proxy);
       st.lifted = true;
+      showTwins(a > 0.01);
     }
     if (st.proxy) st.proxy.visibility = a;
+    showTwins(a > 0.01);
   };
 
   const restoreAll = () => {
@@ -196,6 +259,8 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
         st.proxy.dispose(false, false);
         st.proxy = null;
       }
+      for (const t of st.twins) t.dispose(false, false);
+      st.twins = [];
     }
     faded = 0;
   };
@@ -206,7 +271,7 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
     },
     setOccluders(list) {
       restoreAll();
-      states = list.map((occ) => ({ occ, alpha: 1, want: 1, proxy: null, saved: null, lifted: false }));
+      states = list.map((occ) => ({ occ, alpha: 1, want: 1, proxy: null, saved: null, lifted: false, twins: [] }));
     },
     update(dt, cam, player, playerHeight = 1.7) {
       if (!states.length) return;
@@ -233,12 +298,13 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
         for (const st of states) {
           const { min, max } = st.occ;
           let hit = false;
+          let near = false;
           if (max.x >= bx0 && min.x <= bx1 && max.z >= bz0 && min.z <= bz1 && !st.occ.mesh.isDisposed()) {
             if (nearR > 0) {
               const dx = Math.max(min.x - cam.x, 0, cam.x - max.x);
               const dy = Math.max(min.y - cam.y, 0, cam.y - max.y);
               const dz = Math.max(min.z - cam.z, 0, cam.z - max.z);
-              hit = dx * dx + dy * dy + dz * dz < nearR * nearR;
+              near = hit = dx * dx + dy * dy + dz * dz < nearR * nearR;
             }
             if (!hit) for (const p of pts) {
               if (segHitsBox(p0, p, min, max, 0.3)) {
@@ -247,7 +313,9 @@ export function createOcclusion(scene: Scene, opts: OcclusionOptions = {}): Occl
               }
             }
           }
-          st.want = hit ? fadedAlpha : 1;
+          // the camera (almost) inside a building: a veil over the frame is worse
+          // than no building, so near occluders fade out entirely
+          st.want = near ? 0 : hit ? fadedAlpha : 1;
         }
       }
       // smooth fades (~0.25 s out, ~0.45 s back in)
