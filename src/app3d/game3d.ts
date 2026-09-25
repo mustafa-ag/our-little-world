@@ -12,7 +12,7 @@ import { createFollowCamera, type FollowCamera } from "./rendering/camera";
 import { createLighting, type Lighting } from "./rendering/lighting";
 import { Materials } from "./rendering/materials";
 import { buildEnvironment, type Environment } from "./rendering/environment";
-import { AssetManager, HERO_KEYS, remapSlots, type KitContext } from "./assets/AssetManager";
+import { AssetManager, HERO_PRELOAD_KEYS, remapSlots, type KitContext } from "./assets/AssetManager";
 import * as architecture from "./assets/kit/architecture";
 import { registerProps } from "./assets/kit/props";
 import { registerFoliage } from "./assets/kit/foliage";
@@ -87,7 +87,7 @@ export class Game3D {
     registerVehicles(this.am);
     registerCharacters(this.am);
     this.registerArchitectureHeroes();
-    this.heroReady = this.am.preload(HERO_KEYS).then((fell) => {
+    this.heroReady = this.am.preload(HERO_PRELOAD_KEYS).then((fell) => {
       if (fell.length) console.info(`hero assets using procedural fallback: ${fell.join(", ")}`);
     });
     this.stopUpdate = this.host.onUpdate((dt, now) => this.update(dt, now));
@@ -178,7 +178,10 @@ export class Game3D {
         },
         spawnJeep: (x, z) => {
           // the parked hero car (driving isn't ported): the interaction zone stays where the controller put it
-          this.am.thinInstances("car", [{ x, y: groundY(x, z), z, rotationY: 0.25 }]);
+          // parked side-on (parallel to the street): the 3/4 side silhouette reads as a
+          // car from the high camera (nose-on it read as a teal bell); nudged east so its
+          // tail clears the spawn point (the zone radius still covers it)
+          this.am.thinInstances("car", [{ x: x + 0.7, y: groundY(x, z), z, rotationY: Math.PI / 2 + 0.06 }]);
         },
         petalBurst: (x, z) => petalBurst(this.host.scene, this.kit, x, groundY(x, z), z, (tick) => loaded.effects.push(tick)),
         requestTravel: (to, from) => {
@@ -289,10 +292,23 @@ export class Game3D {
       this.instrumentation.captureRenderTime = true;
       await new Promise((r) => setTimeout(r, 600));
     }
+    // per-frame draw calls (incl. the shadow pass), sampled right after a few renders
+    const inst = this.instrumentation;
+    const frames: number[] = [];
+    await new Promise<void>((resolve) => {
+      const obs = scene.onAfterRenderObservable.add(() => {
+        frames.push(inst.drawCallsCounter.current);
+        if (frames.length >= 5) {
+          scene.onAfterRenderObservable.remove(obs);
+          resolve();
+        }
+      });
+    });
+    frames.sort((a, b) => a - b);
     return {
       fps: Math.round(this.host.engine.getFps()),
-      drawCalls: Math.round(this.instrumentation.drawCallsCounter.lastSecAverage),
-      drawCallsNow: this.instrumentation.drawCallsCounter.current,
+      drawCalls: frames[2],
+      drawCallsMax: frames[4],
       activeMeshes: scene.getActiveMeshes().length,
       totalMeshes: scene.meshes.length,
       materials: scene.materials.length,

@@ -5,8 +5,12 @@
 // each piece with @babylonjs/serializers, then welds/quantizes it with
 // glTF-Transform and writes public/assets/models/<key>.glb.
 //
-//   npm run assets:build            # all
-//   npm run assets:build -- tree-pine car   # a subset
+//   npm run assets:build            # every runtime-preloaded hero
+//   npm run assets:build -- tree-pine car   # a subset (by key)
+//   npm run assets:build -- --all   # also the export-only architecture heroes
+//                                   # (cottage-1s / cottage-2s / cafe: not fetched
+//                                   # by the game, so they are left out of
+//                                   # public/assets/models by default)
 //
 // The script re-executes itself through tsx so the TypeScript modules can be
 // imported directly (no build step).
@@ -58,7 +62,8 @@ try {
 const outDir = join(root, "public", "assets", "models");
 await mkdir(outDir, { recursive: true });
 
-const only = process.argv.slice(2);
+const all = process.argv.includes("--all");
+const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const rows = [];
 
@@ -71,6 +76,10 @@ function countTris(node) {
 
 for (const [key, entry] of Object.entries(HERO_ASSETS)) {
   if (only.length && !only.includes(key)) continue;
+  if (!only.length && !all && entry.preload === false) {
+    rows.push({ key, tris: "-", kb: "-", note: "export-only (pass --all or the key)" });
+    continue;
+  }
   let build = entry.build;
   if (!build) build = extra[key];
   if (!build) {

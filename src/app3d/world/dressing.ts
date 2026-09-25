@@ -107,7 +107,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   };
   /** a loose drift of flowers / heather / tufts on a tile, never blocking */
   const drift = (tx: number, ty: number, n: number, salt: number) => {
-    if (!free(tx, ty)) return;
+    if (!free(tx, ty) || !grass(tx, ty)) return;
     const c = centre(tx, ty);
     for (let i = 0; i < n; i++) {
       const r = hash01(seed, tx, ty, salt, i);
@@ -118,6 +118,18 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       else if (r < 0.82) thin("heather", "", { x: c.x + ox, z: c.z + oz, y: c.y, rotationY: rot, scale: 0.7 + r * 0.4 });
       else thin("grass-tuft", "", { x: c.x + ox, z: c.z + oz, y: c.y, rotationY: rot, scale: 0.9 + r * 0.5 });
     }
+  };
+
+  /**
+   * A dense low flower bed along one tile (a leafy mound + a few clusters),
+   * pushed toward a wall/façade by (dx, dz). Never blocks.
+   */
+  const bed = (tx: number, ty: number, dz: number, dx: number, salt: number, scale = 1) => {
+    if (!open(tx, ty)) return;
+    const c = centre(tx, ty);
+    const r = hash01(seed, tx, ty, salt);
+    thin("flower-bed", `c=${FLOWERS[Math.floor(r * 97) % FLOWERS.length]},d=${FLOWERS[Math.floor(r * 53 + 2) % FLOWERS.length]}`, { x: c.x + dx, z: c.z + dz, y: c.y, rotationY: r > 0.5 ? 0 : Math.PI, scale: scale * (0.9 + r * 0.2) });
+    if (r > 0.55) thin("grass-tuft", "", { x: c.x + dx + (r - 0.75) * 1.6, z: c.z + dz * 0.7, y: c.y, rotationY: r * 9, scale: 1.1 });
   };
 
   // ------------------------------------------------------------------ buildings
@@ -180,6 +192,10 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     set("phone-box", 98, 42, 0);
     set(K.signpost, 97, 49, 0.5);
     set(K.postBox, 96, 49, 0);
+    // a little green corner by the fingerpost so the west sidewalk isn't bare stone
+    set(K.bushB, 94, 50, 0.9, bushVariant(true), 0.8);
+    set(K.planter, 95, 50, 0.1, "", 0.85, false, 0.1, -0.15);
+    bed(93, 50, -0.3, 0, 90);
     // sidewalk life in front of the cottages
     set(K.bench, 99, 44, 0);
     set(K.barrel, 97, 44, 0.3, "", barrelScale, true, 0.25, 0.1);
@@ -197,16 +213,18 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     set(K.pine, 108, 44, 1.1, pineVariant(1), 1.0);
     set(K.small, 105, 41, 2.2, oakVariant(2), smallScale);
     set(K.bushA, 105, 44, 0.4, bushVariant(true), 0.9);
-    // dry-stone wall along row 52 with a gate opposite spawn, low return walls
+    // dry-stone wall along the grass edge (row 51, hugging the sidewalk) with a
+    // gate opposite spawn and low return walls; it replaces the auto edge wall
+    // so the two never double up
     for (let x = 98; x <= 106; x++) {
       if (x === 101) {
-        set(K.gate, x, 52, 0, "", 1, false);
+        set(K.gate, x, 51, 0, "", 1, false, 0, 0.3);
         continue;
       }
-      set(K.wall, x, 52, 0, "", 1, true, 0, 0);
+      set(K.wall, x, 51, 0, "", 1, true, 0, 0.3);
     }
-    for (let y = 53; y <= 55; y++) set(K.wall, 98, y, Math.PI / 2);
-    for (let y = 53; y <= 55; y++) set(K.wall, 107, y, Math.PI / 2);
+    for (let y = 52; y <= 54; y++) set(K.wall, 98, y, Math.PI / 2, "", 1, true, -0.3);
+    for (let y = 52; y <= 54; y++) set(K.wall, 107, y, Math.PI / 2, "", 1, true, 0.3);
     // cottage garden south of the wall: a low cream cottage facing the street
     placeBuilding(102, 54, 4, 3, Math.PI, "creamTerra", "hero", 4);
     set(K.bench, 99, 54, Math.PI);
@@ -216,16 +234,17 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     set(K.pine, 96, 42, 0.6, pineVariant(0), 0.9);
     set(K.barrel, 105, 53, 0.4, "", barrelScale, true, 0.3, -0.2);
     set(K.crate, 106, 53, 0.1, "", 0.5, false, -0.2, 0.2);
-    set(K.planter, 100, 53, 0, "", 0.85, false, -0.3, 0.2);
-    set(K.planter, 104, 53, 0, "", 0.85, false, 0.3, 0.2);
-    set(K.bushB, 99, 55, 0.5, bushVariant(true), 0.85);
+    set(K.planter, 100, 52, 0, "", 0.85, false, -0.3, -0.1);
+    set(K.planter, 102, 52, 0, "", 0.85, false, 0.3, -0.1);
+    set(K.bushB, 99, 53, 0.5, bushVariant(true), 0.85);
     set(K.bushA, 106, 56, 1.2, bushVariant(false), 0.9);
-    // flower drifts: the grass verge between the sidewalk and the wall, and the garden
-    for (let x = 97; x <= 106; x++) for (let y = 50; y <= 51; y++) drift(x, y, 1 + Math.floor(hash01(seed, x, y, 9) * 2), 10);
+    // flower beds hugging the wall on both sides, the cottage fronts and the lamp feet
+    // (dense low beds read as a garden; lone clusters on bare stone read as lollipops)
+    for (let x = 98; x <= 106; x++) if (x !== 101) bed(x, 50, 0.36, 0, 60 + x);
+    for (let x = 99; x <= 106; x++) if (x !== 101) bed(x, 52, -0.2, 0, 70 + x);
+    for (const x of [92, 93, 95, 96, 100, 101, 102, 103]) bed(x, 44, -0.36, 0, 80 + x, 0.8);
     for (let x = 99; x <= 106; x++) for (let y = 53; y <= 57; y++) if (hash01(seed, x, y, 8) > 0.35) drift(x, y, 1 + Math.floor(hash01(seed, x, y, 9) * 2), 20);
     for (let x = 105; x <= 108; x++) for (let y = 41; y <= 44; y++) if (hash01(seed, x, y, 7) > 0.5) drift(x, y, 1, 30);
-    // the odd flower by the sidewalk edges (non-blocking)
-    for (let x = 92; x <= 104; x += 2) if (hash01(seed, x, 6) > 0.4) drift(x, 44, 1, 40);
     set(K.lamp, 98, 50, 0);
     set(K.lamp, 104, 50, 0);
     set(K.bench, 103, 50, Math.PI);
@@ -320,28 +339,41 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       }
     }
     if (b.kind === "cafe") {
-      // terrace: tables with two chairs each, planters, a chalkboard, a bench by the wall
+      // terrace in FRONT of the café, under / just past the awning, the door
+      // lane (local x 0) kept clear: two tables flanking the door, two more a
+      // step further out, chairs facing each other across each table
       for (const [tx0, tz0] of [
-        [-hw - 0.4, front - 1.35],
-        [-hw - 0.4, front - 3.0],
-        [hw + 0.9, front - 2.1],
+        [-1.3, front - 0.4],
+        [1.35, front - 0.4],
+        [-0.95, front - 1.75],
+        [1.55, front - 1.85],
       ]) {
         if (!at(b, K.table, tx0, tz0, 0, "", 1, true)) continue;
         at(b, K.chair, tx0 - 0.58, tz0 + 0.05, Math.PI / 2);
         at(b, K.chair, tx0 + 0.58, tz0 - 0.05, -Math.PI / 2);
       }
-      at(b, "chalkboard", -1.35, front - 0.15, 0.35);
-      at(b, K.planter, hw + 0.35, front - 0.1, 0, "", 0.9);
-      at(b, K.planter, -hw - 0.35, front - 0.1, 0, "", 0.9);
+      at(b, "chalkboard", 0.62, front - 0.12, -0.3);
+      at(b, K.planter, hw + 0.35, front + 0.05, 0, "", 0.9);
+      at(b, K.planter, -hw - 0.35, front + 0.05, 0, "", 0.9);
+      at(b, K.lamp, hw + 0.55, front - 1.1, 0, "", 1, true);
       at(b, K.bench, hw + 1.3, -hd + 0.5, Math.PI / 2, "", 1, true);
-      at(b, K.lamp, hw + 1.6, front - 3.6, 0, "", 1, true);
       at(b, K.ivy, -hw + 0.45, -hd + 0.05, 0, "", 1.1);
       at(b, K.oakB, -hw - 1.8, -hd - 0.2, 0.7, oakVariant(1), 1.05, true);
       at(b, K.bushA, -hw - 1.0, -hd + 0.4, 0.3, bushVariant(true), 0.8);
-      for (const lx of [-1.1, 1.05, 1.5]) {
-        const p = local(b, lx, -hd - 0.12);
+      // flower beds along the façade foot either side of the door
+      for (const lx of [-1.25, 1.3]) {
+        const p = local(b, lx, -hd - 0.2);
         const t = tileOf(p.x, p.z);
-        if (free(t.tx, t.ty)) thin("flower-cluster", `c=${FLOWERS[Math.floor(hash01(seed, lx, 5) * FLOWERS.length)]}`, { x: p.x, z: p.z, y: env.heightAt(t.tx, t.ty), rotationY: lx, scale: 0.7 });
+        if (open(t.tx, t.ty)) thin("flower-bed", `c=${FLOWERS[0]},d=${FLOWERS[2]}`, { x: p.x, z: p.z, y: env.heightAt(t.tx, t.ty), rotationY: b.rotationY, scale: 0.95 });
+      }
+      // tubs of flowers at the terrace corners
+      for (const [lx, lz] of [
+        [-hw - 0.3, front - 1.2],
+        [hw + 0.3, front - 2.6],
+      ]) {
+        const p = local(b, lx, lz);
+        const t = tileOf(p.x, p.z);
+        if (free(t.tx, t.ty)) thin("flower-cluster", `c=${FLOWERS[Math.floor(hash01(seed, lx, 5) * FLOWERS.length)]}`, { x: p.x, z: p.z, y: env.heightAt(t.tx, t.ty), rotationY: lx, scale: 1.1 });
       }
     }
     if (b.kind === "shop") {
@@ -432,6 +464,13 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       set(K.oakA, 41, 55, 0.4, oakVariant(0), 1.1);
       set(K.oakB, 25, 47, 1.3, oakVariant(1), 1.0);
     }
+    // benchmark: a planted island on the café plaza so the terrace view has a
+    // green foreground instead of an empty sweep of flags
+    set(K.small, 30, 56, 0.4, oakVariant(2), smallScale * 1.05);
+    set(K.bushA, 33, 56, 1.1, bushVariant(true), 0.8);
+    for (const x of [28, 29, 31, 32]) bed(x, 56, 0.1, 0, 100 + x, 0.95);
+    set(K.planter, 26, 54, 0.2, "", 0.9);
+    set(K.bench, 34, 56, -Math.PI / 2);
   }
   return extra;
 }

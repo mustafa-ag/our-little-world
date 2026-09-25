@@ -103,7 +103,7 @@ function well(k: KitContext): Mesh {
 function fountain(k: KitContext): Mesh {
   const s = k.scene;
   const stone = k.mats.textured("stone", PALETTE.greyStone);
-  const water = k.mats.flat(PALETTE.water, { emissive: 0.1 });
+  const water = k.mats.flat("#8db4c4", { emissive: 0.04 });
   const parts: Mesh[] = [cyl(s, 2.2, 2.3, 0.4, stone, 0, 0, 0, 14), cyl(s, 2.0, 2.0, 0.05, water, 0, 0.4, 0, 14), cyl(s, 0.3, 0.4, 0.9, stone, 0, 0.4, 0, 8), cyl(s, 0.9, 0.9, 0.12, stone, 0, 1.3, 0, 10), cyl(s, 0.8, 0.8, 0.04, water, 0, 1.42, 0, 10)];
   return merge("fountain", parts);
 }

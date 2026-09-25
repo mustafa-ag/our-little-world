@@ -35,9 +35,9 @@ import { PALETTE } from "../rendering/materials";
 import type { Lighting } from "../rendering/lighting";
 import { type Slot, heroCtx, isSlot } from "./hero/slots";
 import { slotsOf, tagSlots } from "./hero/geo";
-import { HERO_ASSETS, HERO_ALIASES, HERO_KEYS, type HeroEntry, type HeroKey } from "./hero/index";
+import { HERO_ASSETS, HERO_ALIASES, HERO_KEYS, HERO_PRELOAD_KEYS, type HeroEntry, type HeroKey } from "./hero/index";
 
-export { HERO_ASSETS, HERO_KEYS, HERO_ALIASES, type HeroKey, type HeroEntry };
+export { HERO_ASSETS, HERO_KEYS, HERO_PRELOAD_KEYS, HERO_ALIASES, type HeroKey, type HeroEntry };
 
 export interface KitContext {
   scene: Scene;
@@ -310,8 +310,20 @@ export class AssetManager {
         // bake the hierarchy (incl. the loader's handedness root) into ONE mesh
         for (const m of meshes) m.computeWorldMatrix(true);
         // merge while the materials still carry their slot names, then remap the merged mesh
+        // Babylon only flips the winding of a mirrored (handedness-root) source when
+        // it has something to merge it WITH; a single-primitive GLB (one slot) comes
+        // out inside-out, so flip it ourselves
+        const lone = meshes.length === 1 && meshes[0].subMeshes.length <= 1 && meshes[0].getWorldMatrix().determinant() < 0;
         const merged = Mesh.MergeMeshes(meshes, true, true, undefined, false, true);
         if (!merged) throw new Error("merge failed");
+        if (lone) {
+          const idx = merged.getIndices();
+          if (idx) {
+            const flipped = Array.from(idx);
+            for (let i = 0; i + 2 < flipped.length; i += 3) [flipped[i + 1], flipped[i + 2]] = [flipped[i + 2], flipped[i + 1]];
+            merged.setIndices(flipped);
+          }
+        }
         merged.name = `glb:${key}`;
         tagSlots(merged);
         remapSlots(this.ctx, merged);

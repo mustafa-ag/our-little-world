@@ -26,6 +26,12 @@ export interface HeroEntry {
   merge?: boolean;
   /** Applies a variant string ("c=#hex", …) to a fresh prototype clone. */
   variant?: (mesh: Mesh, variant: string) => void;
+  /**
+   * false = export-only: `npm run assets:build` skips it unless asked by name,
+   * the game never fetches it (runtime buildings come from the procedural
+   * architecture kit; these GLBs exist for external tools / previews).
+   */
+  preload?: boolean;
 }
 
 const glb = (key: string) => `assets/models/${key}.glb`;
@@ -62,13 +68,15 @@ export const HERO_ASSETS = {
   "ivy-card": { url: glb("ivy-card"), build: buildIvyCard, shadow: false },
   barrel: { url: glb("barrel"), build: buildBarrel },
   crate: { url: glb("crate"), build: buildCrate },
-  "cottage-1s": { url: glb("cottage-1s") },
-  "cottage-2s": { url: glb("cottage-2s") },
-  cafe: { url: glb("cafe") },
+  "cottage-1s": { url: glb("cottage-1s"), preload: false },
+  "cottage-2s": { url: glb("cottage-2s"), preload: false },
+  cafe: { url: glb("cafe"), preload: false },
 } satisfies Record<string, HeroEntry>;
 
 export type HeroKey = keyof typeof HERO_ASSETS;
 export const HERO_KEYS = Object.keys(HERO_ASSETS) as HeroKey[];
+/** Keys the game fetches at boot (everything except the export-only architecture heroes). */
+export const HERO_PRELOAD_KEYS = HERO_KEYS.filter((k) => (HERO_ASSETS[k] as HeroEntry).preload !== false);
 
 /** Legacy kit keys still used by dressing/propMap, mapped onto hero keys. */
 export const HERO_ALIASES: Record<string, HeroKey> = {

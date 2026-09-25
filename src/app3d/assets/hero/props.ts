@@ -75,21 +75,22 @@ export function buildSignpost(ctx: HeroCtx): Mesh {
   p.push(cyl(ctx, "olw_wood", 0.11, 0.15, 2.05, jittered(WOOD_DARK, 0.1, rng), 0, 0, 0, 6));
   p.push(cyl(ctx, "olw_wood", 0.2, 0.14, 0.06, WOOD_DARK, 0, 2.05, 0, 6));
   p.push(sphere(ctx, "olw_paint", 0.14, PALETTE.terracottaMuted, 0, 2.15, 0, 3));
+  // warm wooden arrow boards with cream lettering (reads as a fingerpost, not planks)
   const boards: [number, number, number, string][] = [
-    [1.78, 1, 0, CREAM],
-    [1.52, -1, 0.35, "#e8d9b8"],
-    [1.26, 1, -0.5, CREAM],
-    [1.0, -1, 0.9, "#dfe3d4"],
+    [1.78, 1, 0, "#a88a6c"],
+    [1.52, -1, 0.35, "#b39274"],
+    [1.26, 1, -0.5, "#a08466"],
+    [1.0, -1, 0.9, "#ad8d6e"],
   ];
   for (const [y, dir, yaw, col] of boards) {
-    const b = box(ctx, "olw_paint", 0.66, 0.15, 0.045, col, dir * 0.33, y, 0);
-    const tip = box(ctx, "olw_paint", 0.107, 0.107, 0.045, col, dir * 0.66, y + 0.0215, 0);
+    const b = box(ctx, "olw_wood", 0.66, 0.15, 0.045, jittered(col, 0.05, rng), dir * 0.33, y, 0, 2);
+    const tip = box(ctx, "olw_wood", 0.107, 0.107, 0.045, col, dir * 0.66, y + 0.0215, 0, 2);
     tip.rotation.z = Math.PI / 4;
     tip.position.y = y + 0.075;
-    // text as short dark strokes
-    const l1 = box(ctx, "olw_paint", 0.32 + rng() * 0.08, 0.03, 0.012, INK, dir * 0.3, y + 0.085, -0.028);
-    const l2 = box(ctx, "olw_paint", 0.2 + rng() * 0.08, 0.02, 0.012, INK, dir * 0.28, y + 0.045, -0.028);
-    const l3 = box(ctx, "olw_paint", 0.32 + rng() * 0.08, 0.03, 0.012, INK, dir * 0.3, y + 0.085, 0.017);
+    // text as short cream strokes
+    const l1 = box(ctx, "olw_paint", 0.32 + rng() * 0.08, 0.03, 0.012, CREAM, dir * 0.3, y + 0.085, -0.028);
+    const l2 = box(ctx, "olw_paint", 0.2 + rng() * 0.08, 0.02, 0.012, CREAM, dir * 0.28, y + 0.045, -0.028);
+    const l3 = box(ctx, "olw_paint", 0.32 + rng() * 0.08, 0.03, 0.012, CREAM, dir * 0.3, y + 0.085, 0.017);
     for (const m of [b, tip, l1, l2, l3]) {
       m.rotation.y += yaw;
       // rotate around the post
@@ -107,41 +108,49 @@ export function buildSignpost(ctx: HeroCtx): Mesh {
 export function buildStoneWall(ctx: HeroCtx): Mesh {
   const rng = prng(151);
   const p: Mesh[] = [];
-  const tones = ["#cfc3ae", "#b9ad9a", "#d8cbb2", "#aca497", "#c4b7a0", "#bfb4a8", "#d2c4a8", "#a89e90"];
-  const stone = () => jittered(tones[Math.floor(rng() * tones.length)], 0.12, rng);
-  // core (keeps gaps closed)
-  p.push(box(ctx, "olw_paint", 1.0, 0.44, 0.28, "#9e9385", 0, 0.0, 0, 1.4));
+  // warm cream / sandstone blocks in three uneven courses under a flat coping,
+  // like the reference's garden walls: few, chunky, softly varied stones read
+  // as hand-built; many thin courses read as brickwork
+  const tones = ["#d9cbad", "#cfc0a2", "#e1d4b8", "#c6b797", "#d4c6a6", "#bfb192", "#dccfb3"];
+  const stone = () => jittered(tones[Math.floor(rng() * tones.length)], 0.04, rng);
+  // core (keeps gaps closed, reads as soft shadowed mortar)
+  p.push(box(ctx, "olw_paint", 1.0, 0.4, 0.25, "#9d917c", 0, 0.0, 0, 1.4));
   const courses = [
-    [0.0, 0.16],
-    [0.15, 0.15],
-    [0.29, 0.14],
+    [0.0, 0.15],
+    [0.145, 0.13],
+    [0.265, 0.12],
   ];
+  let ci = 0;
   for (const [y, h] of courses) {
-    let x = -0.5 + rng() * 0.05;
-    while (x < 0.5) {
-      const w = 0.14 + rng() * 0.22;
-      const d = 0.3 + rng() * 0.08;
-      const b = box(ctx, "olw_paint", Math.min(w, 0.5 - x + 0.02), h * (0.9 + rng() * 0.2), d, stone(), x + w / 2, y, (rng() - 0.5) * 0.03, 1.6);
-      b.rotation.y = (rng() - 0.5) * 0.14;
-      b.rotation.z = (rng() - 0.5) * 0.08;
-      b.rotation.x = (rng() - 0.5) * 0.06;
-      p.push(b);
-      x += w + 0.012;
+    let x = -0.5 + (ci % 2 ? 0.08 : 0) * rng();
+    if (ci % 2) {
+      // stagger joints: a half stone at the start of odd courses
+      const w = 0.1 + rng() * 0.06;
+      p.push(box(ctx, "olw_paint", w, h * 0.96, 0.29, stone(), -0.5 + w / 2, y, 0, 1.4));
+      x = -0.5 + w + 0.012;
     }
+    while (x < 0.49) {
+      const w = Math.min(0.2 + rng() * 0.16, 0.5 - x);
+      if (w < 0.05) break;
+      const d = 0.28 + rng() * 0.04;
+      const b = box(ctx, "olw_paint", w, h * (0.92 + rng() * 0.1), d, stone(), x + w / 2, y, (rng() - 0.5) * 0.02, 1.4);
+      b.rotation.y = (rng() - 0.5) * 0.04;
+      b.rotation.z = (rng() - 0.5) * 0.05;
+      p.push(b);
+      x += w + 0.014;
+    }
+    ci++;
   }
-  // capstones set on edge
-  let x = -0.47;
-  while (x < 0.47) {
-    const w = 0.09 + rng() * 0.05;
-    const c = box(ctx, "olw_paint", w, 0.15 + rng() * 0.05, 0.3, jittered("#a39a8e", 0.16, rng), x + w / 2, 0.42, 0, 1.6);
-    c.rotation.z = (rng() - 0.5) * 0.35;
-    c.rotation.x = (rng() - 0.5) * 0.14;
+  // flat coping slabs with a small overhang, a shade lighter than the wall
+  let x = -0.5;
+  while (x < 0.49) {
+    const w = Math.min(0.24 + rng() * 0.12, 0.5 - x);
+    if (w < 0.05) break;
+    const c = box(ctx, "olw_paint", w, 0.075, 0.34, jittered("#e3d7bd", 0.04, rng), x + w / 2, 0.385, 0, 1.4);
+    c.rotation.z = (rng() - 0.5) * 0.05;
     p.push(c);
-    x += w + 0.015;
+    x += w + 0.012;
   }
-  // moss tufts at the base
-  p.push(ico(ctx, "olw_foliage", 0.12, "#6f8a4c", -0.35, 0.03, -0.17, { subdiv: 1, noise: 0.2, scale: [1.4, 0.5, 1], rng }));
-  p.push(ico(ctx, "olw_foliage", 0.1, "#7f9a58", 0.3, 0.02, 0.17, { subdiv: 1, noise: 0.2, scale: [1.3, 0.5, 1], rng }));
   return merge("stone-wall", p);
 }
 

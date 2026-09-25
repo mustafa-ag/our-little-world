@@ -160,14 +160,30 @@ export function ico(ctx: HeroCtx, slot: Slot, radius: number, c: string | ColorF
   const pos = m.getVerticesData(VertexBuffer.PositionKind)!;
   const sc = o.scale ?? [1, 1, 1];
   const rng = o.rng ?? prng(radius * 100 + x * 17 + y * 31 + z * 13);
-  // shared vertices get the same displacement (icosphere builder shares them when flat=false)
+  // Babylon's icosphere never shares vertices, so weld by position first: every
+  // copy of a corner gets the SAME displacement (independent jitter cracked the
+  // crowns into floating shards) and, for smooth shading, the same normal
   const amp = (o.noise ?? 0.16) * radius;
+  const keyOf = (i: number) => `${Math.round(pos[i] * 1e4)},${Math.round(pos[i + 1] * 1e4)},${Math.round(pos[i + 2] * 1e4)}`;
+  const weldId = new Int32Array(pos.length / 3);
+  const ids = new Map<string, number>();
+  const disp: number[] = [];
+  for (let i = 0; i < pos.length; i += 3) {
+    const key = keyOf(i);
+    let id = ids.get(key);
+    if (id === undefined) {
+      id = disp.length;
+      ids.set(key, id);
+      disp.push((rng() - 0.5) * 2 * amp);
+    }
+    weldId[i / 3] = id;
+  }
   for (let i = 0; i < pos.length; i += 3) {
     const px = pos[i] * sc[0];
     const py = pos[i + 1] * sc[1];
     const pz = pos[i + 2] * sc[2];
     const len = Math.hypot(px, py, pz) || 1;
-    const k = 1 + ((rng() - 0.5) * 2 * amp) / len;
+    const k = 1 + disp[weldId[i / 3]] / len;
     pos[i] = px * k;
     pos[i + 1] = py * k;
     pos[i + 2] = pz * k;
@@ -175,9 +191,38 @@ export function ico(ctx: HeroCtx, slot: Slot, radius: number, c: string | ColorF
   m.updateVerticesData(VertexBuffer.PositionKind, pos);
   if (o.flat !== false) m.convertToFlatShadedMesh();
   else {
+    // smooth: accumulate face normals per welded corner
     const idx = m.getIndices()!;
-    const nrm = m.getVerticesData(VertexBuffer.NormalKind)!;
-    VertexData.ComputeNormals(pos, idx, nrm);
+    const acc = new Float32Array(disp.length * 3);
+    for (let f = 0; f < idx.length; f += 3) {
+      const a = idx[f] * 3;
+      const b = idx[f + 1] * 3;
+      const c = idx[f + 2] * 3;
+      const e1x = pos[b] - pos[a], e1y = pos[b + 1] - pos[a + 1], e1z = pos[b + 2] - pos[a + 2];
+      const e2x = pos[c] - pos[a], e2y = pos[c + 1] - pos[a + 1], e2z = pos[c + 2] - pos[a + 2];
+      const nx = e1y * e2z - e1z * e2y;
+      const ny = e1z * e2x - e1x * e2z;
+      const nz = e1x * e2y - e1y * e2x;
+      for (const v of [idx[f], idx[f + 1], idx[f + 2]]) {
+        const w = weldId[v] * 3;
+        acc[w] += nx;
+        acc[w + 1] += ny;
+        acc[w + 2] += nz;
+      }
+    }
+    // orient like Babylon's own (outward) normals
+    const ref = m.getVerticesData(VertexBuffer.NormalKind)!;
+    const nrm = new Float32Array(pos.length);
+    let dot = 0;
+    for (let i = 0; i < pos.length; i += 3) {
+      const w = weldId[i / 3] * 3;
+      const l = Math.hypot(acc[w], acc[w + 1], acc[w + 2]) || 1;
+      nrm[i] = acc[w] / l;
+      nrm[i + 1] = acc[w + 1] / l;
+      nrm[i + 2] = acc[w + 2] / l;
+      dot += nrm[i] * ref[i] + nrm[i + 1] * ref[i + 1] + nrm[i + 2] * ref[i + 2];
+    }
+    if (dot < 0) for (let i = 0; i < nrm.length; i++) nrm[i] = -nrm[i];
     m.updateVerticesData(VertexBuffer.NormalKind, nrm);
   }
   return finish(m, ctx, slot, c, x, y, z);

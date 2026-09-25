@@ -5,7 +5,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { KitContext } from "../assets/AssetManager";
-import { box, cyl, merge, sphere } from "../assets/kit/util";
+import { blob, box, cyl, merge, sphere, tintVertices } from "../assets/kit/util";
 import { PALETTE } from "../rendering/materials";
 import type { PickupKind } from "../systems/worldController";
 
@@ -60,17 +60,40 @@ function card(k: KitContext) {
   return merge("card", [p, chip]);
 }
 
+/**
+ * A single storybook flower (cosmos-like): flat petal ring round a golden
+ * heart on a leafy stem. Vertex-coloured on one material = one draw call.
+ * Stays readable as a collectible without reading as a bunch of balloons.
+ */
 function flowerPickup(k: KitContext, hex: string) {
   const s = k.scene;
-  const petal = k.mats.flat(hex);
-  const parts: Mesh[] = [cyl(s, 0.03, 0.03, 0.3, k.mats.flat("#5f7f4a"), 0, 0, 0, 4)];
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2;
-    parts.push(sphere(s, 0.16, petal, Math.cos(a) * 0.13, 0.36, Math.sin(a) * 0.13, 5));
+  const white = k.mats.flat("#ffffff");
+  const tint = <T extends Mesh>(m: T, c: string) => (tintVertices(m, c), m);
+  const parts: Mesh[] = [tint(cyl(s, 0.03, 0.035, 0.34, white, 0, 0, 0, 4), "#5f7f4a")];
+  for (const [x, y, z, r] of [
+    [0.07, 0.1, 0, 0.5],
+    [-0.07, 0.17, 0.02, -0.5],
+  ]) {
+    const lf = tint(blob(s, 0.16, white, x, y, z, 0.3, 4), "#6f8a4c");
+    lf.rotation.z = r;
+    parts.push(lf);
   }
-  parts.push(sphere(s, 0.12, k.mats.flat(PALETTE.mutedYellow), 0, 0.38, 0, 5));
-  parts.push(sphere(s, 0.18, k.mats.flat(PALETTE.moss), 0.1, 0.08, 0.05, 4));
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const pt = tint(sphere(s, 0.15, white, Math.cos(a) * 0.1, 0.36, Math.sin(a) * 0.1, 5), i % 2 ? hex : shadeHex(hex, 0.1));
+    pt.scaling.set(1, 0.32, 0.62);
+    pt.rotation.y = -a;
+    parts.push(pt);
+  }
+  parts.push(tint(sphere(s, 0.1, white, 0, 0.38, 0, 5), "#d9a83a"));
   return merge("flowerPickup", parts);
+}
+
+function shadeHex(hex: string, t: number) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v: number) => Math.round(Math.min(255, Math.max(0, t >= 0 ? v + (255 - v) * t : v * (1 + t))));
+  return "#" + [f((n >> 16) & 255), f((n >> 8) & 255), f(n & 255)].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
 
 export function catMesh(k: KitContext) {

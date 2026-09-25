@@ -11,6 +11,8 @@ export interface FollowCamera {
   camera: TargetCamera;
   /** Move the look-at target (world units). */
   setTarget(x: number, z: number, snap?: boolean): void;
+  /** Set the follow distance (clamped to the wheel/pinch range); snap = no easing. Used by screenshots/debug. */
+  setDistance(d: number, snap?: boolean): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -76,6 +78,13 @@ export function createFollowCamera(scene: Scene, canvas: HTMLCanvasElement, isMo
       target.set(x, 0, z);
       if (snap) {
         smoothTarget.copyFrom(target);
+        place();
+      }
+    },
+    setDistance(d, snap = false) {
+      targetDistance = Math.max(MIN_DIST, Math.min(MAX_DIST, d));
+      if (snap) {
+        distance = targetDistance;
         place();
       }
     },

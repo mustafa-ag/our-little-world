@@ -13,7 +13,7 @@ import type { HeroCtx } from "./slots";
 export const CAR_BASE = PALETTE.carTeal;
 const CHROME = "#d9d6cf";
 const TYRE = "#2a292c";
-const GLASS = "#dbeaf0";
+const GLASS = "#7e98a2";
 
 export function retintCar(m: Mesh, hex: string) {
   recolourSlot(m, "olw_paint", CAR_BASE, hex);
@@ -84,23 +84,27 @@ export function buildCar(ctx: HeroCtx): Mesh {
   }
 
   // windows (glass slot): side band, windscreen, rear window (all poke out of the loft a little)
-  p.push(box(ctx, "olw_glass", 1.3, 0.4, 0.9, GLASS, 0, 0.98, 0.32));
-  const ws = box(ctx, "olw_glass", 1.02, 0.52, 0.06, GLASS, 0, 0.9, -0.22);
+  // side windows as two thin tumblehome panels that hug the body (a single
+  // wide glass box poked its flat top out of the rounded roof from above)
+  for (const sx of [-1, 1]) {
+    const sw = box(ctx, "olw_glass", 0.05, 0.36, 0.86, GLASS, sx * 0.575, 0.96, 0.32);
+    sw.rotation.z = sx * 0.16;
+    p.push(sw);
+  }
+  const ws = box(ctx, "olw_glass", 0.9, 0.5, 0.06, GLASS, 0, 0.9, -0.24);
   ws.rotation.x = 0.62;
   p.push(ws);
-  const rw = box(ctx, "olw_glass", 0.98, 0.46, 0.06, GLASS, 0, 0.94, 0.86);
+  const rw = box(ctx, "olw_glass", 0.86, 0.44, 0.06, GLASS, 0, 0.94, 0.84);
   rw.rotation.x = -0.72;
   p.push(rw);
   // pillars (dark paint) so the glass band reads as windows
   const pillarCol: ColorFn = () => dark;
-  p.push(box(ctx, "olw_paint", 1.31, 0.42, 0.05, pillarCol, 0, 0.98, -0.1));
-  p.push(box(ctx, "olw_paint", 1.31, 0.42, 0.05, pillarCol, 0, 0.98, 0.34));
-  p.push(box(ctx, "olw_paint", 1.31, 0.42, 0.05, pillarCol, 0, 0.98, 0.74));
-  // cream roll-top roof (2CV wink): a flattened dome that follows the roof curve
-  const roof = sphere(ctx, "olw_paint", 1.0, "#efe4cc", 0, 1.5, 0.3, 6);
-  roof.scaling.set(0.72, 0.09, 0.85);
-  p.push(roof);
-
+  for (const sx of [-1, 1])
+    for (const z of [-0.1, 0.34, 0.74]) {
+      const pl = box(ctx, "olw_paint", 0.07, 0.38, 0.05, pillarCol, sx * 0.585, 0.96, z);
+      pl.rotation.z = sx * 0.16;
+      p.push(pl);
+    }
   // chrome bumpers
   for (const z of [-1.2, 1.2]) {
     const b = cyl(ctx, "olw_metal", 0.09, 0.09, 1.02, CHROME, 0, 0, 0, 8);

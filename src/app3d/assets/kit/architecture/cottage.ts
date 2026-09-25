@@ -270,34 +270,52 @@ function mossBand(c: Ctx, node: TransformNode, width: number) {
   }
 }
 
-/** Ivy climbing a front corner (side = -1 west, +1 east), wrapping onto the side face. */
+/**
+ * Ivy climbing a front corner (side = -1 west, +1 east): a dense mass of small
+ * leaf blobs, wide and dark at the base, thinning to a tendril near the eaves,
+ * wrapping onto the side face, with a short run draped under the eave.
+ */
 function ivy(c: Ctx, front: TransformNode, sideNode: TransformNode, side: -1 | 1) {
   const s = c.scene;
-  const greens = [TINTS.moss, TINTS.olive, TINTS.mossDark, "#7c9a5e"];
-  const top = c.wallH * (0.6 + rnd(c, 21) * 0.3);
-  let y = 0.18;
-  let i = 0;
-  while (y < top) {
-    const t = y / top; // 0 at the base → 1 at the tip: wide and dense low down, a thin tendril up top
-    const n = t < 0.45 ? 3 : t < 0.75 ? 2 : 1;
+  const greens = ["#4f6a3d", "#5d7a45", "#6f8c4f", "#809c5a", "#8fa865"];
+  const top = c.wallH * (0.7 + rnd(c, 21) * 0.28);
+  const leaf = (node: TransformNode, x: number, y: number, d: number, t: number, k: number) => {
+    // darker, bigger leaves low down; fresher, lighter tips
+    const gi = Math.min(greens.length - 1, Math.max(0, Math.floor(t * 3 + rnd(c, k, 22) * 2.2)));
+    const b = tblob(s, d, c.sl.foliage, greens[gi], x, y, -0.035 - rnd(c, k, 29) * 0.03, 0.8, d > 0.15 ? 3 : 2);
+    b.scaling.z = 0.4;
+    b.rotation.z = (rnd(c, k, 30) - 0.5) * 1.2;
+    add(c, node, b);
+  };
+  let k = 0;
+  for (let y = 0.08; y < top; y += 0.1) {
+    const t = y / top;
+    const w = 0.12 + 0.78 * Math.pow(1 - t, 0.9) * (0.75 + rnd(c, y, 23) * 0.5);
+    const n = Math.max(1, Math.round(w / 0.12));
     for (let j = 0; j < n; j++) {
-      const g = greens[Math.floor(rnd(c, i, j, 22) * greens.length)];
-      const d = (0.22 + rnd(c, i, j, 23) * 0.16) * (1.15 - t * 0.5);
-      const spread = (0.15 + rnd(c, i, j, 24) * 0.55) * (1.2 - t) + j * 0.22;
-      const f = tblob(s, d, c.sl.foliage, g, side * (c.hw - 0.1 - spread), y + rnd(c, i, j, 26) * 0.1, -0.04, 0.7, 4);
-      f.scaling.z = 0.3;
-      add(c, front, f);
+      const u = (j + rnd(c, k, 24) * 0.8) / n;
+      const x = side * (c.hw - 0.03 - u * w);
+      leaf(front, x, y + (rnd(c, k, 26) - 0.5) * 0.06, 0.12 + rnd(c, k, 25) * 0.08 * (1.2 - t), t, k);
+      k++;
     }
     // wrap round onto the side face (corner is at local x = -hd on east, +hd on west)
-    if (i % 2 === 0 && t < 0.8) {
-      const drift = rnd(c, i, 27) * 0.4 * (1.2 - t);
-      const sx = side > 0 ? -c.hd + 0.1 + drift : c.hd - 0.1 - drift;
-      const sb = tblob(s, 0.24 + rnd(c, i, 28) * 0.12, c.sl.foliage, greens[(i + 1) % greens.length], sx, y + 0.08, -0.04, 0.7, 4);
-      sb.scaling.z = 0.3;
-      add(c, sideNode, sb);
-    }
-    y += 0.2 + rnd(c, i, 25) * 0.08;
-    i++;
+    const sw = w * 0.55;
+    const ns = Math.max(1, Math.round(sw / 0.13));
+    if (t < 0.85)
+      for (let j = 0; j < ns; j++) {
+        const u = (j + rnd(c, k, 27) * 0.8) / ns;
+        const sx = side > 0 ? -c.hd + 0.03 + u * sw : c.hd - 0.03 - u * sw;
+        leaf(sideNode, sx, y + (rnd(c, k, 28) - 0.5) * 0.06, 0.12 + rnd(c, k, 25) * 0.07, t, k);
+        k++;
+      }
+  }
+  // a short run draped along under the eave
+  const run = 0.6 + rnd(c, 31) * 0.8;
+  for (let x = 0; x < run; x += 0.1) {
+    const hang = 0.05 + rnd(c, x, 32) * 0.18 * (1 - x / run);
+    const px = side * (c.hw - 0.08 - x);
+    leaf(front, px, c.wallH - 0.1 - hang, 0.11 + rnd(c, x, 33) * 0.06, 0.6, k++);
+    if (rnd(c, x, 34) > 0.55) leaf(front, px, c.wallH - 0.25 - hang * 1.6, 0.1, 0.8, k++);
   }
 }
 

@@ -74,7 +74,8 @@ function crown(ctx: HeroCtx, clusters: Cluster[], rng: Rng, noise = 0.075, subdi
     y1 = Math.max(y1, y + r * (sy ?? 1));
   }
   const col = crownColor(y0 + (y1 - y0) * 0.1, y1, rng, dark, light);
-  return clusters.map(([x, y, z, r, sy]) => ico(ctx, "olw_foliage", r, col, x, y, z, { subdiv, noise, scale: [1, sy ?? 0.92, 1], rng }));
+  // smooth-shaded clusters: soft painted canopies instead of faceted gems
+  return clusters.map(([x, y, z, r, sy]) => ico(ctx, "olw_foliage", r, col, x, y, z, { subdiv, noise, scale: [1, sy ?? 0.92, 1], rng, flat: false }));
 }
 
 /** Round oak with a lean to +x and a fuller, taller crown. ~3.3 tall. */

@@ -63,8 +63,11 @@ const GRAIN_OF: Record<Paint, Grain> = {
   grass: "grass",
   heather: "grass",
   moss: "grass",
-  cobble: "cobble",
-  path: "paved",
+  // the street itself (t_path: the Royal Mile & lanes) is cobbled setts; the
+  // village squares & sidewalks (t_cobble) read as big sandstone flags, like
+  // the reference's pale paved sidewalks either side of a darker road
+  cobble: "paved",
+  path: "cobble",
   pavement: "paved",
   road: "paved",
   water: "water",
@@ -90,7 +93,8 @@ const C = {
   cobble: hex("#c2b49c"),
   cobbleDark: hex("#a49682"),
   stoneWarm: hex(PALETTE.stoneWarm),
-  path: hex("#d5c29f"),
+  path: hex("#ada08b"),
+  kerb: hex("#e4d8bf"),
   pavement: hex("#d2c6b1"),
   road: hex("#9d978e"),
   water: hex("#86aec0"),
@@ -331,7 +335,13 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
               return q !== own && !isSoft(q) && q !== "water";
             };
             if ((fx < e && differs(tx0 - 1, ty0)) || (fx > 1 - e && differs(tx0 + 1, ty0)) || (fy < e && differs(tx0, ty0 - 1)) || (fy > 1 - e && differs(tx0, ty0 + 1)))
-              mixInto(c, C.cobbleDark, 0.45);
+              mixInto(c, C.cobbleDark, 0.55);
+            else if (own !== "path") {
+              // a pale dressed kerb band on the sidewalk side of a street
+              const k = 2.8 / ppt;
+              const street = (nx: number, ny: number) => paintAt(nx, ny) === "path";
+              if ((fx < k && street(tx0 - 1, ty0)) || (fx > 1 - k && street(tx0 + 1, ty0)) || (fy < k && street(tx0, ty0 - 1)) || (fy > 1 - k && street(tx0, ty0 + 1))) mixInto(c, C.kerb, 0.6);
+            }
           }
           if (fam !== "water" && g > 0.02) {
             // grass tufts / moss creeping between stones near the edge
@@ -369,7 +379,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   // tiles per texture repeat, rotation to break axis alignment
   const GRAIN_SETUP: Record<Exclude<Grain, "water">, { rep: number; ang: number; blend: number }> = {
     grass: { rep: 2.6, ang: 0.47, blend: 0.4 },
-    cobble: { rep: 2.2, ang: 0, blend: 0.3 },
+    cobble: { rep: 2.0, ang: 0, blend: 0.26 },
     paved: { rep: 2.8, ang: 0, blend: 0.3 },
   };
 
@@ -693,31 +703,31 @@ function grainTexture(scene: Scene, kind: "grass" | "cobble" | "paving"): Dynami
       });
     }
   } else if (kind === "cobble") {
-    // dark mortar, rounded irregular setts in offset rows
-    ctx.fillStyle = grey(78);
+    // soft mortar, squarish worn setts in offset rows: low contrast so the
+    // street reads as a painted surface, not polka dots
+    ctx.fillStyle = grey(104);
     ctx.fillRect(0, 0, s, s);
-    const rows = 8;
+    const rows = 10;
     const rh = s / rows;
     for (let r = 0; r < rows; r++) {
-      let x = (r % 2) * rh * 0.5 + (grnd() - 0.5) * 4;
+      let x = (r % 2) * rh * 0.5 + (grnd() - 0.5) * 3;
       const start = x;
       while (x < start + s - rh * 0.6) {
-        const w = rh * (0.85 + grnd() * 0.45);
+        const w = rh * (0.9 + grnd() * 0.5);
         const cx = x + w / 2;
-        const cy = r * rh + rh / 2 + (grnd() - 0.5) * 2.5;
-        const v = 138 + (grnd() - 0.5) * 34;
-        const rx = w / 2 - 2.2;
-        const ry = rh / 2 - 2.4;
-        const rot = (grnd() - 0.5) * 0.25;
+        const cy = r * rh + rh / 2 + (grnd() - 0.5) * 1.5;
+        const v = 132 + (grnd() - 0.5) * 22;
+        const hw = w / 2 - 1.4;
+        const hh = rh / 2 - 1.5;
         wrapped(cx, cy, w, (X, Y) => {
           ctx.fillStyle = grey(v);
           ctx.beginPath();
-          ctx.ellipse(X, Y, rx, ry, rot, 0, Math.PI * 2);
+          ctx.roundRect(X - hw, Y - hh, hw * 2, hh * 2, Math.min(hw, hh) * 0.55);
           ctx.fill();
-          // painted highlight on the upper-left of each stone
-          ctx.fillStyle = grey(v + 22, 0.55);
+          // a gentle painted highlight on the upper edge of each stone
+          ctx.fillStyle = grey(v + 12, 0.45);
           ctx.beginPath();
-          ctx.ellipse(X - rx * 0.2, Y - ry * 0.25, rx * 0.55, ry * 0.45, rot, 0, Math.PI * 2);
+          ctx.roundRect(X - hw * 0.8, Y - hh * 0.9, hw * 1.6, hh * 0.8, Math.min(hw, hh) * 0.5);
           ctx.fill();
         });
         x += w;
