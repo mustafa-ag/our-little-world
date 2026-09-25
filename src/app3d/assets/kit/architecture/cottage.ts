@@ -11,15 +11,18 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { hash01, merge } from "../util";
-import { Surface, shade, mix, tblob, tbox, tcyl } from "./geom";
+import { Surface, shade, mix, tblob, tbox, tcyl, type V3 } from "./geom";
 import type { Slots } from "./slots";
-import { TINTS, type CottageSpec } from "./presets";
+import { TINTS, specFromVariant, type CottageSpec } from "./presets";
+import { DOOR_H, DOOR_RECESS, DOOR_W, SILL_Y, STOREY as SCALE_STOREY, WINDOW_H, WINDOW_W } from "../../../world/scale";
 
-export const STOREY = 1.45;
+export const STOREY = SCALE_STOREY;
 /** wall inset from the tile footprint so eaves stay inside the tile */
 const INSET = 0.22;
 const WALL_T = 0.24;
-const RECESS = 0.12;
+/** width of a side lean-to */
+const LEAN_W = 0.85;
+const RECESS = DOOR_RECESS;
 const STONE_UV = 0.9;
 
 type FaceName = "front" | "back" | "east" | "west";
@@ -44,6 +47,8 @@ interface Ctx {
   wallH: number;
   seed: number;
   root: TransformNode;
+  /** parent of the roof, chimneys and dormers (rotated 90° for street-facing gables) */
+  roofNode: TransformNode;
 }
 
 const rnd = (c: Ctx, ...n: number[]) => hash01(c.seed, ...n);
@@ -144,8 +149,16 @@ function windowParts(c: Ctx, node: TransformNode, o: Opening, opts: { flowers: b
   // mullions
   add(c, node, tbox(s, 0.035, o.h - 0.1, 0.03, sl.paint, trim, o.x, o.y + 0.05, fz + 0.02));
   add(c, node, tbox(s, o.w - 0.1, 0.035, 0.03, sl.paint, trim, o.x, o.y + o.h * 0.58, fz + 0.02));
-  // glass, recessed
-  add(c, node, tbox(s, o.w - 0.06, o.h - 0.06, 0.02, sl.glass, opts.warm ? "#f2d9a6" : "#ffffff", o.x, o.y + 0.03, RECESS));
+  // glass, recessed: pale lower pane, darker interior toward the head, a painted
+  // reflection streak (all on the glass slot so the whole pane glows at night)
+  if (opts.warm) add(c, node, tbox(s, o.w - 0.06, o.h - 0.06, 0.02, sl.glass, "#f2d9a6", o.x, o.y + 0.03, RECESS));
+  else {
+    add(c, node, tbox(s, o.w - 0.06, (o.h - 0.06) * 0.55, 0.02, sl.glass, "#c3d0d4", o.x, o.y + 0.03, RECESS));
+    add(c, node, tbox(s, o.w - 0.06, (o.h - 0.06) * 0.45, 0.02, sl.glass, "#7f8c94", o.x, o.y + 0.03 + (o.h - 0.06) * 0.55, RECESS));
+    const streak = tbox(s, 0.05, o.h * 0.5, 0.01, sl.paint, "#eef3f2", o.x - o.w * 0.18, o.y + o.h * 0.22, RECESS - 0.012);
+    streak.rotation.z = -0.5;
+    add(c, node, streak);
+  }
   // curtains
   if (opts.curtains) {
     const cw = Math.min(0.16, o.w * 0.3);
@@ -352,7 +365,7 @@ function roof(c: Ctx, r: RoofDims) {
       sf.quad(roofPoint(c, r, x0, 0, south), roofPoint(c, r, x1, 0, south), roofPoint(c, r, x1, 1, south), roofPoint(c, r, x0, 1, south), n, sp.roofTint, [x0 * uvS, 0, x1 * uvS, 0, x1 * uvS, slopeLen * uvS, x0 * uvS, slopeLen * uvS]);
     }
   }
-  add(c, c.root, sf.bake("roof"));
+  add(c, c.roofNode, sf.bake("roof"));
 
   // moss / lichen patches lying on the slopes
   if (sp.moss) {
@@ -368,19 +381,19 @@ function roof(c: Ctx, r: RoofDims) {
       const col = mix(mix(TINTS.olive, TINTS.mossDark, rnd(c, i, 37)), sp.roofTint, 0.45);
       ms.quad(lift(roofPoint(c, r, x - w / 2, t0, south)), lift(roofPoint(c, r, x + w / 2, t0, south)), lift(roofPoint(c, r, x + w * 0.35, t0 + dt, south)), lift(roofPoint(c, r, x - w * 0.4, t0 + dt, south)), south ? [0, 1, -0.5] : [0, 1, 0.5], col);
     }
-    add(c, c.root, ms.bake("moss"));
+    add(c, c.roofNode, ms.bake("moss"));
   }
 
   // eaves boards (front / back) + ridge tiles
   const eaveHex = shade(TINTS.wood, -0.15);
-  add(c, c.root, tbox(s, r.hwR * 2 + 0.02, 0.09, 0.06, sl.wood, eaveHex, 0, c.wallH - 0.06, -r.hdR + 0.02));
-  add(c, c.root, tbox(s, r.hwR * 2 + 0.02, 0.09, 0.06, sl.wood, eaveHex, 0, c.wallH - 0.06, r.hdR - 0.02));
+  add(c, c.roofNode, tbox(s, r.hwR * 2 + 0.02, 0.09, 0.06, sl.wood, eaveHex, 0, c.wallH - 0.06, -r.hdR + 0.02));
+  add(c, c.roofNode, tbox(s, r.hwR * 2 + 0.02, 0.09, 0.06, sl.wood, eaveHex, 0, c.wallH - 0.06, r.hdR - 0.02));
   const ridgeHex = shade(sp.roofTint, -0.18);
   const nr = Math.max(4, Math.round((r.hwR * 2) / 0.24));
   for (let i = 0; i < nr; i++) {
     const x = -r.hwR + 0.12 + i * ((r.hwR * 2 - 0.24) / (nr - 1));
     const p = roofPoint(c, r, x, 1, true);
-    add(c, c.root, tbox(s, 0.2, 0.08, 0.22, sl.paint, ridgeHex, x, p[1] - 0.02, 0));
+    add(c, c.roofNode, tbox(s, 0.2, 0.08, 0.22, sl.paint, ridgeHex, x, p[1] - 0.02, 0));
   }
 
   if (sp.crow) {
@@ -395,11 +408,11 @@ function roof(c: Ctx, r: RoofDims) {
         const top = c.wallH + t1 * r.rise + 0.2;
         for (const south of [true, false]) {
           const z0 = south ? -r.hdR + i * dz : r.hdR - (i + 1) * dz;
-          add(c, c.root, tbox(s, 0.34, top - (c.wallH - 0.15), dz + 0.01, sl.stone, hex, x, c.wallH - 0.15, z0 + dz / 2, 1));
-          add(c, c.root, tbox(s, 0.4, 0.06, dz + 0.04, sl.paint, shade(sp.wall, 0.18), x, top, z0 + dz / 2));
+          add(c, c.roofNode, tbox(s, 0.34, top - (c.wallH - 0.15), dz + 0.01, sl.stone, hex, x, c.wallH - 0.15, z0 + dz / 2, 1));
+          add(c, c.roofNode, tbox(s, 0.4, 0.06, dz + 0.04, sl.paint, shade(sp.wall, 0.18), x, top, z0 + dz / 2));
         }
       }
-      add(c, c.root, tbox(s, 0.42, 0.12, 0.42, sl.paint, shade(sp.wall, 0.2), x, c.wallH + r.rise + 0.2, 0));
+      add(c, c.roofNode, tbox(s, 0.42, 0.12, 0.42, sl.paint, shade(sp.wall, 0.2), x, c.wallH + r.rise + 0.2, 0));
     }
   } else {
     // gable-end triangles in wall stone + barge boards
@@ -408,14 +421,14 @@ function roof(c: Ctx, r: RoofDims) {
       const x = side * r.hwR;
       gs.tri([x, c.wallH, -r.hdR], [x, c.wallH, r.hdR], [x, c.wallH + r.rise, 0], [side, 0, 0], sp.wall);
     }
-    add(c, c.root, gs.bake("gable"));
+    add(c, c.roofNode, gs.bake("gable"));
     const ang = Math.atan2(r.rise, r.hdR);
     for (const side of [-1, 1]) {
       for (const south of [true, false]) {
         const b = tbox(s, 0.07, 0.11, slopeLen + 0.1, sl.wood, eaveHex, 0, 0, 0);
         b.position.set(side * (r.hwR + 0.01), c.wallH + r.rise / 2 - 0.03, south ? -r.hdR / 2 : r.hdR / 2);
         b.rotation.x = south ? -ang : ang;
-        add(c, c.root, b);
+        add(c, c.roofNode, b);
       }
     }
   }
@@ -429,20 +442,20 @@ function chimney(c: Ctx, r: RoofDims, x: number, style: 1 | 2, pots: number) {
   const potHex = "#a8705a";
   const top = c.wallH + r.rise + (style === 1 ? 0.55 : 0.4);
   if (style === 1) {
-    add(c, c.root, tbox(s, 0.44, top - (c.wallH - 0.4), 0.44, sl.stone, hex, x, c.wallH - 0.4, 0, 1));
-    add(c, c.root, tbox(s, 0.54, 0.1, 0.54, sl.paint, cap, x, top, 0));
+    add(c, c.roofNode, tbox(s, 0.44, top - (c.wallH - 0.4), 0.44, sl.stone, hex, x, c.wallH - 0.4, 0, 1));
+    add(c, c.roofNode, tbox(s, 0.54, 0.1, 0.54, sl.paint, cap, x, top, 0));
     for (let i = 0; i < pots; i++) {
       const px = x + (pots === 1 ? 0 : (i / (pots - 1) - 0.5) * 0.26);
-      add(c, c.root, tcyl(s, 0.12, 0.15, 0.24, sl.paint, potHex, px, top + 0.1, 0, 7));
-      add(c, c.root, tcyl(s, 0.15, 0.15, 0.04, sl.paint, shade(potHex, -0.2), px, top + 0.32, 0, 7));
+      add(c, c.roofNode, tcyl(s, 0.12, 0.15, 0.24, sl.paint, potHex, px, top + 0.1, 0, 7));
+      add(c, c.roofNode, tcyl(s, 0.15, 0.15, 0.04, sl.paint, shade(potHex, -0.2), px, top + 0.32, 0, 7));
     }
   } else {
-    add(c, c.root, tbox(s, 0.72, top - (c.wallH - 0.2), 0.4, sl.stone, hex, x, c.wallH - 0.2, 0.05, 1));
-    add(c, c.root, tbox(s, 0.8, 0.07, 0.48, sl.paint, cap, x, top - 0.35, 0.05));
-    add(c, c.root, tbox(s, 0.8, 0.09, 0.48, sl.paint, cap, x, top, 0.05));
+    add(c, c.roofNode, tbox(s, 0.72, top - (c.wallH - 0.2), 0.4, sl.stone, hex, x, c.wallH - 0.2, 0.05, 1));
+    add(c, c.roofNode, tbox(s, 0.8, 0.07, 0.48, sl.paint, cap, x, top - 0.35, 0.05));
+    add(c, c.roofNode, tbox(s, 0.8, 0.09, 0.48, sl.paint, cap, x, top, 0.05));
     for (let i = 0; i < Math.max(2, pots); i++) {
       const px = x + (i / (Math.max(2, pots) - 1) - 0.5) * 0.42;
-      add(c, c.root, tcyl(s, 0.13, 0.16, 0.3, sl.paint, potHex, px, top + 0.09, 0.05, 7));
+      add(c, c.roofNode, tcyl(s, 0.13, 0.16, 0.3, sl.paint, potHex, px, top + 0.09, 0.05, 7));
     }
   }
 }
@@ -457,12 +470,12 @@ function dormer(c: Ctx, r: RoofDims, x: number) {
   const depth = 0.72;
   const zf = base[2] - 0.22; // front face
   const y0 = base[1] - 0.12;
-  add(c, c.root, tbox(s, w, h, depth, sl.stone, sp.wall, x, y0, zf + depth / 2, 1));
+  add(c, c.roofNode, tbox(s, w, h, depth, sl.stone, sp.wall, x, y0, zf + depth / 2, 1));
   // window on the dormer front
-  add(c, c.root, tbox(s, 0.46, 0.44, 0.05, sl.paint, sp.trim, x, y0 + 0.16, zf - 0.02));
-  add(c, c.root, tbox(s, 0.38, 0.36, 0.02, sl.glass, "#ffffff", x, y0 + 0.2, zf - 0.03));
-  add(c, c.root, tbox(s, 0.03, 0.36, 0.02, sl.paint, sp.trim, x, y0 + 0.2, zf - 0.045));
-  add(c, c.root, tbox(s, 0.38, 0.03, 0.02, sl.paint, sp.trim, x, y0 + 0.4, zf - 0.045));
+  add(c, c.roofNode, tbox(s, 0.46, 0.44, 0.05, sl.paint, sp.trim, x, y0 + 0.16, zf - 0.02));
+  add(c, c.roofNode, tbox(s, 0.38, 0.36, 0.02, sl.glass, "#ffffff", x, y0 + 0.2, zf - 0.03));
+  add(c, c.roofNode, tbox(s, 0.03, 0.36, 0.02, sl.paint, sp.trim, x, y0 + 0.2, zf - 0.045));
+  add(c, c.roofNode, tbox(s, 0.38, 0.03, 0.02, sl.paint, sp.trim, x, y0 + 0.4, zf - 0.045));
   // little gable roof
   const rw = w / 2 + 0.08;
   const rise = 0.34;
@@ -477,10 +490,10 @@ function dormer(c: Ctx, r: RoofDims, x: number) {
   const b2: [number, number, number] = [x + rw, top - 0.02, zb];
   sf.quad(a, b, ridgeB, ridgeF, [-rise, rw, 0], sp.roofTint, [0, 0, depth * 0.55, 0, depth * 0.55, 0.45, 0, 0.45]);
   sf.quad(a2, b2, ridgeB, ridgeF, [rise, rw, 0], sp.roofTint, [0, 0, depth * 0.55, 0, depth * 0.55, 0.45, 0, 0.45]);
-  add(c, c.root, sf.bake("dormerRoof"));
+  add(c, c.roofNode, sf.bake("dormerRoof"));
   const gs = new Surface(s, sl.stone);
   gs.tri([x - rw + 0.06, top - 0.02, zf - 0.02], [x + rw - 0.06, top - 0.02, zf - 0.02], [x, top + rise - 0.04, zf - 0.02], [0, 0, -1], sp.wall);
-  add(c, c.root, gs.bake("dormerGable"));
+  add(c, c.roofNode, gs.bake("dormerGable"));
 }
 
 // ----------------------------------------------------------------- shop / café front
@@ -529,35 +542,136 @@ function shopFront(c: Ctx, front: TransformNode, bw: number, doorX: number) {
   }
 }
 
+// ----------------------------------------------------------------- silhouette add-ons
+/** Little gabled porch over the door (posts, lintel beam, tiny roof). */
+function porch(c: Ctx, node: TransformNode, doorX: number) {
+  const s = c.scene;
+  const { sl, sp } = c;
+  const hw = DOOR_W / 2 + 0.2;
+  const depth = 0.42;
+  const y0 = DOOR_H + 0.16;
+  const wood = shade(TINTS.wood, -0.1);
+  for (const sx of [-1, 1]) add(c, node, tcyl(s, 0.07, 0.08, y0, sl.wood, wood, doorX + sx * (hw - 0.05), 0, -depth + 0.05, 6));
+  add(c, node, tbox(s, hw * 2 + 0.06, 0.08, 0.08, sl.wood, wood, doorX, y0 - 0.04, -depth + 0.05));
+  const rise = 0.3;
+  const sf = new Surface(s, sp.roof === "slate" ? sl.slate : sl.roofTile);
+  const z0 = 0.02;
+  const z1 = -depth - 0.08;
+  const L: V3 = [doorX - hw - 0.08, y0, 0];
+  const R: V3 = [doorX + hw + 0.08, y0, 0];
+  const T: V3 = [doorX, y0 + rise, 0];
+  sf.quad([L[0], L[1], z0], [L[0], L[1], z1], [T[0], T[1], z1], [T[0], T[1], z0], [-rise, hw, 0], sp.roofTint, [0, 0, 0.5, 0, 0.5, 0.4, 0, 0.4]);
+  sf.quad([R[0], R[1], z0], [R[0], R[1], z1], [T[0], T[1], z1], [T[0], T[1], z0], [rise, hw, 0], sp.roofTint, [0, 0, 0.5, 0, 0.5, 0.4, 0, 0.4]);
+  add(c, node, sf.bake("porchRoof"));
+  const gs = new Surface(s, sl.wood);
+  gs.tri([L[0] + 0.1, y0 + 0.02, z1 + 0.04], [R[0] - 0.1, y0 + 0.02, z1 + 0.04], [T[0], T[1] - 0.05, z1 + 0.04], [0, 0, -1], shade(TINTS.wood, 0.1));
+  add(c, node, gs.bake("porchGable"));
+}
+
+/** A shallow canted bay window replacing one ground-floor window. */
+function bayWindow(c: Ctx, node: TransformNode, o: Opening) {
+  const s = c.scene;
+  const { sl, sp } = c;
+  const w = o.w + 0.34;
+  const h = o.h + 0.3;
+  const y = o.y - 0.22;
+  const d = 0.3;
+  add(c, node, tbox(s, w, h, d, sl.stone, shade(sp.wall, 0.04), o.x, y, -d / 2, 1));
+  add(c, node, tbox(s, o.w + 0.02, o.h, 0.04, sl.paint, sp.trim, o.x, o.y, -d - 0.005));
+  add(c, node, tbox(s, o.w - 0.08, o.h * 0.55 - 0.05, 0.02, sl.glass, "#c3d0d4", o.x, o.y + 0.04, -d - 0.02));
+  add(c, node, tbox(s, o.w - 0.08, o.h * 0.45 - 0.04, 0.02, sl.glass, "#7f8c94", o.x, o.y + o.h * 0.55, -d - 0.02));
+  for (const mx of [-o.w / 4, o.w / 4]) add(c, node, tbox(s, 0.035, o.h - 0.06, 0.02, sl.paint, sp.trim, o.x + mx, o.y + 0.03, -d - 0.035));
+  if (sp.curtains) add(c, node, tbox(s, 0.14, o.h - 0.14, 0.01, sl.paint, sp.curtains, o.x - o.w / 2 + 0.12, o.y + 0.07, -d - 0.005));
+  // lead-capped lid
+  add(c, node, tbox(s, w + 0.1, 0.08, d + 0.1, sp.roof === "slate" ? sl.slate : sl.roofTile, shade(sp.roofTint, -0.08), o.x, y + h, -d / 2 - 0.03));
+}
+
+/** A single-pitch lean-to against one gable end (side = -1 west, +1 east); root space. */
+function leanTo(c: Ctx, side: -1 | 1) {
+  const s = c.scene;
+  const { sl, sp } = c;
+  const hL = Math.min(1.5, c.wallH - 0.45);
+  const x0 = side * c.hw;
+  const x1 = side * (c.hw + LEAN_W);
+  const zf = -c.hd + 0.28;
+  const zb = c.hd;
+  const depth = zb - zf;
+  const wall = shade(sp.wall, -0.05);
+  add(c, c.root, tbox(s, LEAN_W, hL, depth, sl.stone, wall, (x0 + x1) / 2, 0, (zf + zb) / 2, 1));
+  // a small window + frame on the front of the lean-to
+  const wx = (x0 + x1) / 2;
+  add(c, c.root, tbox(s, 0.4, 0.46, 0.03, sl.paint, sp.trim, wx, 0.55, zf - 0.01));
+  add(c, c.root, tbox(s, 0.32, 0.38, 0.02, sl.glass, "#9aa9b0", wx, 0.59, zf - 0.025));
+  // mono-pitch roof, overhanging front, back and outer edge
+  const sf = new Surface(s, sp.roof === "slate" ? sl.slate : sl.roofTile);
+  const lo = hL - 0.02;
+  const hi = hL + 0.42;
+  const xo = x1 + side * 0.12;
+  sf.quad([xo, lo, zf - 0.14], [xo, lo, zb + 0.1], [x0, hi, zb + 0.1], [x0, hi, zf - 0.14], [side * (hi - lo), LEAN_W, 0], shade(sp.roofTint, 0.04), [0, 0, (depth + 0.24) * 0.55, 0, (depth + 0.24) * 0.55, 0.55, 0, 0.55]);
+  add(c, c.root, sf.bake("leanRoof"));
+  add(c, c.root, tbox(s, 0.06, 0.09, depth + 0.24, sl.wood, shade(TINTS.wood, -0.15), xo, lo - 0.08, (zf + zb) / 2 - 0.02));
+}
+
+/** Small attic window in a street-facing gable. */
+function gableWindow(c: Ctx, node: TransformNode, y: number) {
+  const s = c.scene;
+  const { sl, sp } = c;
+  add(c, node, tbox(s, 0.44, 0.5, 0.06, sl.paint, sp.trim, 0, y, -0.03));
+  add(c, node, tbox(s, 0.34, 0.2, 0.02, sl.glass, "#c3d0d4", 0, y + 0.05, -0.065));
+  add(c, node, tbox(s, 0.34, 0.2, 0.02, sl.glass, "#7f8c94", 0, y + 0.25, -0.065));
+  add(c, node, tbox(s, 0.52, 0.06, 0.12, sl.paint, shade(sp.wall, 0.14), 0, y - 0.06, -0.06));
+}
+
 // ----------------------------------------------------------------- the building
-export function buildCottage(scene: Scene, sl: Slots, sp: CottageSpec): Mesh {
-  const bw = sp.w - INSET * 2;
-  const bd = sp.d - INSET * 2;
-  const wallH = sp.kind === "cafe" ? 2.05 : STOREY * sp.storeys + 0.2;
-  const root = new TransformNode("cottage-root", scene);
-  root.rotation.z = sp.lean;
-  const c: Ctx = { scene, sl, sp, parts: [], nodes: [root], hw: bw / 2, hd: bd / 2, wallH, seed: sp.seed, root };
-  const wallHex = sp.wall;
-
-  // plinth (unleaned, hides the lean's base offset) + moss band
-  c.parts.push(tbox(scene, bw + 0.1, 0.24, bd + 0.1, sl.stone, shade(wallHex, -0.22), 0, 0, 0, 1));
-
-  // ---- layout
+/** Front-façade slot layout (shared with placement code that needs the door position). */
+export function frontLayout(sp: CottageSpec) {
+  const full = sp.w - INSET * 2;
+  // a lean-to takes LEAN_W off one side of the main body (the footprint is unchanged)
+  const bw = sp.leanTo ? full - LEAN_W : full;
+  const bodyX = sp.leanTo ? (-sp.leanTo * LEAN_W) / 2 : 0;
   const frontSlots = Math.max(1, Math.floor(bw / 0.95));
   const slotW = bw / frontSlots;
   const x0 = -bw / 2 + slotW / 2;
-  const doorIdx = frontSlots === 1 ? 0 : sp.doorSide ? (rnd(c, 1) > 0.5 ? 0 : frontSlots - 1) : Math.floor(frontSlots / 2);
-  const doorX = x0 + doorIdx * slotW;
-  const doorW = sp.kind === "tenement" ? 0.7 : 0.64;
-  const doorH = sp.kind === "tenement" ? 1.2 : 1.1;
+  const doorIdx = frontSlots === 1 ? 0 : sp.doorSide ? (hash01(sp.seed, 1) > 0.5 ? 0 : frontSlots - 1) : Math.floor(frontSlots / 2);
+  return { frontSlots, slotW, x0, doorIdx, doorX: bodyX + x0 + doorIdx * slotW, bodyX, bw };
+}
+
+/** Door centre on the building's local X axis for a kit variant string ("p=…,w=…,d=…"). */
+export function kitDoorX(variant: string) {
+  return frontLayout(specFromVariant(variant)).doorX;
+}
+
+export function buildCottage(scene: Scene, sl: Slots, sp: CottageSpec): Mesh {
+  const { frontSlots, slotW, x0, doorIdx, doorX: doorXW, bodyX, bw } = frontLayout(sp);
+  const doorX = doorXW - bodyX; // in body space
+  const bd = sp.d - INSET * 2;
+  // stepped heights: every building a little taller / lower than its preset
+  const wallH = sp.kind === "cafe" ? 2.05 : STOREY * sp.storeys + 0.2 + (hash01(sp.seed, 77) - 0.5) * 0.24;
+  const root = new TransformNode("cottage-root", scene);
+  root.rotation.z = sp.lean;
+  root.position.x = bodyX;
+  const roofNode = new TransformNode("roof-root", scene);
+  roofNode.parent = root;
+  if (sp.gableFront) roofNode.rotation.y = Math.PI / 2;
+  const c: Ctx = { scene, sl, sp, parts: [], nodes: [root, roofNode], hw: bw / 2, hd: bd / 2, wallH, seed: sp.seed, root, roofNode };
+  const wallHex = sp.wall;
+
+  // plinth (unleaned, hides the lean's base offset) + moss band
+  c.parts.push(tbox(scene, sp.w - INSET * 2 + 0.1, 0.24, bd + 0.1, sl.stone, shade(wallHex, -0.22), 0, 0, 0, 1));
+
+  // ---- layout
+  const doorW = sp.kind === "tenement" ? DOOR_W + 0.06 : DOOR_W;
+  const doorH = sp.kind === "tenement" ? DOOR_H + 0.08 : DOOR_H;
   const isShop = sp.kind === "shop" || sp.kind === "cafe";
 
   const faces: Record<FaceName, Opening[]> = { front: [], back: [], east: [], west: [] };
   faces.front.push({ x: doorX, y: 0, w: doorW, h: doorH, kind: "door", floor: 0 });
   for (let f = 0; f < sp.storeys; f++) {
-    const wy = f === 0 ? (isShop ? 0.45 : 0.62) : f * STOREY + 0.5;
-    const wh = f === 0 ? (isShop ? 0.95 : 0.64) : 0.6;
-    const ww = f === 0 ? (isShop ? Math.min(1.2, slotW - 0.3) : 0.5) : 0.48;
+    // window spacing / size drift a little per building so façades don't read as stamps
+    const drift = (hash01(sp.seed, 79) - 0.5) * 0.08;
+    const wy = f === 0 ? (isShop ? 0.45 : SILL_Y) : f * STOREY + SILL_Y;
+    const wh = f === 0 ? (isShop ? 1.0 : WINDOW_H + drift) : WINDOW_H - 0.06 + drift;
+    const ww = f === 0 ? (isShop ? Math.min(1.2, slotW - 0.3) : WINDOW_W + drift * 0.5) : WINDOW_W - 0.04;
     for (let i = 0; i < frontSlots; i++) {
       if (f === 0 && i === doorIdx) continue;
       if (f > 0 && sp.kind === "cottage" && sp.dormers > 0 && sp.storeys === 2 && rnd(c, f, i, 3) > 0.85) continue;
@@ -573,10 +687,13 @@ export function buildCottage(scene: Scene, sl: Slots, sp: CottageSpec): Mesh {
     for (let f = 0; f < sp.storeys; f++) {
       for (let i = 0; i < slots; i++) {
         if (rnd(c, f, i, face === "east" ? 1 : face === "west" ? 2 : 4) > (face === "back" ? 0.6 : 0.72)) continue;
-        faces[face].push({ x: w0 + i * (width / slots), y: f * STOREY + 0.55, w: 0.46, h: 0.58, kind: "window", floor: f });
+        faces[face].push({ x: w0 + i * (width / slots), y: f * STOREY + SILL_Y + 0.04, w: WINDOW_W - 0.06, h: WINDOW_H - 0.1, kind: "window", floor: f });
       }
     }
   }
+
+  // the bay replaces the first plain ground-floor window
+  const bayOpening = sp.bay ? faces.front.find((o) => o.kind === "window" && o.floor === 0) : undefined;
 
   // ---- walls, one face at a time
   const nodes: Record<FaceName, TransformNode> = { front: faceNode(c, "front"), back: faceNode(c, "back"), east: faceNode(c, "east"), west: faceNode(c, "west") };
@@ -592,6 +709,10 @@ export function buildCottage(scene: Scene, sl: Slots, sp: CottageSpec): Mesh {
         continue;
       }
       const ground = o.floor === 0;
+      if (face === "front" && o === bayOpening) {
+        bayWindow(c, node, o);
+        continue;
+      }
       const flowers = ground && o.kind === "window" && rnd(c, o.x, o.y, 5) < sp.flowerBoxes;
       windowParts(c, node, o, {
         flowers,
@@ -606,7 +727,9 @@ export function buildCottage(scene: Scene, sl: Slots, sp: CottageSpec): Mesh {
   if (sp.kind === "tenement") {
     for (let f = 1; f < sp.storeys; f++) add(c, root, tbox(scene, bw + 0.08, 0.08, bd + 0.08, sl.paint, shade(wallHex, 0.1), 0, f * STOREY + 0.32, 0));
   }
-  if (sp.lantern) lantern(c, nodes.front, doorX + doorW / 2 + 0.22, 1.35);
+  if (sp.porch && !isShop) porch(c, nodes.front, doorX);
+  if (sp.leanTo) leanTo(c, sp.leanTo);
+  if (sp.lantern) lantern(c, nodes.front, doorX + doorW / 2 + (sp.porch ? 0.34 : 0.22), 1.35);
   if (sp.wallPlanter) wallPlanter(c, nodes.front, doorX - doorW / 2 - 0.42, 0.95);
   if (isShop) shopFront(c, nodes.front, bw, doorX);
   if (sp.ivy) {
@@ -615,14 +738,19 @@ export function buildCottage(scene: Scene, sl: Slots, sp: CottageSpec): Mesh {
   }
 
   // ---- roof
+  // (a street-facing gable swaps the roof's axes: ridge runs front→back)
   const crowInset = sp.crow ? 0.06 : 0.25;
-  const r: RoofDims = { hwR: bw / 2 + crowInset, hdR: bd / 2 + 0.25, rise: sp.kind === "tenement" ? 0.95 : Math.min(1.35, 0.5 + bd * 0.3), sag: sp.sag };
+  const along = sp.gableFront ? bd : bw;
+  const across = sp.gableFront ? bw : bd;
+  const pitch = sp.pitch ?? 1;
+  const r: RoofDims = { hwR: along / 2 + crowInset, hdR: across / 2 + 0.25, rise: (sp.kind === "tenement" ? 0.95 : Math.min(1.35, 0.5 + across * 0.3)) * pitch, sag: sp.sag };
   roof(c, r);
+  if (sp.gableFront) gableWindow(c, nodes.front, wallH + r.rise * 0.22);
   const chimneyPots = sp.kind === "tenement" ? 3 : 2;
-  const cx1 = (rnd(c, 2) > 0.5 ? 1 : -1) * (bw / 2 - 0.3);
-  chimney(c, r, sp.chimney === 2 && sp.chimneys === 1 ? cx1 * 0.5 : cx1, sp.chimney, chimneyPots);
-  if (sp.chimneys === 2) chimney(c, r, -cx1, 1, chimneyPots);
-  if (sp.dormers > 0 && sp.storeys >= 2) {
+  const cx1 = sp.gableFront ? -(along / 2 - 0.35) : (rnd(c, 2) > 0.5 ? 1 : -1) * (bw / 2 - 0.3);
+  chimney(c, r, sp.chimney === 2 && sp.chimneys === 1 && !sp.gableFront ? cx1 * 0.5 : cx1, sp.chimney, chimneyPots);
+  if (sp.chimneys === 2 && !sp.gableFront) chimney(c, r, -cx1, 1, chimneyPots);
+  if (sp.dormers > 0 && sp.storeys >= 2 && !sp.gableFront) {
     const n = Math.min(sp.dormers, frontSlots);
     for (let i = 0; i < n; i++) {
       const slot = n === 1 ? (doorIdx + 1) % frontSlots : i === 0 ? 0 : frontSlots - 1;

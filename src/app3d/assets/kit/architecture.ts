@@ -15,7 +15,7 @@
 
 import type { Scene } from "@babylonjs/core/scene";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
-import type { AssetManager, KitContext } from "../AssetManager";
+import { HERO_ASSETS, type AssetManager, type HeroKey, type KitContext } from "../AssetManager";
 import { PALETTE } from "../../rendering/materials";
 import { box, cyl, gable, merge, parseVariant } from "./util";
 import { buildCottage } from "./architecture/cottage";
@@ -24,6 +24,7 @@ import { heroSlots, runtimeSlots } from "./architecture/slots";
 
 export { PRESETS, COTTAGE_PRESETS, PRESET_1S, PRESET_2S, presetVariant, specFromVariant } from "./architecture/presets";
 export { SLOT_NAMES } from "./architecture/slots";
+export { kitDoorX } from "./architecture/cottage";
 export type { CottageSpec } from "./architecture/presets";
 
 /** Runtime building factory (hand-painted materials, registered as "building"). */
@@ -108,4 +109,6 @@ export function buildCastle(k: KitContext, variant: string): Mesh {
 export function registerArchitecture(am: AssetManager) {
   am.register("building", buildBuilding, { shadow: true });
   am.register("castle", buildCastle, { shadow: true });
+  // hero GLB buildings (E1, tools/blender) with their kit fallbacks, when the table lists them
+  for (const key of ["cottage-hero-a", "cottage-hero-b", "cafe-hero"]) if (key in HERO_ASSETS) am.registerHero(key as HeroKey);
 }

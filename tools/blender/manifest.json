@@ -1,0 +1,649 @@
+{
+  "assets": {
+    "barrel": {
+      "key": "barrel",
+      "path": "public/assets/models/barrel.glb",
+      "kb": 30.6,
+      "tris": 688,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.6,
+        0.77,
+        0.596
+      ],
+      "bbox_min": [
+        -0.3,
+        0,
+        -0.298
+      ],
+      "bbox_max": [
+        0.3,
+        0.77,
+        0.298
+      ]
+    },
+    "bench": {
+      "key": "bench",
+      "path": "public/assets/models/bench.glb",
+      "kb": 55.4,
+      "tris": 1188,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        1.1,
+        0.628,
+        0.474
+      ],
+      "bbox_min": [
+        -0.55,
+        0,
+        -0.22
+      ],
+      "bbox_max": [
+        0.55,
+        0.628,
+        0.254
+      ]
+    },
+    "bush-a": {
+      "key": "bush-a",
+      "path": "public/assets/models/bush-a.glb",
+      "kb": 15.2,
+      "tris": 882,
+      "script": "tools/blender/assets/nature/bushes.py",
+      "size": [
+        0.915,
+        0.773,
+        0.897
+      ],
+      "bbox_min": [
+        -0.43,
+        0,
+        -0.451
+      ],
+      "bbox_max": [
+        0.484,
+        0.773,
+        0.447
+      ],
+      "islands": 1,
+      "clusters": 1
+    },
+    "bush-b": {
+      "key": "bush-b",
+      "path": "public/assets/models/bush-b.glb",
+      "kb": 52.6,
+      "tris": 1358,
+      "script": "tools/blender/assets/nature/bushes.py",
+      "size": [
+        0.85,
+        0.744,
+        0.795
+      ],
+      "bbox_min": [
+        -0.434,
+        0,
+        -0.404
+      ],
+      "bbox_max": [
+        0.416,
+        0.744,
+        0.391
+      ],
+      "islands": 53,
+      "clusters": 1
+    },
+    "cafe-chair": {
+      "key": "cafe-chair",
+      "path": "public/assets/models/cafe-chair.glb",
+      "kb": 27.4,
+      "tris": 586,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.4,
+        0.633,
+        0.424
+      ],
+      "bbox_min": [
+        -0.2,
+        0,
+        -0.2
+      ],
+      "bbox_max": [
+        0.2,
+        0.633,
+        0.224
+      ]
+    },
+    "cafe-hero": {
+      "key": "cafe-hero",
+      "path": "public/assets/models/cafe-hero.glb",
+      "kb": 389,
+      "tris": 7908,
+      "script": "tools/blender/assets/architecture/cafe.py",
+      "size": [
+        5.145,
+        5.424,
+        3.962
+      ],
+      "bbox_min": [
+        -2.573,
+        0,
+        -2.265
+      ],
+      "bbox_max": [
+        2.573,
+        5.424,
+        1.697
+      ],
+      "footprint": [
+        5,
+        3
+      ],
+      "door": {
+        "x": 1.3,
+        "z": -1.4
+      }
+    },
+    "cafe-table": {
+      "key": "cafe-table",
+      "path": "public/assets/models/cafe-table.glb",
+      "kb": 19.5,
+      "tris": 406,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.5,
+        0.48,
+        0.5
+      ],
+      "bbox_min": [
+        -0.25,
+        0,
+        -0.25
+      ],
+      "bbox_max": [
+        0.25,
+        0.48,
+        0.25
+      ]
+    },
+    "car": {
+      "key": "car",
+      "path": "public/assets/models/car.glb",
+      "kb": 138.3,
+      "tris": 3978,
+      "script": "tools/blender/assets/vehicles/car.py",
+      "size": [
+        1.2,
+        0.95,
+        2.47
+      ],
+      "bbox_min": [
+        -0.6,
+        0,
+        -1.235
+      ],
+      "bbox_max": [
+        0.6,
+        0.95,
+        1.235
+      ],
+      "islands": 37,
+      "clusters": 1
+    },
+    "cottage-hero-a": {
+      "key": "cottage-hero-a",
+      "path": "public/assets/models/cottage-hero-a.glb",
+      "kb": 366.6,
+      "tris": 7650,
+      "script": "tools/blender/assets/architecture/cottage_a.py",
+      "size": [
+        4.099,
+        4.581,
+        3.334
+      ],
+      "bbox_min": [
+        -2.043,
+        0,
+        -1.701
+      ],
+      "bbox_max": [
+        2.057,
+        4.581,
+        1.633
+      ],
+      "footprint": [
+        4,
+        3
+      ],
+      "door": {
+        "x": 0.3,
+        "z": -1.3,
+        "step_z": -1.62
+      }
+    },
+    "cottage-hero-b": {
+      "key": "cottage-hero-b",
+      "path": "public/assets/models/cottage-hero-b.glb",
+      "kb": 387.7,
+      "tris": 7990,
+      "script": "tools/blender/assets/architecture/cottage_b.py",
+      "size": [
+        4.897,
+        4.587,
+        3.32
+      ],
+      "bbox_min": [
+        -2.45,
+        0,
+        -1.643
+      ],
+      "bbox_max": [
+        2.447,
+        4.587,
+        1.678
+      ],
+      "footprint": [
+        5,
+        3
+      ],
+      "door": {
+        "x": -0.6,
+        "z": -0.7,
+        "porch_z": -1.42
+      }
+    },
+    "crate": {
+      "key": "crate",
+      "path": "public/assets/models/crate.glb",
+      "kb": 49.5,
+      "tris": 980,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.532,
+        0.523,
+        0.528
+      ],
+      "bbox_min": [
+        -0.26,
+        0,
+        -0.268
+      ],
+      "bbox_max": [
+        0.272,
+        0.523,
+        0.26
+      ]
+    },
+    "fence": {
+      "key": "fence",
+      "path": "public/assets/models/fence.glb",
+      "kb": 24.6,
+      "tris": 468,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        1.084,
+        0.62,
+        0.094
+      ],
+      "bbox_min": [
+        -0.543,
+        0,
+        -0.042
+      ],
+      "bbox_max": [
+        0.541,
+        0.62,
+        0.053
+      ]
+    },
+    "fence-gate": {
+      "key": "fence-gate",
+      "path": "public/assets/models/fence-gate.glb",
+      "kb": 48.9,
+      "tris": 908,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        1.124,
+        0.779,
+        0.143
+      ],
+      "bbox_min": [
+        -0.562,
+        0,
+        -0.065
+      ],
+      "bbox_max": [
+        0.562,
+        0.779,
+        0.078
+      ]
+    },
+    "flower-cluster-a": {
+      "key": "flower-cluster-a",
+      "path": "public/assets/models/flower-cluster-a.glb",
+      "kb": 23.9,
+      "tris": 378,
+      "script": "tools/blender/assets/nature/flower_clusters.py",
+      "size": [
+        0.306,
+        0.341,
+        0.312
+      ],
+      "bbox_min": [
+        -0.166,
+        0,
+        -0.153
+      ],
+      "bbox_max": [
+        0.14,
+        0.341,
+        0.16
+      ],
+      "islands": 33,
+      "clusters": 1
+    },
+    "flower-cluster-b": {
+      "key": "flower-cluster-b",
+      "path": "public/assets/models/flower-cluster-b.glb",
+      "kb": 23.9,
+      "tris": 379,
+      "script": "tools/blender/assets/nature/flower_clusters.py",
+      "size": [
+        0.316,
+        0.311,
+        0.324
+      ],
+      "bbox_min": [
+        -0.168,
+        0,
+        -0.165
+      ],
+      "bbox_max": [
+        0.149,
+        0.311,
+        0.159
+      ],
+      "islands": 33,
+      "clusters": 1
+    },
+    "flower-cluster-c": {
+      "key": "flower-cluster-c",
+      "path": "public/assets/models/flower-cluster-c.glb",
+      "kb": 23.9,
+      "tris": 378,
+      "script": "tools/blender/assets/nature/flower_clusters.py",
+      "size": [
+        0.318,
+        0.333,
+        0.333
+      ],
+      "bbox_min": [
+        -0.18,
+        0,
+        -0.173
+      ],
+      "bbox_max": [
+        0.138,
+        0.333,
+        0.16
+      ],
+      "islands": 33,
+      "clusters": 1
+    },
+    "heather": {
+      "key": "heather",
+      "path": "public/assets/models/heather.glb",
+      "kb": 23.8,
+      "tris": 520,
+      "script": "tools/blender/assets/nature/heather.py",
+      "size": [
+        0.417,
+        0.155,
+        0.35
+      ],
+      "bbox_min": [
+        -0.206,
+        0,
+        -0.177
+      ],
+      "bbox_max": [
+        0.211,
+        0.155,
+        0.173
+      ],
+      "islands": 43,
+      "clusters": 1
+    },
+    "lamp-post": {
+      "key": "lamp-post",
+      "path": "public/assets/models/lamp-post.glb",
+      "kb": 31,
+      "tris": 660,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.42,
+        2.1,
+        0.42
+      ],
+      "bbox_min": [
+        -0.21,
+        0,
+        -0.21
+      ],
+      "bbox_max": [
+        0.21,
+        2.1,
+        0.21
+      ]
+    },
+    "planter": {
+      "key": "planter",
+      "path": "public/assets/models/planter.glb",
+      "kb": 66.7,
+      "tris": 1192,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.793,
+        0.504,
+        0.38
+      ],
+      "bbox_min": [
+        -0.387,
+        0,
+        -0.19
+      ],
+      "bbox_max": [
+        0.407,
+        0.504,
+        0.19
+      ]
+    },
+    "post-box": {
+      "key": "post-box",
+      "path": "public/assets/models/post-box.glb",
+      "kb": 28.1,
+      "tris": 582,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        0.41,
+        0.965,
+        0.41
+      ],
+      "bbox_min": [
+        -0.205,
+        0,
+        -0.205
+      ],
+      "bbox_max": [
+        0.205,
+        0.965,
+        0.205
+      ]
+    },
+    "signpost": {
+      "key": "signpost",
+      "path": "public/assets/models/signpost.glb",
+      "kb": 56.4,
+      "tris": 1170,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        1.222,
+        1.92,
+        0.419
+      ],
+      "bbox_min": [
+        -0.612,
+        0,
+        -0.205
+      ],
+      "bbox_max": [
+        0.61,
+        1.92,
+        0.214
+      ]
+    },
+    "stone-wall": {
+      "key": "stone-wall",
+      "path": "public/assets/models/stone-wall.glb",
+      "kb": 65.4,
+      "tris": 1460,
+      "script": "tools/blender/assets/props/street_props.py",
+      "size": [
+        1.002,
+        0.594,
+        0.437
+      ],
+      "bbox_min": [
+        -0.5,
+        0,
+        -0.22
+      ],
+      "bbox_max": [
+        0.502,
+        0.594,
+        0.217
+      ]
+    },
+    "tree-cypress": {
+      "key": "tree-cypress",
+      "path": "public/assets/models/tree-cypress.glb",
+      "kb": 29.8,
+      "tris": 1760,
+      "script": "tools/blender/assets/nature/tree_cypress.py",
+      "size": [
+        1.375,
+        4.76,
+        1.44
+      ],
+      "bbox_min": [
+        -0.644,
+        0,
+        -0.73
+      ],
+      "bbox_max": [
+        0.731,
+        4.76,
+        0.71
+      ],
+      "islands": 2,
+      "clusters": 1
+    },
+    "tree-oak-a": {
+      "key": "tree-oak-a",
+      "path": "public/assets/models/tree-oak-a.glb",
+      "kb": 39.3,
+      "tris": 2370,
+      "script": "tools/blender/assets/nature/tree_oak_a.py",
+      "size": [
+        4.564,
+        4.578,
+        3.476
+      ],
+      "bbox_min": [
+        -2.227,
+        0,
+        -1.782
+      ],
+      "bbox_max": [
+        2.338,
+        4.578,
+        1.694
+      ],
+      "islands": 2,
+      "clusters": 1
+    },
+    "tree-oak-b": {
+      "key": "tree-oak-b",
+      "path": "public/assets/models/tree-oak-b.glb",
+      "kb": 38.9,
+      "tris": 2320,
+      "script": "tools/blender/assets/nature/tree_oak_b.py",
+      "size": [
+        4.248,
+        4.19,
+        3.491
+      ],
+      "bbox_min": [
+        -1.793,
+        0,
+        -1.774
+      ],
+      "bbox_max": [
+        2.454,
+        4.19,
+        1.717
+      ],
+      "islands": 2,
+      "clusters": 1
+    },
+    "tree-pine": {
+      "key": "tree-pine",
+      "path": "public/assets/models/tree-pine.glb",
+      "kb": 33.1,
+      "tris": 1970,
+      "script": "tools/blender/assets/nature/tree_pine.py",
+      "size": [
+        3.391,
+        4.578,
+        2.603
+      ],
+      "bbox_min": [
+        -1.678,
+        0,
+        -1.36
+      ],
+      "bbox_max": [
+        1.712,
+        4.578,
+        1.244
+      ],
+      "islands": 4,
+      "clusters": 1
+    },
+    "tree-small": {
+      "key": "tree-small",
+      "path": "public/assets/models/tree-small.glb",
+      "kb": 25.9,
+      "tris": 1451,
+      "script": "tools/blender/assets/nature/tree_small.py",
+      "size": [
+        1.901,
+        2.533,
+        1.614
+      ],
+      "bbox_min": [
+        -0.934,
+        0,
+        -0.805
+      ],
+      "bbox_max": [
+        0.967,
+        2.533,
+        0.809
+      ],
+      "islands": 4,
+      "clusters": 1
+    }
+  },
+  "note": "Written by tools/blender/build.mjs. Keys listed here are Blender-authored: scripts/build-hero-assets.mjs skips them."
+}

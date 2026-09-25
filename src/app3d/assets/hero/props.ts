@@ -93,11 +93,13 @@ export function buildSignpost(ctx: HeroCtx): Mesh {
     const l3 = box(ctx, "olw_paint", 0.32 + rng() * 0.08, 0.03, 0.012, CREAM, dir * 0.3, y + 0.085, 0.017);
     for (const m of [b, tip, l1, l2, l3]) {
       m.rotation.y += yaw;
-      // rotate around the post
+      // rotate around the post the same way rotation.y turns the board
+      // (Babylon, left-handed: x' = x cos + z sin, z' = -x sin + z cos), so
+      // each board's butt stays on the post instead of drifting off it
       const px = m.position.x;
       const pz = m.position.z;
-      m.position.x = px * Math.cos(yaw) - pz * Math.sin(yaw);
-      m.position.z = px * Math.sin(yaw) + pz * Math.cos(yaw);
+      m.position.x = px * Math.cos(yaw) + pz * Math.sin(yaw);
+      m.position.z = -px * Math.sin(yaw) + pz * Math.cos(yaw);
       p.push(m);
     }
   }

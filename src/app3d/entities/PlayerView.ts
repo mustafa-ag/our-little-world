@@ -1,6 +1,8 @@
-// The player (Juju): the hero character rig (GLB via AssetManager, procedural
-// fallback) + a soft blob shadow. Reads PlayerState each frame; outfit
-// colours follow store.state.outfit (same palette as the 2D game).
+// The player (Juju): the skinned juju.glb (idle / walk / run / wave clips,
+// crossfaded by ground speed with the playback rate synced so her feet stay
+// planted), falling back to the procedural hero rig until / unless it loads,
+// + a soft blob shadow. Reads PlayerState each frame; her clothes follow
+// store.state.outfit (see JUJU_LOOKS in assets/kit/characters.ts).
 
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
@@ -39,13 +41,16 @@ export function createBlobShadow(k: KitContext, d = 0.8): Mesh {
 export class PlayerView {
   rig: CharacterRig;
   shadow: Mesh;
-  private onOutfit = () => this.rig.setColors(playerColors());
+  private onOutfit = () => {
+    this.rig.setColors(playerColors());
+    this.rig.setOutfit?.(store.state.outfit);
+  };
 
   constructor(k: KitContext, am: AssetManager, x: number, z: number) {
-    this.rig = createPlayerRig(k, am, playerColors(), "player");
+    this.rig = createPlayerRig(k, am, playerColors(), "player", () => store.state.outfit);
     this.rig.root.position.set(x, 0, z);
     this.rig.root.rotation.y = Math.PI;
-    this.shadow = createBlobShadow(k);
+    this.shadow = createBlobShadow(k, 0.6);
     store.on("outfit", this.onOutfit);
     store.on("changed", this.onOutfit);
   }
@@ -54,7 +59,7 @@ export class PlayerView {
     const r = this.rig.root;
     r.position.set(s.x, groundY, s.z);
     r.rotation.y = s.yaw;
-    this.rig.animate(dt, s.moving);
+    this.rig.animate(dt, s.moving, Math.hypot(s.vx, s.vz));
     this.shadow.position.set(s.x, groundY + 0.015, s.z);
   }
 

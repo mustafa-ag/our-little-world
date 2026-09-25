@@ -25,6 +25,14 @@ export const SLOTS = [
   "olw_bottom",
   "olw_shoes",
   "olw_face", // eyes, mouth, blush: fixed colours
+  // Blender hero GLBs (tools/blender/**)
+  "olw_stone_dark", // textured stone; COLOR_0 relative to the stone tint (darker courses)
+  "olw_wood_dark", // textured planks; COLOR_0 relative to the wood tint
+  "olw_awning", // flat white × vertex colour
+  "olw_flower", // flat white × vertex colour
+  "olw_bark", // flat white × vertex colour
+  "olw_rubber", // flat white × vertex colour (tyres)
+  "olw_light_emissive", // lamp / headlight glow, like olw_glass_emissive
 ] as const;
 
 export type Slot = (typeof SLOTS)[number];
@@ -53,6 +61,13 @@ const PREVIEW: Record<Slot, string> = {
   olw_bottom: "#ffffff",
   olw_shoes: "#ffffff",
   olw_face: "#ffffff",
+  olw_stone_dark: "#9c8b70",
+  olw_wood_dark: "#7a5238",
+  olw_awning: "#ffffff",
+  olw_flower: "#ffffff",
+  olw_bark: "#ffffff",
+  olw_rubber: "#ffffff",
+  olw_light_emissive: "#ffd98a",
 };
 
 /** The per-scene placeholder material for a slot (cached by name). */
@@ -62,7 +77,7 @@ export function slotMaterial(scene: Scene, slot: Slot): Material {
   const m = new StandardMaterial(slot, scene);
   m.diffuseColor = Color3.FromHexString(PREVIEW[slot]);
   m.specularColor = Color3.Black();
-  if (slot === "olw_glass_emissive") m.emissiveColor = Color3.FromHexString(PREVIEW[slot]).scale(0.4);
+  if (slot === "olw_glass_emissive" || slot === "olw_light_emissive") m.emissiveColor = Color3.FromHexString(PREVIEW[slot]).scale(0.4);
   return m;
 }
 

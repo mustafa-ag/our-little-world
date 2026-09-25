@@ -11,7 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs",
-    "assets:build": "node scripts/build-hero-assets.mjs"
+    "assets:build": "node scripts/build-hero-assets.mjs",
+    "assets:blender": "node tools/blender/build.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.28.0",

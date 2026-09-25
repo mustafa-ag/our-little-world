@@ -9,7 +9,12 @@ import { store } from "../game/systems/store";
 import { generateWorld, type WorldData } from "../game/worldgen";
 import { createRenderHost, type RenderHost } from "./rendering/engine";
 import { createFollowCamera, type FollowCamera } from "./rendering/camera";
-import { createLighting, type Lighting } from "./rendering/lighting";
+import { createLighting, type Lighting, type WarmSpot } from "./rendering/lighting";
+import { createSky, type Sky } from "./rendering/sky";
+import { createBackdrop, type Backdrop } from "./rendering/backdrop";
+import { createOcclusion, occludersFromThinMeshes, type Occlusion, type OccluderInfo } from "./rendering/occlusion";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { TimeOfDay } from "../game/systems/save";
 import { Materials } from "./rendering/materials";
 import { buildEnvironment, type Environment } from "./rendering/environment";
 import { AssetManager, HERO_PRELOAD_KEYS, remapSlots, type KitContext } from "./assets/AssetManager";
@@ -49,6 +54,7 @@ interface Loaded {
   setupPending: boolean;
   travelled: boolean;
   unregisterGlow: (() => void) | null;
+  backdrop: Backdrop;
 }
 
 export interface LoadOptions {
@@ -66,6 +72,11 @@ export class Game3D {
   lighting: Lighting;
   am: AssetManager;
   camera: FollowCamera;
+  sky: Sky;
+  occlusion: Occlusion;
+  private stopAtmo: () => void;
+  private backdrop: Backdrop | null = null;
+  private playerPos = new Vector3();
   private kit: KitContext;
   private loaded: Loaded | null = null;
   private loading = false;
@@ -79,6 +90,15 @@ export class Game3D {
     this.mats = new Materials(scene);
     this.lighting = createLighting(scene, isMobile);
     this.camera = createFollowCamera(scene, canvas, isMobile);
+    this.sky = createSky(scene);
+    this.occlusion = createOcclusion(scene, {
+      addCaster: (m) => this.lighting.addCaster(m),
+      removeCaster: (m) => this.lighting.removeCaster(m),
+    });
+    this.stopAtmo = this.lighting.onAtmosphere((a) => {
+      this.sky.setAtmosphere(a);
+      this.backdrop?.setAtmosphere(a);
+    });
     this.kit = { scene, mats: this.mats, lighting: this.lighting };
     this.am = new AssetManager(this.kit);
     architecture.registerArchitecture(this.am);
@@ -138,6 +158,29 @@ export class Game3D {
       built.placer.flush(this.am);
       const glow = this.am.thinInstances("lamp-glow", built.lamps);
       const unregisterGlow = glow ? this.lighting.registerNightMesh(glow) : null;
+      // warm point-light pool: street lamps + café fronts (weighted so the
+      // café's pool of light wins at night)
+      const warm: WarmSpot[] = [...built.lamps];
+      for (const b of built.buildings) {
+        if (b.kind !== "cafe") continue;
+        warm.push({ x: b.tx, y: 0, z: -(b.ty + 1) - 1.4, h: 2.2, weight: 2.2, range: 11 });
+      }
+      this.lighting.setLamps(warm);
+
+      // distant skyline beyond the map; the castle-on-its-rock silhouette only
+      // when the location has no castle of its own
+      const hasCastle = built.buildings.some((b) => b.kind === "castle");
+      const backdrop = createBackdrop(this.host.scene, { mapW: world.w, mapH: world.h, castle: !hasCastle });
+      this.backdrop = backdrop;
+      backdrop.setAtmosphere(this.lighting.atmosphere());
+      // TRANSITIONAL: the environment's old hill ring / far crag + keep are replaced
+      // by rendering/backdrop.ts (W2 removes them from environment.ts); hide any left.
+      for (const m of env.meshes) if (/^(hill\d+|crag|farKeep|farTower-?\d+)$/.test(m.name)) m.setEnabled(false);
+
+      // buildings that fade when they hide the player (world builder's list when
+      // it publishes one, else derived from the building thin-instance batches)
+      const occluders = (built as BuiltWorld & { occluders?: OccluderInfo[] }).occluders ?? occludersFromThinMeshes(this.host.scene.meshes, (m) => /^(building|castle)#/.test(m.name));
+      this.occlusion.setOccluders(occluders);
 
       // spawn (WorldScene.create semantics)
       let spawn = opts.spawn ?? built.world.spawn;
@@ -214,6 +257,7 @@ export class Game3D {
         setupPending: true,
         travelled: !!opts.from,
         unregisterGlow,
+        backdrop,
       };
 
       // building / district labels (building names float above their roof)
@@ -246,6 +290,10 @@ export class Game3D {
     if (!l) return;
     this.loaded = null;
     for (const t of l.timers) window.clearTimeout(t);
+    this.occlusion.clear();
+    l.backdrop.dispose();
+    this.backdrop = null;
+    this.lighting.setLamps([]);
     l.unregisterGlow?.();
     l.controller?.dispose();
     l.player.detach();
@@ -259,8 +307,12 @@ export class Game3D {
   }
 
   private update(dt: number, now: number) {
+    this.lighting.update(dt);
     const l = this.loaded;
-    if (!l) return;
+    if (!l) {
+      this.sky.update(dt, this.camera.camera.position);
+      return;
+    }
     const dtMs = dt * 1000;
     l.player.update(dt);
     const s = l.player.state;
@@ -270,6 +322,10 @@ export class Game3D {
     this.camera.setTarget(s.x, s.z);
     this.camera.update(dt);
     this.lighting.follow(s.x, s.z);
+    const cam = this.camera.camera.position;
+    this.sky.update(dt, cam);
+    l.backdrop.update(cam);
+    this.occlusion.update(dt, cam, this.playerPos.set(s.x, gy, s.z));
     for (const n of l.npcs.values()) n.update(dt, s.x, s.z);
     for (const p of l.pickups.values()) p.update(dt);
     if (l.cat) {
@@ -316,9 +372,39 @@ export class Game3D {
     };
   }
 
+  // ---- debug / screenshot helpers (window.__game in dev) ----
+
+  /** Override camera composition: elev (deg), fov (rad), lookY, lookAhead, lead; dist = zoom. */
+  setCamera(o: { elev?: number; fov?: number; lookY?: number; lookAhead?: number; lead?: number; dist?: number } = {}) {
+    const { dist, ...t } = o;
+    if (dist !== undefined) this.camera.setDistance(dist, true);
+    return this.camera.tune(t);
+  }
+
+  /** Jump to a time of day (instant by default, for screenshots). */
+  setTime(t: TimeOfDay, instant = true) {
+    store.state.timeOfDay = t;
+    this.lighting.apply(t, instant);
+    store.emit("time", t);
+    if (instant) this.lighting.apply(t, true);
+  }
+
+  /** Occlusion / lighting state for debugging. */
+  renderInfo() {
+    return {
+      fadedOccluders: this.occlusion.fadedCount,
+      camera: this.camera.camera.position.asArray().map((v) => +v.toFixed(2)),
+      fov: +this.camera.camera.fov.toFixed(3),
+      lampPool: this.lighting.poolSize,
+    };
+  }
+
   dispose() {
     this.stopUpdate?.();
     this.unload();
+    this.stopAtmo();
+    this.occlusion.dispose();
+    this.sky.dispose();
     this.am.disposeScene();
     this.camera.dispose();
     this.lighting.dispose();

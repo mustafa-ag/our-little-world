@@ -1,11 +1,12 @@
-// An NPC: the shared storybook character rig (procedural build, no GLB
-// needed) in the NpcDef colours with a hair style / outfit picked per person,
-// idle breathing, a name tag above the head, and "face the player" when
-// talked to (turns smoothly, with a little nod).
+// An NPC: npc-base.glb (same rig and clips as Juju) retinted to the NpcDef
+// colours, with a hair variant / skirt or jeans / cardigan picked per person
+// (procedural fallback until the GLB loads), idle breathing, a name tag above
+// the head, and "face the player" when talked to (turns smoothly, waves the
+// first time, nods after that).
 
 import type { NpcDef } from "../../game/data/npcs";
-import type { KitContext } from "../assets/AssetManager";
-import { createCharacter, styleFor, type CharacterRig, CHAR_HEIGHT } from "../assets/kit/characters";
+import type { AssetManager, KitContext } from "../assets/AssetManager";
+import { characterAssets, createCharacter, createNpcRig, styleFor, type CharacterRig, CHAR_HEIGHT } from "../assets/kit/characters";
 import { lerpAngle, yawFor, yawForFacing } from "../world/coords";
 import { createBlobShadow } from "./PlayerView";
 import { createLabel, type Label } from "./Label";
@@ -17,6 +18,7 @@ export class NpcView {
   private targetYaw: number;
   private restYaw: number;
   private lookTimer = 0;
+  private greeted = false;
 
   constructor(
     k: KitContext,
@@ -24,22 +26,25 @@ export class NpcView {
     readonly x: number,
     readonly z: number,
     groundY: number,
+    am?: AssetManager,
   ) {
-    this.rig = createCharacter(k, def.colors, `npc:${def.id}`, styleFor(def.id));
+    const am2 = am ?? characterAssets();
+    this.rig = am2 ? createNpcRig(k, am2, def.id, def.colors) : createCharacter(k, def.colors, `npc:${def.id}`, styleFor(def.id));
     this.rig.root.position.set(x, groundY, z);
     this.restYaw = yawForFacing(def.facing ?? "down");
     this.targetYaw = this.restYaw;
     this.rig.root.rotation.y = this.restYaw;
-    this.shadow = createBlobShadow(k, 0.75);
+    this.shadow = createBlobShadow(k, 0.56);
     this.shadow.position.set(x, groundY + 0.015, z);
     this.label = createLabel(k.scene, def.name, { scale: 0.85 });
-    this.label.setPosition(x, groundY + CHAR_HEIGHT + 0.45, z);
+    this.label.setPosition(x, groundY + CHAR_HEIGHT + 0.32, z);
   }
 
   faceTowards(px: number, pz: number) {
     this.targetYaw = yawFor(px - this.x, pz - this.z);
     this.lookTimer = 6;
-    this.rig.gesture("nod");
+    this.rig.gesture(this.greeted ? "nod" : "wave");
+    this.greeted = true;
   }
 
   update(dt: number, px: number, pz: number) {

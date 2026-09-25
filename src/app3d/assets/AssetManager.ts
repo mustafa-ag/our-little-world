@@ -28,6 +28,8 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
+import type { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import "@babylonjs/core/Meshes/instancedMesh";
 import type { Materials } from "../rendering/materials";
@@ -115,6 +117,29 @@ interface Registration {
   glbFailed?: boolean;
 }
 
+/**
+ * A skinned GLB instance (characters): its own node tree, cloned skeleton and
+ * AnimationGroups retargeted to it (all stopped; the caller plays/blends them).
+ * Materials are shared with the loaded container until the caller swaps them.
+ */
+export interface AnimatedInstance {
+  /** Holder node (position / yaw this); the GLB's handedness root sits under it. */
+  root: TransformNode;
+  /** Every mesh with geometry, with `metadata.olwName` = the authored node name. */
+  meshes: Mesh[];
+  skeleton: Skeleton | null;
+  /** Animation groups by authored name (e.g. "idle", "walk", "run", "wave"). */
+  animations: Map<string, AnimationGroup>;
+  dispose(): void;
+}
+
+interface AnimatedRegistration {
+  url: string;
+  container?: AssetContainer;
+  failed?: boolean;
+  promise?: Promise<boolean>;
+}
+
 export const GLB_TIMEOUT_MS = 4000;
 
 let glowRegistered: WeakSet<Material> = new WeakSet();
@@ -127,16 +152,19 @@ export function slotMaterial(k: KitContext, slot: Slot): Material {
   const m = k.mats;
   switch (slot) {
     case "olw_stone":
+    case "olw_stone_dark":
       return m.textured("stone", PALETTE.stoneWarm, 1.2);
     case "olw_roof_tile":
       return m.textured("roof", PALETTE.terracottaMuted, 1);
     case "olw_slate":
       return m.textured("slate", PALETTE.slate, 1);
     case "olw_wood":
+    case "olw_wood_dark":
       return m.textured("planks", PALETTE.woodLight, 1.5);
     case "olw_glass":
       return m.flat(PALETTE.glass);
-    case "olw_glass_emissive": {
+    case "olw_glass_emissive":
+    case "olw_light_emissive": {
       const g = m.flat(PALETTE.lamp, { emissive: 0.2 });
       if (k.lighting && !glowRegistered.has(g)) {
         glowRegistered.add(g);
@@ -145,7 +173,8 @@ export function slotMaterial(k: KitContext, slot: Slot): Material {
       return g;
     }
     default:
-      // olw_paint, olw_foliage, olw_metal, character roles, face: vertex colours × white
+      // olw_paint, olw_foliage, olw_metal, olw_awning, olw_flower, olw_bark, olw_rubber,
+      // character roles, face: vertex colours × white
       return m.flat("#ffffff");
   }
 }
@@ -189,8 +218,111 @@ export class AssetManager {
   private instances = new Set<PieceInstance>();
   private hierarchies = new Set<HierarchyInstance>();
   private thinMeshes: Mesh[] = [];
+  private animatedRegs = new Map<string, AnimatedRegistration>();
+  private animatedInstances = new Set<AnimatedInstance>();
 
   constructor(private ctx: KitContext) {}
+
+  // ---------------------------------------------------------------- skinned GLBs
+  // Additive API for skeletal characters: the container is loaded ONCE and kept
+  // out of the scene; every `instantiateAnimated` clones meshes + skeleton +
+  // animation groups via AssetContainer.instantiateModelsToScene.
+
+  /** Register a skinned, animated GLB (no fallback here: callers keep their own). */
+  registerAnimated(key: string, url: string) {
+    if (!this.animatedRegs.has(key)) this.animatedRegs.set(key, { url });
+  }
+
+  /**
+   * Start loading registered skinned GLBs. Resolves with the keys not ready
+   * within `timeoutMs` (they keep loading: see `whenAnimated`). Never rejects.
+   */
+  async preloadAnimated(keys: string[], timeoutMs = GLB_TIMEOUT_MS * 2): Promise<string[]> {
+    const res = await Promise.all(
+      keys.map(async (k) => {
+        const ok = await Promise.race([this.whenAnimated(k), new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs))]);
+        return ok ? null : k;
+      }),
+    );
+    return res.filter((k): k is string => !!k);
+  }
+
+  /** Resolves true once `key` can be instantiated (however long the load takes), false if it failed or is unknown. */
+  whenAnimated(key: string): Promise<boolean> {
+    const reg = this.animatedRegs.get(key);
+    if (!reg) return Promise.resolve(false);
+    if (reg.container) return Promise.resolve(true);
+    if (reg.failed) return Promise.resolve(false);
+    if (!reg.promise) {
+      reg.promise = this.loadContainer(reg.url).then(
+        (c) => {
+          if (!c) throw new Error("no container");
+          for (const g of c.animationGroups) g.stop();
+          reg.container = c;
+          return true;
+        },
+        (e) => {
+          console.warn(`AssetManager: animated GLB "${key}" failed`, e);
+          reg.failed = true;
+          return false;
+        },
+      );
+    }
+    return reg.promise;
+  }
+
+  /** Whether `key` is loaded and `instantiateAnimated` will succeed. */
+  isAnimatedLoaded(key: string) {
+    return !!this.animatedRegs.get(key)?.container;
+  }
+
+  /**
+   * Clone a loaded skinned GLB (meshes, skeleton, animation groups) into the
+   * scene under a fresh holder node. Returns null when it isn't loaded.
+   */
+  instantiateAnimated(key: string, name = key): AnimatedInstance | null {
+    const c = this.animatedRegs.get(key)?.container;
+    if (!c) return null;
+    const scene = this.ctx.scene;
+    const prefix = `${name}:`;
+    const entries = c.instantiateModelsToScene((n) => prefix + n, false, { doNotInstantiate: true });
+    const holder = new TransformNode(name, scene);
+    for (const n of entries.rootNodes) n.parent = holder;
+    const meshes: Mesh[] = [];
+    for (const n of entries.rootNodes) {
+      const all = [n, ...n.getDescendants(false)];
+      for (const m of all) {
+        const olwName = m.name.startsWith(prefix) ? m.name.slice(prefix.length) : m.name;
+        m.metadata = { ...(m.metadata ?? {}), olwName };
+        if (m instanceof Mesh && m.getTotalVertices() > 0) {
+          m.isPickable = false;
+          m.hasVertexAlpha = false;
+          meshes.push(m);
+        }
+      }
+    }
+    const animations = new Map<string, AnimationGroup>();
+    entries.animationGroups.forEach((g, i) => {
+      g.stop();
+      const src = c.animationGroups[i]?.name ?? g.name;
+      animations.set(src.startsWith(prefix) ? src.slice(prefix.length) : src, g);
+    });
+    const ai: AnimatedInstance = {
+      root: holder,
+      meshes,
+      skeleton: entries.skeletons[0] ?? null,
+      animations,
+      dispose: () => {
+        if (!this.animatedInstances.delete(ai)) return;
+        for (const g of entries.animationGroups) g.dispose();
+        for (const m of meshes) this.ctx.lighting?.removeCaster(m);
+        for (const s of entries.skeletons) s.dispose();
+        holder.dispose(false, false);
+      },
+    };
+    this.animatedInstances.add(ai);
+    return ai;
+  }
 
   register(key: string, factory: PieceFactory, opts: PieceOptions = {}) {
     this.regs.set(key, { factory, opts });
@@ -516,6 +648,7 @@ export class AssetManager {
   disposeInstances() {
     for (const i of [...this.instances]) i.dispose();
     for (const h of [...this.hierarchies]) h.dispose();
+    for (const a of [...this.animatedInstances]) a.dispose();
     for (const m of this.thinMeshes) m.dispose();
     this.thinMeshes = [];
   }
@@ -531,6 +664,12 @@ export class AssetManager {
       r.glbBase = undefined;
       r.glbRoot = undefined;
       r.glbFailed = false;
+    }
+    for (const r of this.animatedRegs.values()) {
+      r.container?.dispose();
+      r.container = undefined;
+      r.failed = false;
+      r.promise = undefined;
     }
     this.containers.clear();
     this.loading.clear();

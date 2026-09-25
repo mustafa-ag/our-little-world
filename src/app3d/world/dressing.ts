@@ -11,9 +11,11 @@
 import type { CityDef, PathSpec } from "../../game/data/locations";
 import type { ThinPlacement } from "../assets/AssetManager";
 import { hash01 } from "../assets/kit/util";
-import { presetVariant } from "../assets/kit/architecture";
-import type { BuildContext, BuiltWorld, PlacedBuilding } from "./worldBuilder";
-import { isRoadTex, tileKey } from "./worldBuilder";
+import { kitDoorX, presetVariant } from "../assets/kit/architecture";
+import type { BuildContext, BuiltWorld, PlaceMeta, PlacedBuilding } from "./worldBuilder";
+import { groundUnder, heroBuilding, isRoadTex, tileKey } from "./worldBuilder";
+
+const isTree = (k: string) => k.startsWith("tree") || k === "bush" || k.startsWith("bush-");
 
 const MAX_EXTRA_BUILDINGS = 120;
 const GREENS = ["#6b8a4e", "#7a9a56", "#5f8048", "#8aa262"];
@@ -82,7 +84,9 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   // "street" = the driveable/path core only (lamps, planters etc. may sit on plazas)
   const STREET = new Set(["t_path", "t_road", "t_asphalt", "t_road_lane", "t_crossing", "t_brick_path"]);
   const street = (tx: number, ty: number) => STREET.has(tex(tx, ty));
-  const open = (tx: number, ty: number) => inB(tx, ty) && !collider.isBlockedTile(tx, ty) && !reserved.has(tileKey(tx, ty));
+  /** tiles the dressing keeps clear (the parked car's kerb) */
+  const keep = new Set<number>();
+  const open = (tx: number, ty: number) => inB(tx, ty) && !collider.isBlockedTile(tx, ty) && !reserved.has(tileKey(tx, ty)) && !keep.has(tileKey(tx, ty));
   const free = (tx: number, ty: number) => open(tx, ty) && !street(tx, ty);
   const freeBuild = (tx: number, ty: number) => open(tx, ty) && !road(tx, ty);
   const grass = (tx: number, ty: number) => tex(tx, ty).startsWith("t_grass") || tex(tx, ty) === "t_snow" || tex(tx, ty) === "t_lawn";
@@ -92,17 +96,23 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     return true;
   };
   const claim = (tx: number, ty: number) => collider.block(tx, ty, 1, 1);
-  const thin = (k: string, variant: string, p: ThinPlacement) => {
-    placer.add(k, variant, p);
+  /** false when blocking this tile would close a 1-tile sidewalk (street on one side, blocked on the other) */
+  const sidewalkOk = (tx: number, ty: number) => {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (street(tx + dx, ty + dy) && collider.isBlockedTile(tx - dx, ty - dy) && !street(tx - dx, ty - dy)) return false;
+    return true;
+  };
+  const thin = (k: string, variant: string, p: ThinPlacement, meta: PlaceMeta = {}) => {
+    placer.add(k, variant, p, meta);
     if (k === K.lamp) built.lamps.push({ x: p.x, y: p.y ?? 0, z: p.z });
   };
   const centre = (tx: number, ty: number) => ({ x: tx + 0.5, z: -(ty + 0.5), y: env.heightAt(tx, ty) });
   /** place at a tile centre (+ unit offsets); blocks the tile unless block=false */
   const set = (k: string, tx: number, ty: number, rot = 0, variant = "", scale = 1, block = true, dx = 0, dz = 0) => {
     if (!free(tx, ty)) return false;
+    if (block && !sidewalkOk(tx, ty)) return false;
     if (block) claim(tx, ty);
     const c = centre(tx, ty);
-    thin(k, variant, { x: c.x + dx, z: c.z + dz, y: c.y, rotationY: rot, scale });
+    thin(k, variant, { x: c.x + dx, z: c.z + dz, y: c.y, rotationY: rot, scale }, { solid: block, trunk: isTree(k) ? 0.2 : undefined });
     return true;
   };
   /** a loose drift of flowers / heather / tufts on a tile, never blocking */
@@ -134,7 +144,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
 
   // ------------------------------------------------------------------ buildings
   let extra = 0;
-  const placeBuilding = (x0: number, y0: number, wT: number, hT: number, rot: number, preset: string, kind: string, salt: number) => {
+  const placeBuilding = (x0: number, y0: number, wT: number, hT: number, rot: number, preset: string, kind: string, salt: number, heroKey?: string) => {
     if (!ringFree(x0, y0, wT, hT, freeBuild)) return false;
     const rotated = Math.abs(Math.abs(rot) - Math.PI / 2) < 0.01;
     const w = rotated ? hT : wT;
@@ -145,8 +155,19 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     // per-instance variation so identical presets don't read as clones
     const jitter = (hash01(seed, x0, y0, salt) - 0.5) * 0.04;
     const scale = 0.97 + hash01(seed, y0, x0, salt + 1) * 0.06;
-    thin("building", presetVariant(preset, w, d), { x: cx, y: env.heightAt(x0, y0), z: cz, rotationY: rot + jitter, scale });
-    buildings.push({ tex: "extra", tx: cx, ty: y0 + hT - 1, w: wT, d: hT, rotationY: rot, kind });
+    const y = groundUnder(env, x0, y0, wT, hT);
+    const meta = { id: `bld:extra:${x0},${y0}`, solid: true, occluder: true, fp: { w, d } };
+    const hero = heroKey ? heroBuilding(am, heroKey, w, d) : null;
+    if (hero && am.isGlbLoaded(heroKey!)) {
+      // hero GLB, front aligned with the footprint front (local -Z), rotated with the building
+      const c = Math.cos(rot);
+      const s2 = Math.sin(rot);
+      thin(hero.key, "", { x: cx + hero.dz * s2, y, z: cz + hero.dz * c, rotationY: rot, scale: hero.scale }, { ...meta, src: "hero" });
+      buildings.push({ tex: "extra", tx: cx, ty: y0 + hT - 1, w: wT, d: hT, rotationY: rot, kind, doorX: (hero.door?.x ?? 0) * hero.scale });
+      return true;
+    }
+    thin("building", presetVariant(preset, w, d), { x: cx, y, z: cz, rotationY: rot + jitter, scale }, meta);
+    buildings.push({ tex: "extra", tx: cx, ty: y0 + hT - 1, w: wT, d: hT, rotationY: rot, kind, doorX: kitDoorX(presetVariant(preset, w, d)) * scale });
     return true;
   };
 
@@ -180,42 +201,108 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     for (let y = d.y + 9; y < d.y + d.h - 6; y += 13) segs.push({ horizontal: true, at: y, from: d.x + 2, to: d.x + d.w - 2, half: 1 });
   }
 
+  /** building-local (x across the façade, z out of the front = -z) → world XZ */
+  const local = (b: PlacedBuilding, lx: number, lz: number) => {
+    const cx = b.tx;
+    const cz = -(b.ty + 1) + b.d / 2;
+    const c = Math.cos(b.rotationY);
+    const s = Math.sin(b.rotationY);
+    return { x: cx + lx * c + lz * s, z: cz - lx * s + lz * c };
+  };
+  const tileOf = (x: number, z: number) => ({ tx: Math.floor(x), ty: Math.floor(-z) });
+
+  // ------------------------------------------------------------ front gardens
+  // COTTAGE → garden (flowers, heather, low fence / wall, gate at the door) →
+  // sidewalk → curb → road. The garden is the tile row right in front of the
+  // façade; it is claimed (not walkable) except the gate tile.
+  const gardenTiles = new Set<number>();
+  const hasFlowerKeys = am.has("flower-cluster-a");
+  const flower = (x: number, z: number, y: number, r: number, scale: number) => {
+    if (hasFlowerKeys) thin(`flower-cluster-${"abc"[Math.floor(r * 3) % 3]}`, "", { x, z, y, rotationY: r * 17, scale: scale * 0.9 });
+    else thin("flower-cluster", `c=${FLOWERS[Math.floor(r * 100) % FLOWERS.length]}`, { x, z, y, rotationY: r * 17, scale });
+  };
+  const frontGarden = (b: PlacedBuilding, edge: "fence" | "wall", salt: number) => {
+    const rotated = Math.abs(Math.abs(b.rotationY) - Math.PI / 2) < 0.01;
+    const w = rotated ? b.d : b.w;
+    const hd = (rotated ? b.w : b.d) / 2;
+    const hw = w / 2;
+    const tiles: { tx: number; ty: number; lx: number }[] = [];
+    for (let i = 0; i < w; i++) {
+      const lx = -hw + 0.5 + i;
+      const p = local(b, lx, -hd - 0.5);
+      const t = tileOf(p.x, p.z);
+      if (!free(t.tx, t.ty) || keep.has(tileKey(t.tx, t.ty))) return false;
+      tiles.push({ ...t, lx });
+    }
+    const gate = Math.max(0, Math.min(w - 1, Math.floor((b.doorX ?? 0) + hw)));
+    const edgeKey = edge === "fence" ? K.fence : K.wall;
+    const edgeZ = -hd - 0.84;
+    tiles.forEach((t, i) => {
+      const y = env.heightAt(t.tx, t.ty);
+      const e = local(b, t.lx, edgeZ);
+      if (i === gate) {
+        thin(K.gate, "", { x: e.x, z: e.z, y, rotationY: b.rotationY }, { src: "garden" });
+        return;
+      }
+      claim(t.tx, t.ty);
+      gardenTiles.add(tileKey(t.tx, t.ty));
+      thin(edgeKey, "", { x: e.x, z: e.z, y, rotationY: b.rotationY + (edge === "wall" ? (hash01(seed, t.tx, salt) - 0.5) * 0.04 : 0) }, { solid: true, src: "garden" });
+      // planting: a low bed against the façade, clusters + heather toward the fence
+      const r = hash01(seed, t.tx, t.ty, salt);
+      const bp = local(b, t.lx + (r - 0.5) * 0.2, -hd - 0.3);
+      thin("flower-bed", `c=${FLOWERS[Math.floor(r * 97) % FLOWERS.length]},d=${FLOWERS[Math.floor(r * 53 + 2) % FLOWERS.length]}`, { x: bp.x, z: bp.z, y, rotationY: b.rotationY + (r > 0.5 ? 0 : Math.PI), scale: 0.85 + r * 0.2 });
+      for (let k = 0; k < 2; k++) {
+        const rk = hash01(seed, t.tx, t.ty, salt, k + 3);
+        const fp = local(b, t.lx + (rk - 0.5) * 0.7, -hd - 0.55 - rk * 0.12);
+        if (rk < 0.3) thin("heather", "", { x: fp.x, z: fp.z, y, rotationY: rk * 11, scale: 0.7 + rk * 0.5 });
+        else flower(fp.x, fp.z, y, rk, 0.65 + rk * 0.35);
+      }
+    });
+    // short returns at the garden ends so it reads as an enclosed plot
+    for (const side of [-1, 1]) {
+      const p = local(b, side * (hw - 0.04), -hd - 0.44);
+      thin(edgeKey, "", { x: p.x, z: p.z, y: env.heightAt(tiles[0].tx, tiles[0].ty), rotationY: b.rotationY + Math.PI / 2, scale: 0.86 }, { src: "garden" });
+    }
+    return true;
+  };
+
   // ------------------------------------------- benchmark: east end of the Royal Mile
-  // Spawn is (100,48); the Mile runs rows 45-47 with cobble sidewalks on 43-44 and
-  // 48-49; east of x=98 the village gives way to grass. Placed first so it wins.
+  // Spawn is (100,48); the Mile (road, t_path) runs rows 45-47 with cobble
+  // sidewalks on 43-44 and 48-49; east of x=98 the village gives way to grass.
+  // North side: cottages on rows 40-42, front gardens on row 43, sidewalk row 44.
+  // South side: sidewalk rows 48-49, planted verge + lamps row 50, dry-stone
+  // wall row 51 with a gate, cottage garden beyond. Placed first so it wins.
   if (def.id === "edinburgh_oldtown") {
-    // hero cottage pair north of the Mile, doors onto the sidewalk (row 44)
-    placeBuilding(94, 41, 4, 3, 0, "stoneCrow", "hero", 1);
-    placeBuilding(100, 41, 4, 3, 0, "greyDormer", "hero", 2);
-    placeBuilding(89, 41, 4, 3, 0, "whiteSlate", "hero", 3);
-    // between them: the red phone box; post box + signpost on the south side
-    set("phone-box", 98, 42, 0);
-    set(K.signpost, 97, 49, 0.5);
-    set(K.postBox, 96, 49, 0);
-    // a little green corner by the fingerpost so the west sidewalk isn't bare stone
-    set(K.bushB, 94, 50, 0.9, bushVariant(true), 0.8);
-    set(K.planter, 95, 50, 0.1, "", 0.85, false, 0.1, -0.15);
-    bed(93, 50, -0.3, 0, 90);
-    // sidewalk life in front of the cottages
-    set(K.bench, 99, 44, 0);
-    set(K.barrel, 97, 44, 0.3, "", barrelScale, true, 0.25, 0.1);
-    set(K.crate, 93, 44, 0.2, "", 0.7, true, -0.2, 0.15);
-    set(K.crate, 103, 44, 0.9, "", 0.55, false, 0.3, 0.2);
-    set(K.barrel, 103, 44, 0, "", barrelScale * 0.9, true, -0.25, 0.05);
-    set(K.planter, 101, 44, 0, "", 0.9, false, 0.35, 0.25);
-    set(K.lamp, 98, 44, 0);
-    set(K.lamp, 104, 44, 0);
-    // ivy cards leaning on cottage corners
-    set(K.ivy, 89, 44, 0, "", 1, false, -0.1, 0.4);
-    set(K.ivy, 103, 44, 0, "", 0.9, false, 0.05, 0.42);
+    // the parked car (spawn-relative: worldController.placeJeep + game3d's +0.7 nudge) keeps its kerb clear
+    const carX = (world.spawn.x + 22) / 16 + 0.7;
+    const carRow = (world.spawn.y + 8) / 16;
+    for (let x = Math.floor(carX - 1.45); x <= Math.floor(carX + 1.45); x++) for (let y = Math.floor(carRow - 0.75); y <= Math.floor(carRow + 0.75); y++) keep.add(tileKey(x, y));
+    // cottage group north of the Mile: hero GLBs when loaded, kit presets otherwise
+    placeBuilding(93, 40, 4, 3, 0, "stoneCrow", "hero", 1, "cottage-hero-a");
+    placeBuilding(99, 40, 5, 3, 0, "greyDormer", "hero", 2, "cottage-hero-b");
+    placeBuilding(87, 40, 4, 3, 0, "whiteSlate", "hero", 3);
+    // the lane between the pair: phone box + a lamp at the back of the sidewalk
+    set("phone-box", 98, 43, 0, "", 1, true, 0.05, 0.1);
+    set(K.lamp, 97, 43, 0, "", 1, true, 0.1, -0.3);
+    set(K.lamp, 91, 43, 0, "", 1, true, 0.2, -0.3);
+    set(K.barrel, 104, 42, 0.3, "", barrelScale, true, 0.15, 0.1);
+    set(K.crate, 104, 41, 0.2, "", 0.7, true, 0.1, 0.1);
     // trees on the grass beyond the east cottage
     set(K.oakA, 106, 42, 0.3, oakVariant(0), 1.15);
     set(K.pine, 108, 44, 1.1, pineVariant(1), 1.0);
-    set(K.small, 105, 41, 2.2, oakVariant(2), smallScale);
-    set(K.bushA, 105, 44, 0.4, bushVariant(true), 0.9);
-    // dry-stone wall along the grass edge (row 51, hugging the sidewalk) with a
-    // gate opposite spawn and low return walls; it replaces the auto edge wall
-    // so the two never double up
+    set(K.small, 106, 39, 2.2, oakVariant(2), smallScale);
+    set(K.bushA, 106, 44, 0.4, bushVariant(true), 0.9);
+    set(K.pine, 92, 38, 0.6, pineVariant(0), 0.9);
+    set(K.lamp, 105, 43, 0, "", 1, true, 0, -0.3);
+    // south side: post box + fingerpost at the back of the 2-tile sidewalk
+    set(K.signpost, 96, 49, 0.35, "", 1, true, 0, -0.2);
+    set(K.postBox, 95, 49, 0, "", 1, true, 0, -0.25);
+    // a little green corner by the fingerpost
+    set(K.bushB, 94, 50, 0.9, bushVariant(true), 0.8);
+    set(K.planter, 95, 50, 0.1, "", 0.85, false, 0.1, -0.15);
+    bed(93, 50, -0.3, 0, 90);
+    // dry-stone wall along the grass edge (row 51) with a gate opposite spawn and
+    // low return walls; it replaces the auto edge wall so the two never double up
     for (let x = 98; x <= 106; x++) {
       if (x === 101) {
         set(K.gate, x, 51, 0, "", 1, false, 0, 0.3);
@@ -231,24 +318,25 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     set(K.small, 100, 56, 0.8, oakVariant(1), smallScale);
     set(K.oakB, 108, 54, 1.4, oakVariant(3), 1.1);
     set(K.pine, 96, 56, 2.0, pineVariant(2), 1.05);
-    set(K.pine, 96, 42, 0.6, pineVariant(0), 0.9);
     set(K.barrel, 105, 53, 0.4, "", barrelScale, true, 0.3, -0.2);
     set(K.crate, 106, 53, 0.1, "", 0.5, false, -0.2, 0.2);
     set(K.planter, 100, 52, 0, "", 0.85, false, -0.3, -0.1);
     set(K.planter, 102, 52, 0, "", 0.85, false, 0.3, -0.1);
     set(K.bushB, 99, 53, 0.5, bushVariant(true), 0.85);
     set(K.bushA, 106, 56, 1.2, bushVariant(false), 0.9);
-    // flower beds hugging the wall on both sides, the cottage fronts and the lamp feet
-    // (dense low beds read as a garden; lone clusters on bare stone read as lollipops)
-    for (let x = 98; x <= 106; x++) if (x !== 101) bed(x, 50, 0.36, 0, 60 + x);
+    // verge: lamps + a bench at the back of the south sidewalk (clear of the parked car)
+    set(K.lamp, 97, 50, 0, "", 1, true, 0, 0.1);
+    set(K.lamp, 105, 50, 0, "", 1, true, 0, 0.1);
+    set(K.bench, 98, 50, Math.PI, "", 1, true, 0, 0.12);
+    // flower beds hugging the wall (street side + garden side)
+    for (let x = 98; x <= 106; x++) if (x !== 101 && !keep.has(tileKey(x, 50))) bed(x, 50, 0.36, 0, 60 + x);
     for (let x = 99; x <= 106; x++) if (x !== 101) bed(x, 52, -0.2, 0, 70 + x);
-    for (const x of [92, 93, 95, 96, 100, 101, 102, 103]) bed(x, 44, -0.36, 0, 80 + x, 0.8);
     for (let x = 99; x <= 106; x++) for (let y = 53; y <= 57; y++) if (hash01(seed, x, y, 8) > 0.35) drift(x, y, 1 + Math.floor(hash01(seed, x, y, 9) * 2), 20);
-    for (let x = 105; x <= 108; x++) for (let y = 41; y <= 44; y++) if (hash01(seed, x, y, 7) > 0.5) drift(x, y, 1, 30);
-    set(K.lamp, 98, 50, 0);
-    set(K.lamp, 104, 50, 0);
-    set(K.bench, 103, 50, Math.PI);
+    for (let x = 105; x <= 108; x++) for (let y = 39; y <= 44; y++) if (hash01(seed, x, y, 7) > 0.5) drift(x, y, 1, 30);
   }
+
+  /** the benchmark Mile: a real road (t_path) inside the benchmark rows gets gardens */
+  const gardenSeg = (sg: Seg) => def.id === "edinburgh_oldtown" && sg.horizontal && sg.at >= 40 && sg.at <= 56 && street(Math.floor((sg.from + sg.to) / 2), sg.at);
 
   // ---------------------------------------------------------- extra cottages
   for (const s of segs) {
@@ -258,7 +346,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
         const r = hash01(seed, s.at, pos, side);
         const [preset, wT] = EXTRA_PRESETS[Math.floor(r * 1000) % EXTRA_PRESETS.length];
         const dT = 3;
-        const gap = s.half + 2; // road half-width + sidewalk
+        // road half-width + sidewalk (+ a front-garden row along the benchmark Mile)
+        const gap = s.half + 2 + (gardenSeg(s) ? (side < 0 ? 1 : 2) : 0);
         let ok = false;
         if (s.horizontal) {
           const y0 = side < 0 ? s.at - gap - dT + 1 : s.at + gap;
@@ -273,44 +362,57 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     }
   }
 
+  // ------------------------------------------ gardens (benchmark region only)
+  if (def.id === "edinburgh_oldtown") {
+    let gi = 0;
+    for (const b of buildings) {
+      if (b.kind !== "hero" && b.kind !== "cottage") continue;
+      if (b.ty < 38 || b.ty > 60 || b.tx < 22 || b.tx > 110) continue;
+      frontGarden(b, hash01(seed, b.tx, 41) > 0.45 ? "fence" : "wall", 50 + gi++);
+    }
+  }
+
   // ---------------------------------------- lamps + benches along the streets
   for (const s of segs) {
     for (let pos = s.from + 2; pos < s.to - 1; pos += 7) {
       const side = ((pos / 7) | 0) % 2 ? 1 : -1;
       const off = s.half + 1;
-      const tx = s.horizontal ? pos : s.at + side * off;
-      const ty = s.horizontal ? s.at + side * off : pos;
-      if (free(tx, ty)) {
-        claim(tx, ty);
-        thin(K.lamp, "", { ...centre(tx, ty) });
+      const at2 = (o: number, sd: number) => (s.horizontal ? { tx: pos, ty: s.at + sd * o } : { tx: s.at + sd * o, ty: pos });
+      const walk = (t: { tx: number; ty: number }) => free(t.tx, t.ty);
+      // a lamp just behind the curb, only where the sidewalk is 2+ tiles wide;
+      // on a 1-tile sidewalk it stands in the front garden at the fence line instead
+      const lt = at2(off, side);
+      const back = at2(off + 1, side);
+      const toRoad = -side * 0.3;
+      if (walk(lt) && walk(back)) {
+        claim(lt.tx, lt.ty);
+        const c = centre(lt.tx, lt.ty);
+        thin(K.lamp, "", s.horizontal ? { ...c, z: c.z - toRoad } : { ...c, x: c.x + toRoad }, { solid: true });
+      } else if (walk(lt) && gardenTiles.has(tileKey(back.tx, back.ty))) {
+        const c = centre(back.tx, back.ty);
+        // inside the garden, just behind the fence line (the fence runs 0.34 from the tile centre)
+        thin(K.lamp, "", s.horizontal ? { ...c, z: c.z - toRoad * 0.15 } : { ...c, x: c.x + toRoad * 0.15 }, { solid: true });
       }
-      // a bench a little further along, on the opposite side, facing the road
-      const bx = s.horizontal ? pos + 3 : s.at - side * off;
-      const by = s.horizontal ? s.at - side * off : pos + 3;
-      if (hash01(seed, bx, by) > 0.55 && free(bx, by)) {
-        claim(bx, by);
+      // a bench a little further along, on the opposite side, facing the road (2+ tile sidewalks only)
+      const bt = s.horizontal ? { tx: pos + 3, ty: s.at - side * off } : { tx: s.at - side * off, ty: pos + 3 };
+      const bb = s.horizontal ? { tx: pos + 3, ty: s.at - side * (off + 1) } : { tx: s.at - side * (off + 1), ty: pos + 3 };
+      if (hash01(seed, bt.tx, bt.ty) > 0.55 && walk(bt) && walk(bb)) {
+        claim(bt.tx, bt.ty);
         const rot = s.horizontal ? (side < 0 ? 0 : Math.PI) : side < 0 ? Math.PI / 2 : -Math.PI / 2;
-        thin(K.bench, "", { ...centre(bx, by), rotationY: rot });
+        thin(K.bench, "", { ...centre(bt.tx, bt.ty), rotationY: rot }, { solid: true });
       }
     }
   }
 
   // ---------------------------------------------- per-building front dressing
-  const local = (b: PlacedBuilding, lx: number, lz: number) => {
-    const cx = b.tx;
-    const cz = -(b.ty + 1) + b.d / 2;
-    const c = Math.cos(b.rotationY);
-    const s = Math.sin(b.rotationY);
-    return { x: cx + lx * c + lz * s, z: cz - lx * s + lz * c };
-  };
-  const tileOf = (x: number, z: number) => ({ tx: Math.floor(x), ty: Math.floor(-z) });
   /** place a piece at building-local coordinates if that tile is free */
   const at = (b: PlacedBuilding, k: string, lx: number, lz: number, rot = 0, variant = "", scale = 1, block = false) => {
     const p = local(b, lx, lz);
     const t = tileOf(p.x, p.z);
     if (!free(t.tx, t.ty)) return false;
+    if (block && !sidewalkOk(t.tx, t.ty)) return false;
     if (block) claim(t.tx, t.ty);
-    thin(k, variant, { x: p.x, z: p.z, y: env.heightAt(t.tx, t.ty), rotationY: b.rotationY + rot, scale });
+    thin(k, variant, { x: p.x, z: p.z, y: env.heightAt(t.tx, t.ty), rotationY: b.rotationY + rot, scale }, { solid: block, trunk: isTree(k) ? 0.2 : undefined });
     return true;
   };
   for (const b of buildings) {
@@ -352,7 +454,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
         at(b, K.chair, tx0 - 0.58, tz0 + 0.05, Math.PI / 2);
         at(b, K.chair, tx0 + 0.58, tz0 - 0.05, -Math.PI / 2);
       }
-      at(b, "chalkboard", 0.62, front - 0.12, -0.3);
+      at(b, "chalkboard", 0.5, front - 1.05, -0.3); // between the terrace rows, clear of the chairs
       at(b, K.planter, hw + 0.35, front + 0.05, 0, "", 0.9);
       at(b, K.planter, -hw - 0.35, front + 0.05, 0, "", 0.9);
       at(b, K.lamp, hw + 0.55, front - 1.1, 0, "", 1, true);
@@ -399,7 +501,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       claim(tx, ty);
       const c = centre(tx, ty);
       const rot = cobbleN || cobbleS ? 0 : Math.PI / 2;
-      thin(K.wall, "", { x: c.x, z: c.z + (cobbleN ? 0.35 : cobbleS ? -0.35 : 0), y: c.y, rotationY: rot });
+      thin(K.wall, "", { x: c.x, z: c.z + (cobbleN ? 0.35 : cobbleS ? -0.35 : 0), y: c.y, rotationY: rot }, { solid: true });
       if (hash01(seed, tx, ty, 6) > 0.8) drift(tx, ty, 1, 50);
     }
   }
@@ -417,10 +519,10 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
         if (r > 0.965 && ringFree(tx, ty, 1, 1)) {
           claim(tx, ty);
           const pine = hash01(seed, tx, ty, 4) > 0.7;
-          thin(pine ? K.pine : i % 2 ? K.oakA : K.oakB, pine ? pineVariant(i) : oakVariant(i), { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 3) * 0.4 });
+          thin(pine ? K.pine : i % 2 ? K.oakA : K.oakB, pine ? pineVariant(i) : oakVariant(i), { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 3) * 0.4 }, { solid: true, trunk: 0.2 });
         } else if (r > 0.94) {
           claim(tx, ty);
-          thin(i % 2 ? K.bushA : K.bushB, bushVariant(hash01(seed, tx, ty, 5) > 0.6), { ...c, rotationY: rot, scale: 0.8 + hash01(seed, tx, ty, 6) * 0.4 });
+          thin(i % 2 ? K.bushA : K.bushB, bushVariant(hash01(seed, tx, ty, 5) > 0.6), { ...c, rotationY: rot, scale: 0.8 + hash01(seed, tx, ty, 6) * 0.4 }, { solid: true, trunk: 0.3 });
         } else if (r > 0.915) {
           thin("heather", "", { ...c, rotationY: rot, scale: 0.8 + hash01(seed, tx, ty, 7) * 0.5 });
         } else if (r > 0.885) {
@@ -432,14 +534,14 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
         // plazas: planters and flowers, sparse, never blocking
         if (r > 0.985) thin(K.planter, "", { ...c, rotationY: rot });
         else if (r > 0.975) thin("flower-cluster", `c=${FLOWERS[i % FLOWERS.length]}`, { ...c, rotationY: rot, scale: 0.8 });
-      } else if (tex(tx, ty) === "t_cobble") {
+      } else if (tex(tx, ty) === "t_cobble" && !street(tx + 1, ty) && !street(tx - 1, ty) && !street(tx, ty + 1) && !street(tx, ty - 1)) {
         // the odd tree / planter / bush inside the village so squares don't feel empty
         if (r > 0.988 && ringFree(tx, ty, 1, 1)) {
           claim(tx, ty);
-          thin(i % 2 ? K.oakA : K.oakB, oakVariant(i), { ...c, rotationY: rot, scale: 0.85 + hash01(seed, tx, ty, 3) * 0.3 });
-        } else if (r > 0.98) {
+          thin(i % 2 ? K.oakA : K.oakB, oakVariant(i), { ...c, rotationY: rot, scale: 0.85 + hash01(seed, tx, ty, 3) * 0.3 }, { solid: true, trunk: 0.2 });
+        } else if (r > 0.98 && sidewalkOk(tx, ty)) {
           claim(tx, ty);
-          thin(K.planter, "", { ...c, rotationY: rot });
+          thin(K.planter, "", { ...c, rotationY: rot }, { solid: true });
         } else if (r > 0.974) {
           thin("flower-cluster", `c=${FLOWERS[i % FLOWERS.length]}`, { ...c, rotationY: rot, scale: 0.8 });
         } else if (r > 0.968) {
@@ -455,12 +557,12 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     // a fountain square on the pavement plaza west of the Royal Mile
     if (ringFree(36, 51, 2, 2)) {
       for (let y = 51; y < 53; y++) for (let x = 36; x < 38; x++) claim(x, y);
-      thin("fountain", "", { x: 37, z: -52, y: env.heightAt(37, 52) });
+      thin("fountain", "", { x: 37, z: -52, y: groundUnder(env, 36, 51, 2, 2) }, { solid: true });
       set(K.bench, 34, 52, -Math.PI / 2);
       set(K.bench, 39, 52, Math.PI / 2);
       set(K.bench, 36, 49, 0);
       set(K.planter, 39, 49);
-      set(K.planter, 34, 49);
+      // (no planter at 34,49: it would close the 1-tile sidewalk behind the café bench)
       set(K.oakA, 41, 55, 0.4, oakVariant(0), 1.1);
       set(K.oakB, 25, 47, 1.3, oakVariant(1), 1.0);
     }

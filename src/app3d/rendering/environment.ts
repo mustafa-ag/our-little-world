@@ -8,8 +8,9 @@
 //  - a greyscale hand-painted grain per family via StandardMaterial.detailMap
 //    in world-space UV (uv2), so close-ups read as cobbles / grass;
 //  - a thin-instanced kerb of small stones along the painted grass<->path edge.
-// Plus a distant backdrop: soft hills and a far castle silhouette that the
-// fog blends into the sky. Purely visual: collision lives in the grid collider.
+// Plus raised sidewalks (CURB_H) with real curbs, a hand-painted sett road with
+// wheel tracks / gutter grime (macro map), gutters, drains and manholes.
+// Purely visual: collision lives in the grid collider.
 
 import type { Scene } from "@babylonjs/core/scene";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -27,11 +28,12 @@ import "@babylonjs/core/Meshes/thinInstanceMesh";
 import type { WorldData } from "../../game/worldgen";
 import { Materials, PALETTE } from "./materials";
 import type { Lighting } from "./lighting";
+import { CURB_H } from "../world/scale";
 
 /** Paint family: what the splat paints. */
 type Paint = "grass" | "heather" | "moss" | "cobble" | "path" | "pavement" | "road" | "water";
 /** Grain family: which ground mesh / detail texture a tile belongs to. */
-type Grain = "grass" | "cobble" | "paved" | "water";
+type Grain = "grass" | "cobble" | "paved" | "road" | "water";
 
 const TILE_PAINT: Record<string, Paint> = {
   t_grass: "grass",
@@ -67,11 +69,15 @@ const GRAIN_OF: Record<Paint, Grain> = {
   // village squares & sidewalks (t_cobble) read as big sandstone flags, like
   // the reference's pale paved sidewalks either side of a darker road
   cobble: "paved",
-  path: "cobble",
+  path: "road",
   pavement: "paved",
-  road: "paved",
+  road: "road",
   water: "water",
 };
+
+/** Sidewalks / squares stand a curb height above the road and the verges. */
+const isRaised = (p: Paint) => p === "cobble" || p === "pavement";
+const isRoadPaint = (p: Paint) => p === "path" || p === "road";
 
 const isSoft = (p: Paint) => p === "grass" || p === "heather" || p === "moss";
 
@@ -173,7 +179,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
     for (let tx = 0; tx < W; tx++) {
       const p = TILE_PAINT[world.ground[ty][tx]] ?? "grass";
       paint[ty * W + tx] = p;
-      heights[ty][tx] = p === "water" ? -0.12 : 0;
+      heights[ty][tx] = p === "water" ? -0.12 : isRaised(p) ? CURB_H : 0;
     }
   }
   const paintAt = (tx: number, ty: number): Paint => {
@@ -207,6 +213,33 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
     return out;
   };
 
+  // ---- road cross-sections: for each road tile, which way the street runs and
+  // where its kerbs are (tile units), for wheel tracks / gutter grime / drains
+  const roadX = new Float32Array(W * H * 3); // [horizontal?1:0, start, width]
+  for (let ty = 0; ty < H; ty++)
+    for (let tx = 0; tx < W; tx++) {
+      if (!isRoadPaint(paint[ty * W + tx])) continue;
+      const run = (dx: number, dy: number) => {
+        let n = 0;
+        while (n < 12 && isRoadPaint(paintAt(tx + dx * (n + 1), ty + dy * (n + 1))) && tx + dx * (n + 1) >= 0 && ty + dy * (n + 1) >= 0 && tx + dx * (n + 1) < W && ty + dy * (n + 1) < H) n++;
+        return n;
+      };
+      const n = run(0, -1);
+      const so = run(0, 1);
+      const e = run(1, 0);
+      const w = run(-1, 0);
+      const o = (ty * W + tx) * 3;
+      if (n + so <= e + w) {
+        roadX[o] = 1;
+        roadX[o + 1] = ty - n;
+        roadX[o + 2] = n + so + 1;
+      } else {
+        roadX[o] = 0;
+        roadX[o + 1] = tx - w;
+        roadX[o + 2] = e + w + 1;
+      }
+    }
+
   // ---- splat albedo ----
   const ppt = Math.max(4, Math.min(isMobile ? 6 : 10, Math.floor((isMobile ? 672 : 1344) / W), Math.floor((isMobile ? 564 : 1128) / H)));
   const TW = W * ppt;
@@ -216,6 +249,8 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   splat.wrapV = Texture.CLAMP_ADDRESSMODE;
   splat.anisotropicFilteringLevel = 8;
   ownTex.push(splat);
+  // greyscale macro modulation for the road (detail map on uv1): 128 = neutral
+  const roadMacro = new Uint8ClampedArray(TW * TH).fill(128);
   {
     const ctx = splat.getContext() as CanvasRenderingContext2D;
     const img = ctx.createImageData(TW, TH);
@@ -277,6 +312,31 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
         const ty0 = Math.floor(y);
         const own = paintAt(tx0, ty0);
         if (!soft && !isSoft(own)) fam = own;
+        if (isRoadPaint(own)) {
+          const o3 = (ty0 * W + tx0) * 3;
+          const across = roadX[o3] ? y : x;
+          const along = roadX[o3] ? x : y;
+          const width = roadX[o3 + 2];
+          const d0 = across - roadX[o3 + 1];
+          const dEdge = Math.min(d0, width - d0);
+          const u = d0 / width;
+          let v = 1 + (F[2] - 0.5) * 0.14 + (F[3] - 0.5) * 0.1;
+          if (width >= 2.5) {
+            // wheel-worn tracks: two soft polished bands along the street
+            for (const cu of [0.31, 0.69]) {
+              const dd = Math.abs(u - cu) * width;
+              if (dd < 0.3) v += (1 - smooth(0.06, 0.3, dd)) * (0.1 + 0.05 * vnoise(along * 0.7, cu * 9, 91));
+            }
+            // a damp darker crown line down the middle, broken up
+            if (Math.abs(u - 0.5) * width < 0.2) v -= 0.05 * smooth(0.45, 0.75, vnoise(along * 0.5, 3, 93));
+          }
+          // grime collects toward the gutters
+          if (dEdge < 0.7) v -= (1 - dEdge / 0.7) * 0.13;
+          // worn / patched areas
+          if (F[7] > 0.66) v += (F[7] - 0.66) * 0.35;
+          if (vnoise(x * 0.45 + 7, y * 0.45, 97) > 0.72) v -= 0.06;
+          roadMacro[py * TW + pxi] = 128 * v;
+        }
         // macro tint clouds (~14 tile blobs) + mid variation
         const macro = F[2];
         const mid = F[3];
@@ -336,12 +396,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
             };
             if ((fx < e && differs(tx0 - 1, ty0)) || (fx > 1 - e && differs(tx0 + 1, ty0)) || (fy < e && differs(tx0, ty0 - 1)) || (fy > 1 - e && differs(tx0, ty0 + 1)))
               mixInto(c, C.cobbleDark, 0.55);
-            else if (own !== "path") {
-              // a pale dressed kerb band on the sidewalk side of a street
-              const k = 2.8 / ppt;
-              const street = (nx: number, ny: number) => paintAt(nx, ny) === "path";
-              if ((fx < k && street(tx0 - 1, ty0)) || (fx > 1 - k && street(tx0 + 1, ty0)) || (fy < k && street(tx0, ty0 - 1)) || (fy > 1 - k && street(tx0, ty0 + 1))) mixInto(c, C.kerb, 0.6);
-            }
+
           }
           if (fam !== "water" && g > 0.02) {
             // grass tufts / moss creeping between stones near the edge
@@ -368,6 +423,25 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
     ctx.putImageData(img, 0, 0);
     splat.update(true);
   }
+  // the road's macro map as a detail texture (R = albedo multiplier / 2; G/A = flat normal)
+  const macroTex = new DynamicTexture("ground:roadMacro", cpuCanvas(TW, TH), scene, true);
+  macroTex.wrapU = Texture.CLAMP_ADDRESSMODE;
+  macroTex.wrapV = Texture.CLAMP_ADDRESSMODE;
+  ownTex.push(macroTex);
+  {
+    const ctx = macroTex.getContext() as CanvasRenderingContext2D;
+    const img = ctx.createImageData(TW, TH);
+    const d = img.data;
+    for (let i = 0; i < TW * TH; i++) {
+      d[i * 4] = roadMacro[i];
+      d[i * 4 + 1] = 128;
+      d[i * 4 + 2] = 128;
+      d[i * 4 + 3] = 128;
+    }
+    ctx.putImageData(img, 0, 0);
+    macroTex.hasAlpha = false;
+    macroTex.update(true);
+  }
 
   // ---- grain (detail) textures, greyscale around 50% ----
   // (cached per scene: identical for every district)
@@ -377,10 +451,10 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
     GRAIN_CACHE.set(scene, grain);
   }
   // tiles per texture repeat, rotation to break axis alignment
-  const GRAIN_SETUP: Record<Exclude<Grain, "water">, { rep: number; ang: number; blend: number }> = {
+  const GRAIN_SETUP: Record<Exclude<Grain, "water" | "road">, { rep: number; ang: number; blend: number }> = {
     grass: { rep: 2.6, ang: 0.47, blend: 0.4 },
     cobble: { rep: 2.0, ang: 0, blend: 0.26 },
-    paved: { rep: 2.8, ang: 0, blend: 0.3 },
+    paved: { rep: 2.2, ang: 0, blend: 0.42 },
   };
 
   // ---- continuous ground meshes (one per grain family, shared corners) ----
@@ -414,6 +488,33 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
       const c = corner(g, tx + 1, ty, y);
       const d = corner(g, tx, ty, y);
       g.idx.push(a, b, c, a, c, d);
+      // skirts: close the step down to a lower neighbour (raised sidewalks)
+      const hn = (nx: number, ny: number) => (nx < 0 || ny < 0 || nx >= W || ny >= H ? y : heights[ny][nx]);
+      const skirt = (x0: number, z0: number, x1: number, z1: number, lo: number, nx: number, nz: number) => {
+        const i = g.pos.length / 3;
+        g.pos.push(x0, y, z0, x1, y, z1, x1, lo, z1, x0, lo, z0);
+        for (const [px, pz] of [[x0, z0], [x1, z1], [x1, z1], [x0, z0]]) {
+          g.uv.push(px / W, 1 + pz / H);
+          g.uv2.push(px, pz);
+          g.col.push(0.8, 0.78, 0.74, 1);
+          g.nor.push(nx, 0, nz);
+        }
+        // winding: Babylon's left-handed front face = clockwise seen from the normal side
+        const flip = nx * (z1 - z0) - nz * (x1 - x0) > 0;
+        if (flip) g.idx.push(i, i + 2, i + 1, i, i + 3, i + 2);
+        else g.idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
+      };
+      if (y > -0.01) {
+        const lo = (v: number) => (v < y - 0.005 ? v : null);
+        let l = lo(hn(tx, ty - 1));
+        if (l !== null) skirt(tx, -ty, tx + 1, -ty, l, 0, 1);
+        l = lo(hn(tx, ty + 1));
+        if (l !== null) skirt(tx, -(ty + 1), tx + 1, -(ty + 1), l, 0, -1);
+        l = lo(hn(tx - 1, ty));
+        if (l !== null) skirt(tx, -ty, tx, -(ty + 1), l, -1, 0);
+        l = lo(hn(tx + 1, ty));
+        if (l !== null) skirt(tx + 1, -ty, tx + 1, -(ty + 1), l, 1, 0);
+      }
     }
 
   for (const [gr, g] of groups) {
@@ -428,12 +529,31 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
     vd.applyToMesh(m);
     if (gr === "water") {
       m.material = mats.textured("noise", PALETTE.water, 1);
+    } else if (gr === "road") {
+      // hand-painted setts in world space (uv2, 2 tiles per repeat, slightly
+      // rotated so courses never line up with the tile grid), modulated by the
+      // baked macro map (uv1): wheel tracks, gutter grime, worn patches
+      const mat = new StandardMaterial("ground:road", scene);
+      const setts = settTexture(scene);
+      setts.coordinatesIndex = 1;
+      setts.uScale = 0.5;
+      setts.vScale = 0.5;
+      setts.wAng = 0.012;
+      mat.diffuseTexture = setts;
+      mat.specularColor = Color3.Black();
+      macroTex.coordinatesIndex = 0;
+      mat.detailMap.texture = macroTex;
+      mat.detailMap.diffuseBlendLevel = 1;
+      mat.detailMap.bumpLevel = 0;
+      mat.detailMap.isEnabled = true;
+      m.material = mat;
+      ownMats.push(mat);
     } else {
       const mat = new StandardMaterial(`ground:${gr}`, scene);
       mat.diffuseTexture = splat;
       mat.specularColor = Color3.Black();
-      const setup = GRAIN_SETUP[gr];
-      const dt = grain[gr];
+      const setup = GRAIN_SETUP[gr as Exclude<Grain, "water" | "road">];
+      const dt = grain[gr as Exclude<Grain, "water" | "road">];
       dt.coordinatesIndex = 1;
       dt.uScale = 1 / setup.rep;
       dt.vScale = 1 / setup.rep;
@@ -460,6 +580,12 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
     ownMats.push(kerb.material as StandardMaterial);
   }
 
+  // ---- curbs, gutters, drain grates and manhole covers along the road edges ----
+  for (const sm of buildStreetDetails(scene, W, H, paintAt, roadX, (tx, ty) => heights[ty]?.[tx] ?? 0)) {
+    meshes.push(sm);
+    ownMats.push(sm.material as StandardMaterial);
+  }
+
   // an endless meadow under everything so the horizon never shows the void
   const under = CreateGround("ground:under", { width: 600, height: 600, subdivisions: 1 }, scene);
   under.position.set(W / 2, -0.03, -H / 2);
@@ -469,51 +595,8 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   under.freezeWorldMatrix();
   meshes.push(under);
 
-  // ---- backdrop hills + far castle silhouette ----
-  const cx = W / 2;
-  const cz = -H / 2;
-  const hillMat = mats.flat("#86987a");
-  const hillFar = mats.flat("#94a6a0");
-  const ring = 16;
-  for (let i = 0; i < ring; i++) {
-    const a = (i / ring) * Math.PI * 2 + 0.3;
-    const far = i % 3 === 0;
-    const r = (far ? 165 : 130) + hash(i, 1, 9) * 20;
-    const size = (far ? 90 : 60) + hash(i, 2, 9) * 40;
-    const h = CreateSphere(`hill${i}`, { diameter: size, segments: 6 }, scene);
-    h.scaling.set(1.6 + hash(i, 3, 9), 0.35 + hash(i, 4, 9) * 0.25, 1);
-    h.position.set(cx + Math.cos(a) * r, -size * 0.12, cz + Math.sin(a) * r);
-    h.rotation.y = -a;
-    h.material = far ? hillFar : hillMat;
-    h.convertToFlatShadedMesh();
-    h.isPickable = false;
-    h.freezeWorldMatrix();
-    meshes.push(h);
-  }
-  // Arthur's-Seat-ish crag with a small keep to the north-east
-  const crag = CreateSphere("crag", { diameter: 80, segments: 5 }, scene);
-  crag.scaling.set(1.2, 0.6, 1);
-  crag.position.set(cx + 95, -6, cz + 120);
-  crag.material = mats.flat("#7a8f70");
-  crag.convertToFlatShadedMesh();
-  crag.isPickable = false;
-  crag.freezeWorldMatrix();
-  meshes.push(crag);
-  const keepMat = mats.flat("#838a92");
-  const keep = CreateBox("farKeep", { width: 14, height: 9, depth: 8 }, scene);
-  keep.position.set(cx + 95, 20, cz + 120);
-  keep.material = keepMat;
-  keep.isPickable = false;
-  keep.freezeWorldMatrix();
-  meshes.push(keep);
-  for (const dx of [-8, 8]) {
-    const t = CreateCylinder(`farTower${dx}`, { diameter: 5, height: 13, tessellation: 8 }, scene);
-    t.position.set(cx + 95 + dx, 22, cz + 118);
-    t.material = keepMat;
-    t.isPickable = false;
-    t.freezeWorldMatrix();
-    meshes.push(t);
-  }
+  // (distant hills, Arthur's-Seat crag and the castle skyline live in
+  // rendering/backdrop.ts — the old sphere hills / far keep here duplicated them)
 
   void lighting;
   return {
@@ -750,7 +833,8 @@ function grainTexture(scene: Scene, kind: "grass" | "cobble" | "paving"): Dynami
       let x = grnd() * s;
       for (const wr of ws) {
         const w = (wr / wsum) * s;
-        const v = 132 + (grnd() - 0.5) * 18;
+        // irregular flags: tone drift, the odd darker stone, a lit edge
+        const v = 134 + (grnd() - 0.5) * 26 - (grnd() > 0.86 ? 22 : 0);
         const cx = x + w / 2;
         const cy = y + rh / 2;
         const jx = (grnd() - 0.5) * 2;
@@ -760,6 +844,10 @@ function grainTexture(scene: Scene, kind: "grass" | "cobble" | "paving"): Dynami
           ctx.beginPath();
           ctx.roundRect(X - w / 2 + 1.4 + jx, Y - rh / 2 + 1.4 + jy, w - 2.8, rh - 2.8, 6);
           ctx.fill();
+          ctx.fillStyle = grey(v + 14, 0.5);
+          ctx.fillRect(X - w / 2 + 4 + jx, Y - rh / 2 + 3 + jy, w - 8, 2.5);
+          ctx.fillStyle = grey(v - 20, 0.45);
+          ctx.fillRect(X - w / 2 + 3 + jx, Y + rh / 2 - 4.5 + jy, w - 6, 2.5);
         });
         x += w;
       }
@@ -791,4 +879,305 @@ function grainTexture(scene: Scene, kind: "grass" | "cobble" | "paving"): Dynami
   t.hasAlpha = false;
   t.update(true);
   return t;
+}
+
+// ---------------------------------------------------------------------------
+// Road surface: hand-painted setts (colour, 512 px, seamless) — multi-tone
+// courses laid across the street, imperfect alignment, soft worn tops, dark
+// joints with occasional moss.
+
+let rseed = 7;
+function rrnd() {
+  rseed = (Math.imul(rseed, 1664525) + 1013904223) >>> 0;
+  return rseed / 4294967296;
+}
+const SETT_CACHE = new WeakMap<Scene, DynamicTexture>();
+const SETT_TONES = ["#77716a", "#6f6a63", "#7d776d", "#67635d", "#746a5f", "#6d6c68", "#837c70", "#625d57", "#796f63", "#716d67"];
+
+function settTexture(scene: Scene): DynamicTexture {
+  const cached = SETT_CACHE.get(scene);
+  if (cached && cached.getScene()) return cached;
+  const s = 512;
+  const t = new DynamicTexture("ground:setts", cpuCanvas(s, s), scene, true);
+  t.wrapU = Texture.WRAP_ADDRESSMODE;
+  t.wrapV = Texture.WRAP_ADDRESSMODE;
+  t.anisotropicFilteringLevel = 8;
+  const ctx = t.getContext() as CanvasRenderingContext2D;
+  rseed = 7;
+  // joints: dark earthy mortar
+  ctx.fillStyle = "#4a453e";
+  ctx.fillRect(0, 0, s, s);
+  const wrapped = (x: number, y: number, r: number, fn: (x: number, y: number) => void) => {
+    for (let ox = -1; ox <= 1; ox++)
+      for (let oy = -1; oy <= 1; oy++) {
+        const X = x + ox * s;
+        const Y = y + oy * s;
+        if (X + r < 0 || X - r > s || Y + r < 0 || Y - r > s) continue;
+        fn(X, Y);
+      }
+  };
+  // courses run along v (across an E-W street); 14 courses per 512 px (2 tiles)
+  const courses = 14;
+  const cw = s / courses;
+  for (let c = 0; c < courses; c++) {
+    let y = rrnd() * 30;
+    const start = y;
+    const x0 = c * cw + (rrnd() - 0.5) * 2;
+    while (y < start + s - 20) {
+      const len = cw * (1.35 + rrnd() * 0.55);
+      const tone = SETT_TONES[Math.floor(rrnd() * SETT_TONES.length)];
+      const jx = (rrnd() - 0.5) * 2.5;
+      const w = cw - 4 - rrnd() * 2;
+      const h = len - 4 - rrnd() * 2;
+      const rot = (rrnd() - 0.5) * 0.06;
+      const lift = rrnd();
+      const moss = rrnd() > 0.9;
+      wrapped(x0 + cw / 2 + jx, y + len / 2, len, (X, Y) => {
+        ctx.save();
+        ctx.translate(X, Y);
+        ctx.rotate(rot);
+        // body
+        ctx.fillStyle = tone;
+        ctx.beginPath();
+        ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) * 0.32);
+        ctx.fill();
+        // soft worn top (lighter, off-centre) + shaded lower edge
+        ctx.fillStyle = `rgba(255,248,235,${0.04 + lift * 0.05})`;
+        ctx.beginPath();
+        ctx.ellipse(-w * 0.08, -h * 0.1, w * 0.32, h * 0.33, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(20,16,12,0.16)";
+        ctx.beginPath();
+        ctx.roundRect(-w / 2, h / 2 - h * 0.16, w, h * 0.16, Math.min(w, h) * 0.2);
+        ctx.fill();
+        if (moss) {
+          ctx.fillStyle = "rgba(92,110,58,0.75)";
+          ctx.beginPath();
+          ctx.ellipse(w / 2 - 1, (rrnd() - 0.5) * h * 0.6, 2.2, h * 0.22, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      });
+      y += len;
+    }
+  }
+  // speckle + a few chips
+  for (let i = 0; i < 1400; i++) {
+    const x = rrnd() * s;
+    const y = rrnd() * s;
+    ctx.fillStyle = rrnd() > 0.5 ? "rgba(255,250,240,0.07)" : "rgba(0,0,0,0.08)";
+    ctx.fillRect(x, y, 1.5, 1.5);
+  }
+  t.update(true);
+  SETT_CACHE.set(scene, t);
+  return t;
+}
+
+/** Small painted textures for the street furniture (gutter setts, grate, manhole). */
+function smallTex(scene: Scene, name: string, w: number, h: number, paintFn: (ctx: CanvasRenderingContext2D) => void) {
+  const t = new DynamicTexture(name, cpuCanvas(w, h), scene, true);
+  t.wrapU = Texture.WRAP_ADDRESSMODE;
+  t.wrapV = Texture.WRAP_ADDRESSMODE;
+  t.anisotropicFilteringLevel = 4;
+  paintFn(t.getContext() as CanvasRenderingContext2D);
+  t.update(true);
+  return t;
+}
+
+/** Thin-instanced mesh with per-instance colour. */
+function instanced(proto: Mesh, mats: number[], cols: number[] | null) {
+  proto.thinInstanceSetBuffer("matrix", new Float32Array(mats), 16, true);
+  if (cols) proto.thinInstanceSetBuffer("color", new Float32Array(cols), 4, true);
+  proto.receiveShadows = true;
+  proto.isPickable = false;
+  proto.alwaysSelectAsActiveMesh = true;
+  proto.freezeWorldMatrix();
+  return proto;
+}
+
+/**
+ * Curbs (real CURB_H geometry, one stone per ~0.5 u, slight size / yaw / tone
+ * jitter), a smooth gutter channel on the road side, drain grates every few
+ * tiles and the odd manhole cover down the middle. Visual only.
+ */
+function buildStreetDetails(scene: Scene, W: number, H: number, paintAt: (tx: number, ty: number) => Paint, roadX: Float32Array, heightAt: (tx: number, ty: number) => number): Mesh[] {
+  const out: Mesh[] = [];
+  const curbM: number[] = [];
+  const curbC: number[] = [];
+  const gutM: number[] = [];
+  const grateM: number[] = [];
+  const holeM: number[] = [];
+  const m = new Matrix();
+  const q = new Quaternion();
+  const sc = new Vector3();
+  const tr = new Vector3();
+  const push = (arr: number[], x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number) => {
+    Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, q);
+    sc.set(sx, sy, sz);
+    tr.set(x, y, z);
+    Matrix.ComposeToRef(sc, q, tr, m);
+    for (let i = 0; i < 16; i++) arr.push(m.m[i]);
+  };
+  const granite = hex("#aaa59b");
+  // walk every raised tile edge that faces a road tile
+  for (let ty = 0; ty < H; ty++)
+    for (let tx = 0; tx < W; tx++) {
+      const p = paintAt(tx, ty);
+      if (!isRaised(p)) continue;
+      const top = heightAt(tx, ty);
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+        const nx = tx + dx;
+        const ny = ty + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || !isRoadPaint(paintAt(nx, ny))) continue;
+        const horizontalEdge = dy !== 0;
+        // edge line in world coords; "out" = toward the road (world +z is north = -dy)
+        const ox = dx;
+        const oz = -dy;
+        const ex = horizontalEdge ? tx : dx > 0 ? tx + 1 : tx;
+        const ez = horizontalEdge ? (dy < 0 ? -ty : -(ty + 1)) : -ty;
+        const yaw = horizontalEdge ? 0 : Math.PI / 2;
+        // stones along the edge
+        let t = hash(tx, ty, 301 + dx * 3 + dy) * 0.2;
+        let k = 0;
+        while (t < 0.995) {
+          const len = Math.min(1 - t, 0.44 + hash(tx * 7 + k, ty, 303) * 0.3);
+          if (len < 0.12) break;
+          const mid = t + len / 2;
+          const r1 = hash(tx, ty * 5 + k, 305 + dx);
+          const r2 = hash(tx * 3 + k, ty, 307 + dy);
+          const along = mid;
+          const cx = horizontalEdge ? ex + along : ex + ox * 0;
+          const cz = horizontalEdge ? ez : ez - along;
+          // stone centre sits 0.07 inside the sidewalk, face 0.015 proud into the road
+          const inset = 0.08 - 0.015;
+          const px = cx - ox * inset;
+          const pz = cz - oz * inset;
+          const hgt = top + 0.03 + (r1 - 0.5) * 0.008;
+          push(curbM, px, -0.02, pz, yaw + (r2 - 0.5) * 0.02, len - 0.008, hgt, 1);
+          const v = 0.86 + r1 * 0.16;
+          const warm = 0.97 + r2 * 0.05;
+          curbC.push((granite[0] / 255) * v * warm, (granite[1] / 255) * v, (granite[2] / 255) * v * (2 - warm), 1);
+          t += len;
+          k++;
+        }
+        // gutter strip on the road side, 1 tile long
+        const gx = horizontalEdge ? ex + 0.5 : ex + ox * 0.14;
+        const gz = horizontalEdge ? ez + oz * 0.14 : ez - 0.5;
+        push(gutM, gx, 0.003, gz, yaw, 1, 1, 1);
+        // a drain grate in the gutter every ~5 tiles
+        const along = horizontalEdge ? tx : ty;
+        if (along % 5 === 2 && hash(tx, ty, 311) > 0.25) push(grateM, horizontalEdge ? ex + 0.5 : ex + ox * 0.15, 0.004, horizontalEdge ? ez + oz * 0.15 : ez - 0.5, yaw, 1, 1, 1);
+      }
+      void p;
+    }
+  // manholes on the road centre line, sparse
+  for (let ty = 0; ty < H; ty++)
+    for (let tx = 0; tx < W; tx++) {
+      if (!isRoadPaint(paintAt(tx, ty))) continue;
+      const o = (ty * W + tx) * 3;
+      const width = roadX[o + 2];
+      if (width < 2.5) continue;
+      const horiz = roadX[o] === 1;
+      const centre = roadX[o + 1] + width / 2;
+      const cell = horiz ? ty : tx;
+      if (Math.floor(centre) !== cell) continue;
+      const along = horiz ? tx : ty;
+      if (along % 11 !== 6) continue;
+      const off = (hash(tx, ty, 313) - 0.5) * 0.5;
+      push(holeM, horiz ? tx + 0.5 : centre + off, 0.004, horiz ? -(centre + off) : -(ty + 0.5), hash(tx, ty, 317) * 6, 1, 1, 1);
+    }
+
+  const white = (name: string, tex: Texture | null) => {
+    const mat = new StandardMaterial(name, scene);
+    mat.diffuseColor = Color3.White();
+    mat.specularColor = Color3.Black();
+    if (tex) mat.diffuseTexture = tex;
+    mat.freeze();
+    return mat;
+  };
+  if (curbM.length) {
+    // unit-high stone with a softly bevelled top edge; base at y=0
+    const stone = CreateBox("curb", { width: 1, height: 1, depth: 0.16 }, scene);
+    const pos = stone.getVerticesData("position")!;
+    for (let i = 0; i < pos.length; i += 3) {
+      pos[i + 1] += 0.5;
+      if (pos[i + 1] > 0.99) {
+        pos[i] *= 0.985;
+        pos[i + 2] *= 0.8;
+      }
+    }
+    stone.updateVerticesData("position", pos);
+    stone.convertToFlatShadedMesh();
+    stone.material = white("curb", null);
+    out.push(instanced(stone, curbM, curbC));
+  }
+  if (gutM.length) {
+    const tex = smallTex(scene, "gutterTex", 256, 64, (ctx) => {
+      ctx.fillStyle = "#4a4640";
+      ctx.fillRect(0, 0, 256, 64);
+      rseed = 23;
+      for (const [y0, hh] of [[3, 28], [33, 28]]) {
+        let x = -rrnd() * 30;
+        while (x < 256) {
+          const l = 38 + rrnd() * 26;
+          const tone = ["#8b857a", "#7f796f", "#958e81", "#77736b"][Math.floor(rrnd() * 4)];
+          ctx.fillStyle = tone;
+          ctx.beginPath();
+          ctx.roundRect(x + 1.5, y0, l - 3, hh, 6);
+          ctx.fill();
+          ctx.fillStyle = "rgba(255,250,240,0.1)";
+          ctx.fillRect(x + 5, y0 + 4, l - 12, hh * 0.35);
+          x += l;
+        }
+      }
+      // a damp streak along the kerb side
+      ctx.fillStyle = "rgba(30,28,24,0.28)";
+      ctx.fillRect(0, 0, 256, 9);
+    });
+    const plane = CreateGround("gutter", { width: 1, height: 0.26 }, scene);
+    plane.material = white("gutter", tex);
+    out.push(instanced(plane, gutM, null));
+  }
+  if (grateM.length) {
+    const tex = smallTex(scene, "grateTex", 64, 32, (ctx) => {
+      ctx.fillStyle = "#2e2c2a";
+      ctx.fillRect(0, 0, 64, 32);
+      ctx.fillStyle = "#57534d";
+      ctx.fillRect(2, 2, 60, 28);
+      ctx.fillStyle = "#1b1a19";
+      for (let i = 0; i < 9; i++) ctx.fillRect(6 + i * 6, 6, 3, 20);
+    });
+    const g = CreateBox("grate", { width: 0.46, height: 0.012, depth: 0.22 }, scene);
+    g.material = white("grate", tex);
+    out.push(instanced(g, grateM, null));
+  }
+  if (holeM.length) {
+    const tex = smallTex(scene, "manholeTex", 128, 128, (ctx) => {
+      ctx.fillStyle = "#38362f";
+      ctx.beginPath();
+      ctx.arc(64, 64, 63, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5c5850";
+      ctx.beginPath();
+      ctx.arc(64, 64, 54, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#403d37";
+      ctx.lineWidth = 3;
+      for (let r = 12; r < 54; r += 10) {
+        ctx.beginPath();
+        ctx.arc(64, 64, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      for (let a = 0; a < 8; a++) {
+        ctx.beginPath();
+        ctx.moveTo(64, 64);
+        ctx.lineTo(64 + Math.cos((a * Math.PI) / 4) * 54, 64 + Math.sin((a * Math.PI) / 4) * 54);
+        ctx.stroke();
+      }
+    });
+    const d = CreateCylinder("manhole", { diameter: 0.56, height: 0.014, tessellation: 18 }, scene);
+    d.material = white("manhole", tex);
+    out.push(instanced(d, holeM, null));
+  }
+  return out;
 }

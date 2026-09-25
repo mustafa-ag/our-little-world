@@ -45,6 +45,17 @@ export interface CottageSpec {
   seed: number;
   /** sign band colour for shops / cafés */
   sign: string;
+  // ---- silhouette (derived per preset + footprint in specFromVariant unless the preset sets them)
+  /** ridge runs front→back so the gable faces the street */
+  gableFront?: boolean;
+  /** single-pitch lean-to on one side (-1 west, +1 east, 0 none) */
+  leanTo?: -1 | 0 | 1;
+  /** small gabled porch over the door */
+  porch?: boolean;
+  /** canted bay window on the ground floor */
+  bay?: boolean;
+  /** roof pitch multiplier (~0.8 low … 1.25 steep) */
+  pitch?: number;
 }
 
 const P = PALETTE as Record<string, string>;
@@ -178,5 +189,15 @@ export function specFromVariant(variant: string): CottageSpec {
   let seed = 0;
   for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) % 9973;
   seed = Math.floor(hash01(seed, w, d) * 1000);
-  return { ...p, w, d, seed };
+  const spec: CottageSpec = { ...p, w, d, seed };
+  // silhouette variety before decoration: gables to the street on narrow
+  // cottages, lean-tos, porches, bays, steeper / lower roofs
+  const r = (k: number) => hash01(seed, k, 5);
+  const house = spec.kind === "cottage";
+  if (spec.gableFront === undefined) spec.gableFront = house && !spec.crow && w <= 3 && spec.storeys === 1 && r(1) > 0.35;
+  if (spec.leanTo === undefined) spec.leanTo = house && w >= 4 && r(2) > 0.5 ? (r(3) > 0.5 ? 1 : -1) : 0;
+  if (spec.porch === undefined) spec.porch = house && !spec.arch && r(4) > 0.45;
+  if (spec.bay === undefined) spec.bay = (house || spec.kind === "tenement") && w - (spec.leanTo ? 0.85 : 0) >= 3.3 && r(6) > 0.45;
+  if (spec.pitch === undefined) spec.pitch = spec.kind === "tenement" ? 1 : 0.82 + r(7) * 0.42;
+  return spec;
 }

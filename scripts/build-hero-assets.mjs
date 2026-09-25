@@ -12,6 +12,10 @@
 //                                   # by the game, so they are left out of
 //                                   # public/assets/models by default)
 //
+// Keys listed in tools/blender/manifest.json are Blender-authored
+// (`npm run assets:blender`) and are NEVER overwritten here; pass
+// --force-legacy <key> to export the code builder anyway (e.g. to compare).
+//
 // The script re-executes itself through tsx so the TypeScript modules can be
 // imported directly (no build step).
 
@@ -19,6 +23,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -63,6 +68,10 @@ const outDir = join(root, "public", "assets", "models");
 await mkdir(outDir, { recursive: true });
 
 const all = process.argv.includes("--all");
+const forceLegacy = process.argv.includes("--force-legacy");
+// Blender-authored keys (tools/blender/build.mjs writes this manifest)
+const blenderManifest = join(root, "tools", "blender", "manifest.json");
+const blenderKeys = new Set(existsSync(blenderManifest) ? Object.keys(JSON.parse(readFileSync(blenderManifest, "utf8")).assets ?? {}) : []);
 const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const rows = [];
@@ -76,6 +85,10 @@ function countTris(node) {
 
 for (const [key, entry] of Object.entries(HERO_ASSETS)) {
   if (only.length && !only.includes(key)) continue;
+  if (blenderKeys.has(key) && !(forceLegacy && only.includes(key))) {
+    rows.push({ key, tris: "-", kb: "-", note: "Blender-authored (npm run assets:blender) - skipped" });
+    continue;
+  }
   if (!only.length && !all && entry.preload === false) {
     rows.push({ key, tris: "-", kb: "-", note: "export-only (pass --all or the key)" });
     continue;

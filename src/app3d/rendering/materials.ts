@@ -72,7 +72,29 @@ function vary(hex: string, t: number, jitter = 0) {
   return rgb(c.r + (to - c.r) * k + j, c.g + (to - c.g) * k + j, c.b + (to - c.b) * k + j);
 }
 
-export type TexStyle = "noise" | "stone" | "cobble" | "roof" | "slate" | "planks" | "grass" | "awning" | "paving";
+export type TexStyle = "noise" | "stone" | "cobble" | "roof" | "slate" | "planks" | "grass" | "awning" | "paving" | "bark" | "canvas";
+
+/**
+ * Runtime material slots (see assets/hero/slots.ts). `Materials.slot(name)`
+ * returns the shared material for a slot so AssetManager's remap table can be
+ * a one-liner. Textured slots use the hand-painted textures; flat slots are
+ * white so vertex colours carry the hue.
+ */
+export const SLOT_STYLE: Record<string, { style: TexStyle | "flat"; hex: string; scale?: number; emissive?: number }> = {
+  olw_stone: { style: "stone", hex: PALETTE.stoneWarm, scale: 1.2 },
+  olw_stone_dark: { style: "stone", hex: PALETTE.greyStoneDark, scale: 1.2 },
+  olw_roof_tile: { style: "roof", hex: PALETTE.terracottaMuted, scale: 1 },
+  olw_slate: { style: "slate", hex: PALETTE.slate, scale: 1 },
+  olw_wood: { style: "planks", hex: PALETTE.woodLight, scale: 1.5 },
+  olw_wood_dark: { style: "planks", hex: "#6e4a33", scale: 1.5 },
+  olw_bark: { style: "bark", hex: "#8a6a4e", scale: 1.5 },
+  olw_awning: { style: "canvas", hex: "#ffffff", scale: 2 },
+  olw_glass: { style: "flat", hex: PALETTE.glass },
+  olw_glass_emissive: { style: "flat", hex: PALETTE.lamp, emissive: 0.2 },
+  olw_light_emissive: { style: "flat", hex: PALETTE.lamp, emissive: 0.85 },
+  olw_rubber: { style: "flat", hex: "#34322f" },
+  olw_flower: { style: "flat", hex: "#ffffff" },
+};
 
 export class Materials {
   private mats = new Map<string, StandardMaterial>();
@@ -113,11 +135,26 @@ export class Materials {
     return m;
   }
 
+  /**
+   * Shared material for a named slot (olw_stone, olw_roof_tile, olw_slate,
+   * olw_wood, olw_stone_dark, olw_wood_dark, olw_bark, olw_awning,
+   * olw_light_emissive, olw_rubber, olw_flower, …). Unknown slots (olw_paint,
+   * olw_foliage, olw_metal, character roles) are flat white × vertex colour.
+   * Emissive slots still need `lighting.registerGlow` by the caller for the
+   * night glow.
+   */
+  slot(name: string) {
+    const d = SLOT_STYLE[name];
+    if (!d) return this.flat("#ffffff");
+    if (d.style === "flat") return this.flat(d.hex, d.emissive ? { emissive: d.emissive } : {});
+    return this.textured(d.style, d.hex, d.scale ?? 1, d.emissive ? { emissive: d.emissive } : {});
+  }
+
   texture(style: TexStyle, hex: string): DynamicTexture {
     const key = `${style}:${hex}`;
     let t = this.texes.get(key);
     if (t) return t;
-    const size = style === "roof" || style === "slate" || style === "cobble" || style === "stone" ? 256 : 128;
+    const size = style === "roof" || style === "slate" || style === "stone" ? 512 : style === "cobble" || style === "planks" || style === "bark" ? 256 : 128;
     t = new DynamicTexture(`dt:${key}`, { width: size, height: size }, this.scene, true);
     t.wrapU = Texture.WRAP_ADDRESSMODE;
     t.wrapV = Texture.WRAP_ADDRESSMODE;
@@ -161,33 +198,84 @@ function paint(ctx: CanvasRenderingContext2D, s: number, style: TexStyle, hex: s
       }
       break;
     case "stone": {
-      // irregular ashlar blocks
-      const rows = 6;
-      const bh = s / rows;
-      for (let r = 0; r < rows; r++) {
-        let x = r % 2 ? -bh * 0.7 : 0;
+      // irregular coursed rubble / ashlar: courses of varying height, stones of
+      // varying length with warm/cool hue shifts, the odd darker stone, lit top
+      // edges, shaded bottoms and chipped corners over soft mortar
+      ctx.fillStyle = vary(hex, -0.13, 0);
+      ctx.fillRect(0, 0, s, s);
+      const hs: number[] = [];
+      for (let i = 0; i < 7; i++) hs.push(0.7 + rnd() * 0.7);
+      const hsum = hs.reduce((a, v) => a + v, 0);
+      let y = 0;
+      for (const hr of hs) {
+        const bh = (hr / hsum) * s;
+        let x = -rnd() * bh;
         while (x < s) {
-          const bw = bh * (1.2 + rnd() * 1.2);
-          ctx.fillStyle = vary(hex, (rnd() - 0.5) * 0.16, 0.02);
-          roundRect(ctx, x + 1.5, r * bh + 1.5, bw - 3, bh - 3, 3);
-          ctx.fill();
+          const bw = Math.min(bh * (1.1 + rnd() * 1.5), s - x + bh * 0.3);
+          const dark = rnd() > 0.9;
+          const hueShift = (rnd() - 0.5) * 0.06;
+          const base = hexToRgb(hex);
+          const t = dark ? -0.12 - rnd() * 0.05 : (rnd() - 0.45) * 0.1;
+          const to = t < 0 ? 0 : 255;
+          const k = Math.abs(t);
+          const r = base.r + (to - base.r) * k + hueShift * 120;
+          const g = base.g + (to - base.g) * k + hueShift * 20;
+          const b2 = base.b + (to - base.b) * k - hueShift * 90;
+          const ix = x + 2 + (rnd() - 0.5) * 1.5;
+          const iy = y + 2 + (rnd() - 0.5) * 1.5;
+          const iw = bw - 4;
+          const ih = bh - 4;
+          const draw = (ox: number) => {
+            ctx.fillStyle = rgb(r, g, b2);
+            roundRect(ctx, ix + ox, iy, iw, ih, 4 + rnd() * 5);
+            ctx.fill();
+            // lit top edge, shaded bottom edge (hand-painted bevel)
+            ctx.fillStyle = "rgba(255,248,232,0.09)";
+            roundRect(ctx, ix + ox + 2, iy + 1.5, iw - 4, ih * 0.22, 3);
+            ctx.fill();
+            ctx.fillStyle = "rgba(40,30,20,0.09)";
+            roundRect(ctx, ix + ox + 1, iy + ih * 0.8, iw - 2, ih * 0.2, 3);
+            ctx.fill();
+            // a few soft pits / lichen dots
+            for (let i = 0; i < 3; i++) {
+              ctx.fillStyle = rnd() > 0.8 ? "rgba(120,130,80,0.18)" : "rgba(60,50,40,0.1)";
+              ctx.beginPath();
+              ctx.arc(ix + ox + rnd() * iw, iy + rnd() * ih, 1.5 + rnd() * 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          };
+          draw(0);
+          if (ix + iw > s) draw(-s);
+          if (ix < 0) draw(s);
           x += bw;
         }
+        y += bh;
       }
-      ctx.fillStyle = "rgba(0,0,0,0.05)";
-      ctx.fillRect(0, 0, s, s);
       break;
     }
     case "cobble": {
+      // multi-tone rounded cobbles, imperfect rows, soft worn tops, moss in some joints
+      ctx.fillStyle = vary(hex, -0.3, 0);
+      ctx.fillRect(0, 0, s, s);
       const n = 9;
       const cw = s / n;
       for (let r = 0; r < n; r++)
-        for (let c = 0; c < n; c++) {
-          const x = c * cw + (r % 2 ? cw / 2 : 0) + (rnd() - 0.5) * 3;
-          const y = r * cw + (rnd() - 0.5) * 3;
-          ctx.fillStyle = vary(hex, (rnd() - 0.5) * 0.22, 0.02);
-          roundRect(ctx, x + 1.5, y + 1.5, cw - 3, cw - 3, cw * 0.35);
+        for (let c = 0; c <= n; c++) {
+          const x = c * cw + (r % 2 ? cw / 2 : 0) + (rnd() - 0.5) * 5 - cw / 2;
+          const y = r * cw + (rnd() - 0.5) * 4;
+          const w = cw * (0.82 + rnd() * 0.16);
+          const h = cw * (0.8 + rnd() * 0.16);
+          ctx.fillStyle = vary(hex, (rnd() - 0.5) * 0.3, 0.03);
+          roundRect(ctx, x + 1.5, y + 1.5, w, h, cw * 0.38);
           ctx.fill();
+          ctx.fillStyle = "rgba(255,250,240,0.14)";
+          ctx.beginPath();
+          ctx.ellipse(x + w * 0.45, y + h * 0.4, w * 0.25, h * 0.2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          if (rnd() > 0.86) {
+            ctx.fillStyle = "rgba(96,118,62,0.55)";
+            ctx.fillRect(x + w, y + 2, 3, h * 0.7);
+          }
         }
       break;
     }
@@ -202,50 +290,123 @@ function paint(ctx: CanvasRenderingContext2D, s: number, style: TexStyle, hex: s
         }
       break;
     }
-    case "roof":
-    case "slate": {
-      // scalloped tile rows
-      const rows = style === "roof" ? 10 : 8;
+    case "roof": {
+      // pantile / clay tile rows: each row casts a soft shadow on the one below,
+      // controlled colour drift (sun-bleached, orange, darker) and uneven edges
+      const rows = 12;
       const th = s / rows;
-      const tw = th * (style === "roof" ? 0.9 : 1.3);
+      const tw = th * 0.95;
       for (let r = 0; r <= rows; r++) {
         const off = r % 2 ? tw / 2 : 0;
+        const rowT = (rnd() - 0.5) * 0.08;
         for (let x = -tw; x < s + tw; x += tw) {
-          ctx.fillStyle = vary(hex, (rnd() - 0.5) * 0.2, 0.02);
+          const x0 = x + off + (rnd() - 0.5) * 2;
+          const y0 = r * th + (rnd() - 0.5) * 1.5;
+          const pick = rnd();
+          const t = rowT + (pick > 0.93 ? -0.18 : pick > 0.85 ? 0.12 : (rnd() - 0.5) * 0.12);
+          ctx.fillStyle = vary(hex, t, 0.02);
           ctx.beginPath();
-          const x0 = x + off;
-          const y0 = r * th;
-          if (style === "roof") {
-            ctx.moveTo(x0, y0);
-            ctx.lineTo(x0 + tw, y0);
-            ctx.lineTo(x0 + tw, y0 + th * 0.75);
-            ctx.arc(x0 + tw / 2, y0 + th * 0.75, tw / 2, 0, Math.PI);
-            ctx.closePath();
-          } else {
-            ctx.rect(x0 + 0.5, y0, tw - 1, th * 1.15);
-          }
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x0 + tw, y0);
+          ctx.lineTo(x0 + tw, y0 + th * 0.78);
+          ctx.arc(x0 + tw / 2, y0 + th * 0.78, tw / 2, 0, Math.PI);
+          ctx.closePath();
           ctx.fill();
-          ctx.strokeStyle = "rgba(0,0,0,0.12)";
-          ctx.lineWidth = 1;
-          ctx.stroke();
+          // rounded highlight down the tile's crown
+          ctx.fillStyle = "rgba(255,240,220,0.13)";
+          ctx.fillRect(x0 + tw * 0.3, y0 + 2, tw * 0.22, th * 0.9);
+          // soft shadow the next row casts
+          ctx.fillStyle = "rgba(40,20,10,0.16)";
+          ctx.fillRect(x0, y0, tw, th * 0.16);
+        }
+      }
+      break;
+    }
+    case "slate": {
+      // slates of varying width in staggered courses; blue-grey / purple /
+      // green-grey drift, uneven bottom edges, the odd replaced lighter slate
+      const rows = 10;
+      const th = s / rows;
+      for (let r = 0; r <= rows; r++) {
+        let x = -rnd() * th;
+        const rowT = (rnd() - 0.5) * 0.06;
+        while (x < s + th) {
+          const tw = th * (0.9 + rnd() * 0.7);
+          const y0 = r * th;
+          const pick = rnd();
+          const t = rowT + (pick > 0.94 ? 0.16 : pick > 0.86 ? -0.14 : (rnd() - 0.5) * 0.1);
+          const c = hexToRgb(hex);
+          const tint = (rnd() - 0.5) * 14;
+          const to = t < 0 ? 0 : 255;
+          const k = Math.abs(t);
+          ctx.fillStyle = rgb(c.r + (to - c.r) * k + tint * 0.6, c.g + (to - c.g) * k - tint * 0.2, c.b + (to - c.b) * k + tint);
+          const drop = th * (1.12 + rnd() * 0.12);
+          ctx.beginPath();
+          ctx.moveTo(x + 0.8, y0);
+          ctx.lineTo(x + tw - 0.8, y0);
+          ctx.lineTo(x + tw - 1.2, y0 + drop + (rnd() - 0.5) * 3);
+          ctx.lineTo(x + 1.2, y0 + drop + (rnd() - 0.5) * 3);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.07)";
+          ctx.fillRect(x + 2, y0 + drop * 0.55, tw - 4, drop * 0.3);
+          ctx.fillStyle = "rgba(10,12,20,0.22)";
+          ctx.fillRect(x, y0, tw, th * 0.12);
+          x += tw;
         }
       }
       break;
     }
     case "planks": {
+      // broad painted boards: hue drift per board, long soft grain strokes, a knot or two
       const n = 5;
       const pw = s / n;
+      ctx.fillStyle = vary(hex, -0.35, 0);
+      ctx.fillRect(0, 0, s, s);
       for (let i = 0; i < n; i++) {
-        ctx.fillStyle = vary(hex, (rnd() - 0.5) * 0.18, 0.02);
-        ctx.fillRect(i * pw + 1, 0, pw - 2, s);
-        for (let g = 0; g < 6; g++) {
-          ctx.strokeStyle = "rgba(0,0,0,0.08)";
+        const c = hexToRgb(hex);
+        const t = (rnd() - 0.5) * 0.18;
+        const hue = (rnd() - 0.5) * 16;
+        const to = t < 0 ? 0 : 255;
+        ctx.fillStyle = rgb(c.r + (to - c.r) * Math.abs(t) + hue, c.g + (to - c.g) * Math.abs(t), c.b + (to - c.b) * Math.abs(t) - hue * 0.5);
+        ctx.fillRect(i * pw + 1.5, 0, pw - 3, s);
+        ctx.lineCap = "round";
+        for (let g = 0; g < 7; g++) {
+          ctx.strokeStyle = rnd() > 0.4 ? "rgba(50,30,15,0.12)" : "rgba(255,240,220,0.1)";
+          ctx.lineWidth = 1 + rnd() * 2.2;
+          const x = i * pw + 4 + rnd() * (pw - 8);
+          const y0 = rnd() * s;
           ctx.beginPath();
-          const x = i * pw + 3 + rnd() * (pw - 6);
-          ctx.moveTo(x, rnd() * s);
-          ctx.lineTo(x + (rnd() - 0.5) * 3, rnd() * s);
+          ctx.moveTo(x, y0);
+          ctx.bezierCurveTo(x + (rnd() - 0.5) * 6, y0 + s * 0.2, x + (rnd() - 0.5) * 6, y0 + s * 0.4, x + (rnd() - 0.5) * 4, y0 + s * (0.3 + rnd() * 0.5));
           ctx.stroke();
         }
+        if (rnd() > 0.5) {
+          ctx.fillStyle = "rgba(60,35,20,0.35)";
+          ctx.beginPath();
+          ctx.ellipse(i * pw + pw * (0.3 + rnd() * 0.4), rnd() * s, 2.5, 4.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      break;
+    }
+    case "bark": {
+      for (let i = 0; i < 60; i++) {
+        ctx.strokeStyle = vary(hex, (rnd() - 0.6) * 0.35, 0.02);
+        ctx.lineWidth = 2 + rnd() * 5;
+        const x = rnd() * s;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.bezierCurveTo(x + (rnd() - 0.5) * 12, s * 0.33, x + (rnd() - 0.5) * 12, s * 0.66, x, s);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "canvas": {
+      blotches(ctx, s, hex, 20, 0.03, s / 5);
+      for (let i = 0; i < s; i += 3) {
+        ctx.fillStyle = "rgba(0,0,0,0.025)";
+        ctx.fillRect(0, i, s, 1);
       }
       break;
     }
