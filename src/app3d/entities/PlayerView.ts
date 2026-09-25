@@ -1,5 +1,6 @@
-// The player's chibi + a soft blob shadow. Reads PlayerState each frame;
-// outfit colours follow store.state.outfit (same palette as the 2D game).
+// The player (Juju): the hero character rig (GLB via AssetManager, procedural
+// fallback) + a soft blob shadow. Reads PlayerState each frame; outfit
+// colours follow store.state.outfit (same palette as the 2D game).
 
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
@@ -8,8 +9,8 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { PLAYER } from "../../game/data/npcs";
 import { Outfits, type CharColors } from "../../game/palette";
 import { store } from "../../game/systems/store";
-import type { KitContext } from "../assets/AssetManager";
-import { createCharacter, type CharacterRig } from "../assets/kit/characters";
+import type { AssetManager, KitContext } from "../assets/AssetManager";
+import { createPlayerRig, type CharacterRig } from "../assets/kit/characters";
 import type { PlayerState } from "../systems/playerController";
 
 export function playerColors(): CharColors {
@@ -40,15 +41,10 @@ export class PlayerView {
   shadow: Mesh;
   private onOutfit = () => this.rig.setColors(playerColors());
 
-  constructor(
-    private k: KitContext,
-    x: number,
-    z: number,
-  ) {
-    this.rig = createCharacter(k, playerColors(), "player");
+  constructor(k: KitContext, am: AssetManager, x: number, z: number) {
+    this.rig = createPlayerRig(k, am, playerColors(), "player");
     this.rig.root.position.set(x, 0, z);
     this.rig.root.rotation.y = Math.PI;
-    for (const m of this.rig.meshes) k.lighting?.addCaster(m);
     this.shadow = createBlobShadow(k);
     store.on("outfit", this.onOutfit);
     store.on("changed", this.onOutfit);
@@ -60,6 +56,11 @@ export class PlayerView {
     r.rotation.y = s.yaw;
     this.rig.animate(dt, s.moving);
     this.shadow.position.set(s.x, groundY + 0.015, s.z);
+  }
+
+  /** A little wave (interactions, greetings). */
+  wave() {
+    this.rig.gesture("wave");
   }
 
   dispose() {

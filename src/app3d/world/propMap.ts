@@ -6,6 +6,7 @@
 import { TILE } from "../../game/constants";
 import { PROP_SIZES } from "../../game/propSizes";
 import { hash01, strHash } from "../assets/kit/util";
+import { PRESET_1S, PRESET_2S } from "../assets/kit/architecture";
 
 export interface KitPlacement {
   key: string;
@@ -28,6 +29,8 @@ export interface BuildingSpec {
   style: "cream" | "grey" | "rose" | "stucco" | "sand";
   roof: "terra" | "slate" | "orange";
   storeys: number;
+  /** kit preset name (see assets/kit/architecture/presets.ts); derived from the fields above when absent */
+  preset?: string;
 }
 
 const STYLES: BuildingSpec["style"][] = ["cream", "grey", "rose", "stucco", "sand"];
@@ -44,36 +47,37 @@ export function buildingSpec(tex: string, tx: number, ty: number): BuildingSpec 
   const d = Math.max(2, Math.min(4, Math.round(size.h / TILE) - 1));
   const storeysBySprite = Math.max(1, Math.min(3, Math.round(size.h / 34)));
 
+  const pick = (list: string[]) => list[Math.floor(r * list.length) % list.length];
   switch (tex) {
     case "b_tenement":
-      return { w, d: Math.min(d, 3), kind: "tenement", style: r > 0.5 ? "grey" : "sand", roof: "slate", storeys: 3 };
+      return { w, d: Math.min(d, 3), kind: "tenement", style: r > 0.5 ? "grey" : "sand", roof: "slate", storeys: 3, preset: pick(["tenementSand", "tenementGrey", "tenementSand", "tenementRose"]) };
     case "b_townhouse_cream":
     case "b_stucco":
     case "b_cream_comm":
-      return { w, d: Math.min(d, 3), kind: "cottage", style: r > 0.6 ? "stucco" : "cream", roof: r > 0.3 ? "terra" : "slate", storeys: 2 };
+      return { w, d: Math.min(d, 3), kind: "cottage", style: r > 0.6 ? "stucco" : "cream", roof: r > 0.3 ? "terra" : "slate", storeys: 2, preset: pick(["creamCrow2", "sandDormer2", "greyDormer"]) };
     case "b_townhouse_red":
     case "b_front_red":
     case "b_terrace_brick":
-      return { w, d: Math.min(d, 3), kind: "cottage", style: "rose", roof: "terra", storeys: 2 };
+      return { w, d: Math.min(d, 3), kind: "cottage", style: "rose", roof: "terra", storeys: 2, preset: "rose2" };
     case "b_cafe":
     case "b_saddle":
-      return { w, d: Math.min(d, 3), kind: "cafe", style: "cream", roof: "terra", storeys: 1 };
+      return { w, d: Math.min(d, 3), kind: "cafe", style: "cream", roof: "terra", storeys: 1, preset: "cafe" };
     case "b_shop":
     case "b_shopfront_ldn":
     case "b_spinneys":
     case "b_waitrose":
-      return { w, d: Math.min(d, 3), kind: "shop", style: r > 0.5 ? "cream" : "sand", roof: r > 0.5 ? "orange" : "slate", storeys: 2 };
+      return { w, d: Math.min(d, 3), kind: "shop", style: r > 0.5 ? "cream" : "sand", roof: r > 0.5 ? "orange" : "slate", storeys: 2, preset: r > 0.5 ? "shop" : "shopGrey" };
     case "b_pub":
-      return { w, d: Math.min(d, 3), kind: "shop", style: "grey", roof: "slate", storeys: 2 };
+      return { w, d: Math.min(d, 3), kind: "shop", style: "grey", roof: "slate", storeys: 2, preset: "shopGrey" };
     case "b_wellcourt":
-      return { w, d: Math.min(d, 4), kind: "tenement", style: "rose", roof: "slate", storeys: 3 };
+      return { w, d: Math.min(d, 4), kind: "tenement", style: "rose", roof: "slate", storeys: 3, preset: "tenementRose" };
     case "b_uni":
-      return { w, d: Math.min(d, 4), kind: "shop", style: "sand", roof: "slate", storeys: 2 };
+      return { w, d: Math.min(d, 4), kind: "shop", style: "sand", roof: "slate", storeys: 2, preset: "shopGrey" };
     case "b_house_red":
     case "b_house_blue":
     case "b_house_purple":
     case "b_house_green":
-      return { w, d: Math.min(d, 3), kind: "cottage", style: STYLES[Math.floor(r * STYLES.length)], roof: r > 0.5 ? "terra" : "orange", storeys: 1 };
+      return { w, d: Math.min(d, 3), kind: "cottage", style: STYLES[Math.floor(r * STYLES.length)], roof: r > 0.5 ? "terra" : "orange", storeys: 1, preset: pick(PRESET_1S) };
     default:
       return {
         w,
@@ -82,11 +86,13 @@ export function buildingSpec(tex: string, tx: number, ty: number): BuildingSpec 
         style: STYLES[Math.floor(r * STYLES.length)],
         roof: r > 0.5 ? "terra" : "slate",
         storeys: storeysBySprite,
+        preset: storeysBySprite >= 3 ? pick(["tenementSand", "tenementGrey"]) : storeysBySprite === 2 ? pick(PRESET_2S) : pick(PRESET_1S),
       };
   }
 }
 
 export function buildingVariant(s: BuildingSpec) {
+  if (s.preset) return `p=${s.preset},w=${s.w},d=${s.d}`;
   return `w=${s.w},d=${s.d},k=${s.kind},s=${s.style},r=${s.roof},f=${s.storeys}`;
 }
 

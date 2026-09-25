@@ -1,14 +1,16 @@
-// Stylised chibi characters: big head, small body, hair cap, simple eyes and
-// blush. No skeleton: arms and legs are separate meshes hung from pivot
-// nodes and swung procedurally. Colours come from the game's CharColors.
+// Storybook characters for the browser: builds (or adopts a GLB clone of)
+// the hero character rig from assets/hero/character.ts, swaps its slot
+// materials for the runtime ones, applies the game's CharColors and drives
+// the pivots procedurally (idle breathing, walk swing, a little wave). No
+// skeleton: pivots are TransformNodes named head / armL / armR / legL / legR.
 
-import type { Scene } from "@babylonjs/core/scene";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { CreateCapsule } from "@babylonjs/core/Meshes/Builders/capsuleBuilder";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { CharColors } from "../../../game/palette";
-import type { KitContext } from "../AssetManager";
-import { box, merge, sphere } from "./util";
+import { type AssetManager, type HierarchyInstance, type KitContext, remapSlots } from "../AssetManager";
+import { heroCtx } from "../hero/slots";
+import { buildCharacter, rigFromRoot, type CharacterBuild, type CharacterColors, type CharacterOpts, type HairStyle, HAIR_STYLES, retintCharacter, CHAR_HEIGHT as HERO_HEIGHT, HEAD_Y as HERO_HEAD_Y } from "../hero/character";
+import { strHash } from "./util";
 
 export interface CharacterRig {
   root: TransformNode;
@@ -16,120 +18,125 @@ export interface CharacterRig {
   /** Advance the animation. `moving` 0..1 blends idle bob -> walk swing. */
   animate(dt: number, moving: number): void;
   setColors(c: CharColors): void;
+  /** Play a short gesture (e.g. a wave when interacting). */
+  gesture(kind?: "wave" | "nod"): void;
   dispose(): void;
 }
 
-export const CHAR_HEIGHT = 1.4;
-export const HEAD_Y = 1.02;
+export const CHAR_HEIGHT = HERO_HEIGHT;
+export const HEAD_Y = HERO_HEAD_Y;
 
-function capsule(scene: Scene, r: number, h: number) {
-  return CreateCapsule(`cap`, { radius: r, height: h, tessellation: 8, subdivisions: 1, capSubdivisions: 3 }, scene);
+export function toHeroColors(c: CharColors): CharacterColors {
+  return { skin: c.skin, hair: c.hair, top: c.top, bottom: c.bottom, shoes: c.shoes };
 }
 
-export function createCharacter(k: KitContext, colors: CharColors, name = "char"): CharacterRig {
-  const s = k.scene;
-  const root = new TransformNode(name, s);
-  let skin = k.mats.flat(colors.skin);
-  let hair = k.mats.flat(colors.hair);
-  let top = k.mats.flat(colors.top);
-  let bottom = k.mats.flat(colors.bottom);
-  let shoes = k.mats.flat(colors.shoes);
-  const eye = k.mats.flat("#2a2230");
-  const blush = k.mats.flat("#f7a6b8");
+/** Hair styles for the people we know; everyone else hashes into the list. */
+const HAIR_BY_ID: Record<string, HairStyle> = {
+  her: "long",
+  moomoo: "short",
+  baba: "short",
+  mama: "bun",
+  fadwa: "ponytail",
+  nour: "curly",
+  hazel: "bob",
+  rhiannon: "long",
+  chloe: "ponytail",
+};
+const SKIRT_BY_ID: Record<string, boolean> = { moomoo: false, baba: false, her: true, mama: true };
 
-  // ---- body (merged) ----
-  const parts: Mesh[] = [];
-  const head = sphere(s, 0.62, skin, 0, HEAD_Y, 0, 10);
-  parts.push(head);
-  // face is on +Z (forward), matching yawFor()/yawForFacing()
-  const cap = sphere(s, 0.66, hair, 0, HEAD_Y + 0.09, -0.11, 10);
-  cap.scaling.set(1.02, 0.9, 1);
-  parts.push(cap);
-  parts.push(box(s, 0.46, 0.12, 0.14, hair, 0, HEAD_Y + 0.17, 0.24)); // fringe
-  parts.push(box(s, 0.12, 0.3, 0.14, hair, -0.29, HEAD_Y - 0.12, 0.08)); // side locks
-  parts.push(box(s, 0.12, 0.3, 0.14, hair, 0.29, HEAD_Y - 0.12, 0.08));
-  parts.push(sphere(s, 0.085, eye, -0.11, HEAD_Y - 0.03, 0.285, 6));
-  parts.push(sphere(s, 0.085, eye, 0.11, HEAD_Y - 0.03, 0.285, 6));
-  parts.push(sphere(s, 0.075, blush, -0.2, HEAD_Y - 0.12, 0.25, 5));
-  parts.push(sphere(s, 0.075, blush, 0.2, HEAD_Y - 0.12, 0.25, 5));
-  // torso: a slightly tapered box (shoulders wider) + skirt/trousers block
-  const torso = box(s, 0.42, 0.34, 0.28, top, 0, 0.42, 0);
-  parts.push(torso);
-  parts.push(box(s, 0.38, 0.1, 0.26, bottom, 0, 0.33, 0));
-  const body = merge(`${name}:body`, parts);
-  body.parent = root;
-  body.isPickable = false;
-
-  // ---- limbs ----
-  const mk = (r: number, len: number, mat: typeof top, x: number, y: number, extraShoe: boolean) => {
-    const pivot = new TransformNode(`${name}:pivot`, s);
-    pivot.parent = root;
-    pivot.position.set(x, y, 0);
-    const c = capsule(s, r, len);
-    c.material = mat;
-    c.position.y = -len / 2 + r * 0.5;
-    c.parent = pivot;
-    c.isPickable = false;
-    const meshes: Mesh[] = [c];
-    if (extraShoe) {
-      const sh = box(s, r * 2.2, 0.1, r * 2.8, shoes, 0, -len + r * 0.5 - 0.04, 0.03);
-      sh.parent = pivot;
-      sh.isPickable = false;
-      meshes.push(sh);
-    }
-    return { pivot, meshes };
+export function styleFor(id: string): CharacterOpts {
+  const h = strHash(id);
+  return {
+    hair: HAIR_BY_ID[id] ?? HAIR_STYLES[h % HAIR_STYLES.length],
+    skirt: SKIRT_BY_ID[id] ?? (h >> 3) % 3 !== 0,
+    scarf: id === "her" || (h >> 5) % 4 === 0,
   };
-  const armL = mk(0.075, 0.34, top, -0.26, 0.56, false);
-  const armR = mk(0.075, 0.34, top, 0.26, 0.56, false);
-  const legL = mk(0.085, 0.3, bottom, -0.1, 0.32, true);
-  const legR = mk(0.085, 0.3, bottom, 0.1, 0.32, true);
-  const limbs = [armL, armR, legL, legR];
+}
 
+/** Wrap a built/cloned hierarchy into an animated rig. */
+function makeRig(k: KitContext, b: CharacterBuild, colors: CharColors, onDispose: () => void): CharacterRig {
+  const { root, body, head, armL, armR, legL, legR, meshes } = b;
+  retintCharacter(root, toHeroColors(colors));
+  for (const m of meshes) {
+    m.isPickable = false;
+    k.lighting?.addCaster(m);
+  }
   let t = Math.random() * 10;
+  let gestureT = 0;
+  let gestureKind: "wave" | "nod" = "wave";
   const rig: CharacterRig = {
     root,
-    meshes: [body, ...limbs.flatMap((l) => l.meshes)],
+    meshes,
     animate(dt, moving) {
-      t += dt * (1 + moving * 8);
-      const swing = Math.sin(t) * 0.7 * moving;
-      armL.pivot.rotation.x = swing;
-      armR.pivot.rotation.x = -swing;
-      legL.pivot.rotation.x = -swing * 0.9;
-      legR.pivot.rotation.x = swing * 0.9;
-      armL.pivot.rotation.z = 0.12 + Math.sin(t * 0.5) * 0.03 * (1 - moving);
-      armR.pivot.rotation.z = -0.12 - Math.sin(t * 0.5) * 0.03 * (1 - moving);
-      body.position.y = Math.abs(Math.sin(t)) * 0.06 * moving + Math.sin(t * 0.8) * 0.012 * (1 - moving);
-      body.scaling.y = 1 + Math.sin(t * 0.8) * 0.008 * (1 - moving);
+      dt = Math.min(dt, 0.05); // slow frames must not skip the gesture / swing
+      t += dt * (1 + moving * 7.5);
+      const idle = 1 - moving;
+      const swing = Math.sin(t) * 0.8 * moving;
+      // walk: arms/legs swing, a bounce, a lean into the step
+      armL.rotation.x = swing;
+      armR.rotation.x = -swing;
+      legL.rotation.x = -swing * 0.95;
+      legR.rotation.x = swing * 0.95;
+      // idle: relaxed arms with a slow sway, breathing, a soft head tilt
+      armL.rotation.z = 0.14 + Math.sin(t * 0.55) * 0.035 * idle;
+      armR.rotation.z = -0.14 - Math.sin(t * 0.55 + 1) * 0.035 * idle;
+      const breathe = Math.sin(t * 1.4);
+      body.position.y = Math.abs(Math.sin(t)) * 0.055 * moving + breathe * 0.008 * idle;
+      body.scaling.y = 1 + breathe * 0.012 * idle;
+      body.rotation.x = 0.09 * moving;
+      body.rotation.z = Math.sin(t) * 0.035 * moving;
+      head.rotation.z = Math.sin(t * 0.7) * 0.05 * idle - Math.sin(t) * 0.02 * moving;
+      head.rotation.x = Math.sin(t * 1.1 + 0.5) * 0.03 * idle;
+      if (gestureT > 0) {
+        gestureT -= dt;
+        const k2 = Math.min(1, gestureT / 0.25, (1.1 - gestureT) * 4);
+        if (gestureKind === "wave") {
+          armR.rotation.x = -2.5 * k2 + (1 - k2) * armR.rotation.x;
+          armR.rotation.z = -0.5 * k2 - Math.sin(gestureT * 22) * 0.45 * k2;
+        } else {
+          head.rotation.x = Math.sin(gestureT * 14) * 0.12 * k2;
+        }
+      }
     },
     setColors(c) {
-      skin = k.mats.flat(c.skin);
-      hair = k.mats.flat(c.hair);
-      top = k.mats.flat(c.top);
-      bottom = k.mats.flat(c.bottom);
-      shoes = k.mats.flat(c.shoes);
-      // the merged body keeps its multi-material; swap sub-materials by identity of the old ones
-      const mm = body.material as import("@babylonjs/core/Materials/multiMaterial").MultiMaterial;
-      if (mm && "subMaterials" in mm) {
-        mm.subMaterials = mm.subMaterials.map((m) => {
-          if (m === k.mats.flat(colors.skin)) return skin;
-          if (m === k.mats.flat(colors.hair)) return hair;
-          if (m === k.mats.flat(colors.top)) return top;
-          if (m === k.mats.flat(colors.bottom)) return bottom;
-          return m;
-        });
-      }
-      armL.meshes[0].material = top;
-      armR.meshes[0].material = top;
-      legL.meshes[0].material = bottom;
-      legR.meshes[0].material = bottom;
-      legL.meshes[1].material = shoes;
-      legR.meshes[1].material = shoes;
       colors = c;
+      retintCharacter(root, toHeroColors(c));
+    },
+    gesture(kind = "wave") {
+      gestureKind = kind;
+      gestureT = 1.1;
     },
     dispose() {
-      root.dispose(false, true);
+      onDispose();
     },
   };
   rig.animate(0, 0);
   return rig;
+}
+
+/** Procedural character (NPCs): built in the browser, no GLB needed. */
+export function createCharacter(k: KitContext, colors: CharColors, name = "char", opts: CharacterOpts = {}): CharacterRig {
+  const b = buildCharacter(heroCtx(k.scene), { name, hair: "long", skirt: true, ...opts });
+  for (const m of b.meshes) remapSlots(k, m);
+  return makeRig(k, b, colors, () => b.root.dispose(false, true));
+}
+
+/** The player rig from a preloaded GLB (or the same builder as fallback) via AssetManager. */
+export function createPlayerRig(k: KitContext, am: AssetManager, colors: CharColors, name = "player"): CharacterRig {
+  const hi: HierarchyInstance = am.instantiateHierarchy("player", name);
+  const b = rigFromRoot(hi.root);
+  if (!b) {
+    hi.dispose();
+    return createCharacter(k, colors, name, styleFor("her"));
+  }
+  return makeRig(k, b, colors, () => hi.dispose());
+}
+
+/** Register the player hero (GLB + procedural fallback) with the asset manager. */
+export function registerCharacters(am: AssetManager) {
+  am.registerHero("player", (k: KitContext) => {
+    const b = buildCharacter(heroCtx(k.scene), { name: "player", ...styleFor("her") });
+    for (const m of b.meshes) remapSlots(k, m);
+    return b.root;
+  });
 }

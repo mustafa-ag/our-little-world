@@ -12,11 +12,12 @@ import { createFollowCamera, type FollowCamera } from "./rendering/camera";
 import { createLighting, type Lighting } from "./rendering/lighting";
 import { Materials } from "./rendering/materials";
 import { buildEnvironment, type Environment } from "./rendering/environment";
-import { AssetManager, type KitContext } from "./assets/AssetManager";
-import { registerArchitecture } from "./assets/kit/architecture";
+import { AssetManager, HERO_KEYS, remapSlots, type KitContext } from "./assets/AssetManager";
+import * as architecture from "./assets/kit/architecture";
 import { registerProps } from "./assets/kit/props";
 import { registerFoliage } from "./assets/kit/foliage";
 import { registerVehicles } from "./assets/kit/vehicles";
+import { registerCharacters } from "./assets/kit/characters";
 import { createGridCollider, type GridCollider } from "./world/gridCollider";
 import { buildWorld, type BuiltWorld } from "./world/worldBuilder";
 import { dressWorld } from "./world/dressing";
@@ -68,6 +69,8 @@ export class Game3D {
   private kit: KitContext;
   private loaded: Loaded | null = null;
   private loading = false;
+  /** Hero GLBs preloaded (or fallen back) — awaited before the first location build. */
+  private heroReady: Promise<void> = Promise.resolve();
   private stopUpdate: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
@@ -78,12 +81,35 @@ export class Game3D {
     this.camera = createFollowCamera(scene, canvas, isMobile);
     this.kit = { scene, mats: this.mats, lighting: this.lighting };
     this.am = new AssetManager(this.kit);
-    registerArchitecture(this.am);
+    architecture.registerArchitecture(this.am);
     registerProps(this.am);
     registerFoliage(this.am);
     registerVehicles(this.am);
+    registerCharacters(this.am);
+    this.registerArchitectureHeroes();
+    this.heroReady = this.am.preload(HERO_KEYS).then((fell) => {
+      if (fell.length) console.info(`hero assets using procedural fallback: ${fell.join(", ")}`);
+    });
     this.stopUpdate = this.host.onUpdate((dt, now) => this.update(dt, now));
     this.host.start();
+  }
+
+  /** Track C's cottage / café heroes (pure-geometry builders in kit/architecture.ts) as GLB + fallback. */
+  private registerArchitectureHeroes() {
+    const arch = architecture as unknown as {
+      buildCottageHero?: (scene: KitContext["scene"], variant: "1s" | "2s") => import("@babylonjs/core/Meshes/mesh").Mesh;
+      buildCafeHero?: (scene: KitContext["scene"]) => import("@babylonjs/core/Meshes/mesh").Mesh;
+    };
+    const wrap = (build: (k: KitContext) => import("@babylonjs/core/Meshes/mesh").Mesh) => (k: KitContext) => {
+      const m = build(k);
+      remapSlots(k, m);
+      return m;
+    };
+    if (arch.buildCottageHero) {
+      this.am.registerHero("cottage-1s", wrap((k) => arch.buildCottageHero!(k.scene, "1s")));
+      this.am.registerHero("cottage-2s", wrap((k) => arch.buildCottageHero!(k.scene, "2s")));
+    }
+    if (arch.buildCafeHero) this.am.registerHero("cafe", wrap((k) => arch.buildCafeHero!(k.scene)));
   }
 
   /** The location a session should open in: the save's, if ported, else the default (save untouched). */
@@ -101,6 +127,7 @@ export class Game3D {
     this.loading = true;
     try {
       this.unload();
+      await this.heroReady;
       const def = getLocation(id);
       const world = generateWorld(def);
       const collider = createGridCollider(world.blocked.map((r) => r.slice()));
@@ -128,7 +155,7 @@ export class Game3D {
       const sp = pxToXZ(spawn.x, spawn.y);
       const player = new PlayerController(collider, sp.x, sp.z);
       player.attach();
-      const playerView = new PlayerView(this.kit, sp.x, sp.z);
+      const playerView = new PlayerView(this.kit, this.am, sp.x, sp.z);
       this.camera.setTarget(sp.x, sp.z, true);
       this.lighting.follow(sp.x, sp.z);
 
@@ -150,8 +177,8 @@ export class Game3D {
           store.toast("A cat decided to follow you", "#f4a6c0");
         },
         spawnJeep: (x, z) => {
-          // a static prop for now (driving isn't ported); thin batch of one
-          this.am.thinInstances("car", [{ x, y: groundY(x, z), z, rotationY: 0.25 }], "c=#3f6fd0,kind=jeep");
+          // the parked hero car (driving isn't ported): the interaction zone stays where the controller put it
+          this.am.thinInstances("car", [{ x, y: groundY(x, z), z, rotationY: 0.25 }]);
         },
         petalBurst: (x, z) => petalBurst(this.host.scene, this.kit, x, groundY(x, z), z, (tick) => loaded.effects.push(tick)),
         requestTravel: (to, from) => {

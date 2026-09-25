@@ -1,240 +1,48 @@
-// Procedural buildings: cottages, townhouses, tenements, shop fronts, the
-// café with its striped awning, and the castle. Every piece is ONE merged
-// mesh (multi-material) built at the origin with its footprint centred on
-// (0,0) and its front (door) facing -Z (south, toward the camera).
+// Procedural buildings. Cottages / shops / cafés / tenements come from the
+// modular Scottish kit in ./architecture/ (one merged multi-material mesh per
+// preset+footprint, thin-instanced by the world builder); the castle is a
+// one-off. Everything is built at the origin with the footprint centred on
+// (0,0) and the front (door) facing -Z (south, toward the camera).
 //
-// Variant string: "w=3,d=3,k=cottage,s=cream,r=terra,f=1"
-//   w/d  footprint in tiles     k  kind: cottage|shop|cafe|tenement
-//   s    wall style: cream|grey|rose|stucco   r  roof: terra|slate|orange
-//   f    storeys
+// Variant string: "p=stoneCrow,w=4,d=3" (preset + footprint in tiles). The
+// legacy "k=cottage,s=cream,r=terra,f=1" form still maps onto a preset.
+//
+// CONTRACT for the hero GLB build script (runs under NullEngine, no DOM):
+//   buildCottageHero(scene, '1s'|'2s') and buildCafeHero(scene) build pure
+//   @babylonjs/core geometry with vertex colours; the merged mesh's
+//   MultiMaterial slots are named olw_stone, olw_roof_tile, olw_slate,
+//   olw_wood, olw_glass_emissive, olw_paint, olw_foliage, olw_metal.
 
+import type { Scene } from "@babylonjs/core/scene";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
-import type { Material } from "@babylonjs/core/Materials/material";
 import type { AssetManager, KitContext } from "../AssetManager";
 import { PALETTE } from "../../rendering/materials";
-import { box, cyl, gable, merge, parseVariant, hash01, tintVertices } from "./util";
+import { box, cyl, gable, merge, parseVariant } from "./util";
+import { buildCottage } from "./architecture/cottage";
+import { specFromVariant, presetVariant } from "./architecture/presets";
+import { heroSlots, runtimeSlots } from "./architecture/slots";
 
-const STOREY = 1.45;
-type Face = "front" | "back" | "east" | "west";
+export { PRESETS, COTTAGE_PRESETS, PRESET_1S, PRESET_2S, presetVariant, specFromVariant } from "./architecture/presets";
+export { SLOT_NAMES } from "./architecture/slots";
+export type { CottageSpec } from "./architecture/presets";
 
-interface Ctx {
-  k: KitContext;
-  parts: Mesh[];
-  hw: number;
-  hd: number;
-  /** shared white material: every small flat-colour part is vertex-tinted so they merge into ONE submesh */
-  white: Material;
-}
-
-/** Flat-colour box using the shared white material + vertex tint. */
-function fbox(c: Ctx, w: number, h: number, d: number, hex: string, x = 0, y = 0, z = 0) {
-  const m = box(c.k.scene, w, h, d, c.white, x, y, z);
-  tintVertices(m, hex);
-  return m;
-}
-function fcyl(c: Ctx, dt: number, db: number, h: number, hex: string, x = 0, y = 0, z = 0, tess = 10) {
-  const m = cyl(c.k.scene, dt, db, h, c.white, x, y, z, tess);
-  tintVertices(m, hex);
-  return m;
-}
-/** Textured parts still need their own material; give them neutral vertex colours so merging is consistent. */
-function tex(m: Mesh) {
-  tintVertices(m, "#ffffff");
-  return m;
-}
-
-/** Place a part built in "front wall space" (x across, y up, z = protrusion) onto a face. */
-function onFace(c: Ctx, m: Mesh, face: Face, lx: number, ly: number, lz: number) {
-  const h = m.position.y; // box() stores y + h/2; keep that vertical offset
-  switch (face) {
-    case "front":
-      m.position.set(lx, h + ly, -c.hd - lz);
-      break;
-    case "back":
-      m.position.set(-lx, h + ly, c.hd + lz);
-      m.rotation.y = Math.PI;
-      break;
-    case "east":
-      m.position.set(c.hw + lz, h + ly, lx);
-      m.rotation.y = Math.PI / 2;
-      break;
-    case "west":
-      m.position.set(-c.hw - lz, h + ly, -lx);
-      m.rotation.y = -Math.PI / 2;
-      break;
-  }
-  c.parts.push(m);
-}
-
-function window(c: Ctx, face: Face, lx: number, ly: number, glass: Material, frame: string, shutter: string, flowers: boolean, seed: number) {
-  const s = c.k.scene;
-  const ww = 0.42;
-  const wh = 0.5;
-  onFace(c, fbox(c, ww + 0.1, wh + 0.1, 0.05, frame), face, lx, ly - 0.05, 0.0);
-  onFace(c, tex(box(s, ww, wh, 0.05, glass)), face, lx, ly, 0.02);
-  // mullion
-  onFace(c, fbox(c, 0.04, wh, 0.02, frame), face, lx, ly, 0.05);
-  onFace(c, fbox(c, ww, 0.04, 0.02, frame), face, lx, ly + wh / 2 - 0.02, 0.05);
-  // shutters
-  onFace(c, fbox(c, 0.16, wh + 0.06, 0.04, shutter), face, lx - ww / 2 - 0.12, ly - 0.03, 0.02);
-  onFace(c, fbox(c, 0.16, wh + 0.06, 0.04, shutter), face, lx + ww / 2 + 0.12, ly - 0.03, 0.02);
-  if (flowers) {
-    onFace(c, fbox(c, ww + 0.14, 0.14, 0.16, PALETTE.wood), face, lx, ly - 0.14, 0.08);
-    const cols = [PALETTE.dustyRose, PALETTE.mutedYellow, PALETTE.lavender, "#f0f0e0"];
-    for (let i = 0; i < 3; i++) {
-      const col = cols[Math.floor(hash01(seed, i, lx) * cols.length)];
-      const f = fbox(c, 0.12, 0.12, 0.12, col);
-      f.rotation.y = 0.6;
-      onFace(c, f, face, lx - 0.16 + i * 0.16, ly + 0.02, 0.1);
-    }
-  }
-}
-
-function door(c: Ctx, face: Face, lx: number, wood: Material, frame: string, arched = true) {
-  const s = c.k.scene;
-  const dw = 0.6;
-  const dh = 1.05;
-  onFace(c, fbox(c, dw + 0.12, dh + 0.06, 0.06, frame), face, lx, 0, 0.0);
-  onFace(c, tex(box(s, dw, dh, 0.06, wood)), face, lx, 0, 0.03);
-  if (arched) {
-    const arch = tex(cyl(s, dw, dw, 0.06, wood, 0, 0, 0, 12));
-    arch.rotation.x = Math.PI / 2;
-    arch.position.y = 0;
-    onFace(c, arch, face, lx, dh, 0.03);
-    const archF = fcyl(c, dw + 0.12, dw + 0.12, 0.06, frame, 0, 0, 0, 12);
-    archF.rotation.x = Math.PI / 2;
-    archF.position.y = 0;
-    onFace(c, archF, face, lx, dh, 0.0);
-  }
-  // step + knob
-  onFace(c, fbox(c, dw + 0.3, 0.08, 0.3, PALETTE.greyStone), face, lx, 0, 0.12);
-  onFace(c, fbox(c, 0.06, 0.06, 0.06, PALETTE.lamp), face, lx + 0.2, 0.5, 0.07);
-}
-
-function wallMats(k: KitContext, style: string) {
-  switch (style) {
-    case "grey":
-      return { wall: k.mats.textured("stone", PALETTE.greyStone), gableMat: k.mats.textured("stone", PALETTE.greyStone) };
-    case "rose":
-      return { wall: k.mats.textured("noise", "#ecd0bc"), gableMat: k.mats.textured("noise", "#ecd0bc") };
-    case "stucco":
-      return { wall: k.mats.textured("noise", "#f6ead2"), gableMat: k.mats.textured("noise", "#f6ead2") };
-    case "sand":
-      return { wall: k.mats.textured("stone", "#cdbb98"), gableMat: k.mats.textured("stone", "#cdbb98") };
-    default:
-      return { wall: k.mats.textured("noise", PALETTE.cream), gableMat: k.mats.textured("noise", PALETTE.cream) };
-  }
-}
-
-function roofMat(k: KitContext, r: string) {
-  if (r === "slate") return k.mats.textured("slate", PALETTE.slate);
-  if (r === "orange") return k.mats.textured("roof", PALETTE.burntOrange);
-  return k.mats.textured("roof", PALETTE.terracotta);
-}
-
+/** Runtime building factory (hand-painted materials, registered as "building"). */
 export function buildBuilding(k: KitContext, variant: string): Mesh {
-  const v = parseVariant(variant);
-  const w = Math.max(2, parseFloat(v.w ?? "3"));
-  const d = Math.max(2, parseFloat(v.d ?? "3"));
-  const kind = v.k ?? "cottage";
-  const style = v.s ?? "cream";
-  const storeys = Math.max(1, parseInt(v.f ?? "1", 10));
-  const seed = (w * 7 + d * 13 + storeys * 31 + variant.length) % 97;
-  const s = k.scene;
-  const c: Ctx = { k, parts: [], hw: w / 2, hd: d / 2, white: k.mats.flat("#ffffff") };
-  const { wall, gableMat } = wallMats(k, style);
-  const roof = roofMat(k, v.r ?? (style === "grey" ? "slate" : "terra"));
-  const trim = PALETTE.creamLight;
-  const glass = k.mats.flat(PALETTE.glass);
-  k.lighting?.registerGlow(glass, "#b08a4a");
-  const shutter = style === "grey" ? PALETTE.sage : hash01(seed) > 0.5 ? PALETTE.sage : "#7a8fa6";
-  const wood = k.mats.textured("planks", PALETTE.wood, 2);
-  const stoneDark = k.mats.textured("stone", PALETTE.greyStoneDark);
+  return buildCottage(k.scene, runtimeSlots(k), specFromVariant(variant));
+}
 
-  const wallH = STOREY * storeys + 0.15;
-  const inset = 0.22; // walls sit inside the footprint so the eaves overhang stays inside the tile
-  const bw = w - inset * 2;
-  const bd = d - inset * 2;
-  c.hw = bw / 2;
-  c.hd = bd / 2;
+/** Hero cottage for the GLB pipeline: pure geometry, named material slots. */
+export function buildCottageHero(scene: Scene, variant: "1s" | "2s"): Mesh {
+  const m = buildCottage(scene, heroSlots(scene), specFromVariant(variant === "2s" ? presetVariant("greyDormer", 4, 3) : presetVariant("stoneCrow", 4, 3)));
+  m.name = `cottage-${variant}`;
+  return m;
+}
 
-  // walls + plinth
-  c.parts.push(tex(box(s, bw, wallH, bd, wall, 0, 0, 0, 0.9)));
-  c.parts.push(tex(box(s, bw + 0.08, 0.22, bd + 0.08, stoneDark, 0, 0, 0, 1)));
-
-  // roof
-  const rise = kind === "tenement" ? 0.9 : Math.min(1.3, 0.55 + bd * 0.28);
-  const g = tex(gable(s, bw + 0.5, bd + 0.5, rise, roof, gableMat, 0.55));
-  g.position.y = wallH;
-  c.parts.push(g);
-  // ridge cap + eaves boards
-  c.parts.push(fbox(c, bw + 0.56, 0.08, 0.16, PALETTE.greyStoneDark, 0, wallH + rise - 0.03, 0));
-  // chimney
-  const chx = (hash01(seed, 2) > 0.5 ? 1 : -1) * (bw / 2 - 0.45);
-  c.parts.push(tex(box(s, 0.38, rise + 0.55, 0.38, stoneDark, chx, wallH, 0.12, 1)));
-  c.parts.push(fbox(c, 0.46, 0.1, 0.46, PALETTE.greyStoneDark, chx, wallH + rise + 0.5, 0.12));
-  c.parts.push(fcyl(c, 0.14, 0.14, 0.18, PALETTE.iron, chx, wallH + rise + 0.6, 0.12, 8));
-
-  // front: door + windows
-  const frontSlots = Math.max(1, Math.floor(bw / 0.95));
-  const doorIdx = Math.floor(frontSlots / 2);
-  const slotW = bw / frontSlots;
-  const x0 = -bw / 2 + slotW / 2;
-  const doorX = x0 + doorIdx * slotW;
-  door(c, "front", doorX, wood, trim, kind !== "shop");
-  for (let f = 0; f < storeys; f++) {
-    const wy = f * STOREY + (f === 0 ? 0.55 : 0.45);
-    for (let i = 0; i < frontSlots; i++) {
-      if (f === 0 && i === doorIdx) continue;
-      if (f === 0 && (kind === "shop" || kind === "cafe")) continue;
-      window(c, "front", x0 + i * slotW, wy, glass, trim, shutter, f === 0 || hash01(seed, f, i) > 0.4, seed + i);
-    }
-  }
-  // side windows
-  const sideSlots = Math.max(1, Math.floor(bd / 1.1));
-  const sw = bd / sideSlots;
-  for (const face of ["east", "west"] as Face[]) {
-    for (let f = 0; f < storeys; f++) {
-      for (let i = 0; i < sideSlots; i++) {
-        if (hash01(seed, f, i, face === "east" ? 1 : 2) > 0.75) continue;
-        window(c, face, -bd / 2 + sw / 2 + i * sw, f * STOREY + 0.5, glass, trim, shutter, f === 0 && hash01(seed, i, 9) > 0.5, seed + 40 + i);
-      }
-    }
-  }
-
-  // shop / café front
-  if (kind === "shop" || kind === "cafe") {
-    const bandY = STOREY - 0.05;
-    const sign = kind === "cafe" ? "#4a5f4a" : "#5a3a3a";
-    onFace(c, fbox(c, bw - 0.2, 0.34, 0.08, sign), "front", 0, bandY - 0.34, 0.02);
-    onFace(c, fbox(c, bw - 0.1, 0.05, 0.12, trim), "front", 0, bandY, 0.03);
-    // big display windows either side of the door
-    for (let i = 0; i < frontSlots; i++) {
-      if (i === doorIdx) continue;
-      onFace(c, fbox(c, slotW - 0.28, 0.75, 0.05, trim), "front", x0 + i * slotW, 0.2, 0.0);
-      onFace(c, tex(box(s, slotW - 0.38, 0.65, 0.05, glass)), "front", x0 + i * slotW, 0.25, 0.02);
-    }
-    if (kind === "cafe") {
-      // striped awning: a slanted box
-      const awning = k.mats.textured("awning", PALETTE.postRed, 2);
-      const aw = tex(box(s, bw - 0.1, 0.06, 0.95, awning));
-      aw.rotation.x = -0.35;
-      onFace(c, aw, "front", 0, bandY + 0.05, 0.45);
-      onFace(c, tex(box(s, bw - 0.1, 0.16, 0.05, awning)), "front", 0, bandY - 0.28, 0.9);
-      onFace(c, fcyl(c, 0.04, 0.04, bandY - 0.3, PALETTE.iron, 0, 0, 0, 6), "front", -bw / 2 + 0.2, 0.0, 0.9);
-      onFace(c, fcyl(c, 0.04, 0.04, bandY - 0.3, PALETTE.iron, 0, 0, 0, 6), "front", bw / 2 - 0.2, 0.0, 0.9);
-    }
-  }
-
-  // ivy patches on a corner
-  if (hash01(seed, 5) > 0.35) {
-    const side = hash01(seed, 6) > 0.5 ? 1 : -1;
-    for (let i = 0; i < 4; i++) {
-      const hgt = 0.35 + hash01(seed, i, 7) * 0.5;
-      onFace(c, fbox(c, 0.3 + hash01(seed, i, 8) * 0.3, hgt, 0.05, PALETTE.moss), "front", side * (bw / 2 - 0.25 - hash01(seed, i) * 0.2), i * 0.45, 0.01);
-    }
-  }
-  return merge("building", c.parts);
+/** Hero café (striped awning, big warm windows, bracket sign) for the GLB pipeline. */
+export function buildCafeHero(scene: Scene): Mesh {
+  const m = buildCottage(scene, heroSlots(scene), specFromVariant(presetVariant("cafe", 4, 2)));
+  m.name = "cafe";
+  return m;
 }
 
 /** Edinburgh Castle: a stone keep with round towers and battlements on a low mound. */

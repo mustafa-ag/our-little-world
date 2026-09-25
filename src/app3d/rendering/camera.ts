@@ -1,6 +1,6 @@
 // Soft elevated third-person follow camera. Sits SOUTH of the target
 // (negative Z, see world/coords.ts) looking north so the framing matches the
-// 2D map. Fixed yaw, ~42 degrees downward pitch, damped follow, and a gentle
+// 2D map. Fixed yaw, ~38 degrees downward pitch (36 on phones), damped follow, and a gentle
 // clamped zoom on wheel / pinch. No orbit.
 
 import type { Scene } from "@babylonjs/core/scene";
@@ -15,20 +15,22 @@ export interface FollowCamera {
   dispose(): void;
 }
 
-const PITCH = (46 * Math.PI) / 180;
-const MIN_DIST = 8;
-const MAX_DIST = 15;
+const MIN_DIST = 7.5;
+const MAX_DIST = 13;
+/** How far above the feet the camera looks (keeps faces & façades framed). */
+const LOOK_Y = 0.6;
 
 export function createFollowCamera(scene: Scene, canvas: HTMLCanvasElement, isMobile: boolean): FollowCamera {
   const camera = new TargetCamera("follow", new Vector3(0, 10, -10), scene);
-  camera.fov = isMobile ? 0.78 : 0.7;
+  const PITCH = ((isMobile ? 36 : 38) * Math.PI) / 180;
+  camera.fov = isMobile ? 0.72 : 0.62;
   camera.minZ = 0.5;
   camera.maxZ = 260;
   scene.activeCamera = camera;
 
-  let distance = isMobile ? 13 : 12.5;
+  let distance = isMobile ? 11.5 : 10.5;
   let targetDistance = distance;
-  const target = new Vector3(0, 0.6, 0);
+  const target = new Vector3(0, 0, 0);
   const smoothTarget = target.clone();
   const lookAt = new Vector3();
 
@@ -36,13 +38,13 @@ export function createFollowCamera(scene: Scene, canvas: HTMLCanvasElement, isMo
     // portrait phones see a narrow slice: widen the view and pull back a bit
     const aspect = scene.getEngine().getAspectRatio(camera);
     const portrait = aspect < 1;
-    camera.fov = portrait ? 0.95 : isMobile ? 0.78 : 0.7;
-    const dist = distance * (portrait ? 1.15 : 1);
+    camera.fov = portrait ? 0.9 : isMobile ? 0.72 : 0.62;
+    const dist = distance * (portrait ? 1.05 : 1);
     const y = Math.sin(PITCH) * dist;
     const back = Math.cos(PITCH) * dist;
     camera.position.set(smoothTarget.x, smoothTarget.y + y, smoothTarget.z - back);
     lookAt.copyFrom(smoothTarget);
-    lookAt.y += 0.4;
+    lookAt.y += LOOK_Y;
     camera.setTarget(lookAt);
   };
 
@@ -71,7 +73,7 @@ export function createFollowCamera(scene: Scene, canvas: HTMLCanvasElement, isMo
   return {
     camera,
     setTarget(x, z, snap = false) {
-      target.set(x, 0.6, z);
+      target.set(x, 0, z);
       if (snap) {
         smoothTarget.copyFrom(target);
         place();

@@ -1,9 +1,11 @@
-// An NPC: chibi rig from NpcDef colours, idle bob, a name tag above the
-// head, and "face the player" when talked to (turns smoothly).
+// An NPC: the shared storybook character rig (procedural build, no GLB
+// needed) in the NpcDef colours with a hair style / outfit picked per person,
+// idle breathing, a name tag above the head, and "face the player" when
+// talked to (turns smoothly, with a little nod).
 
 import type { NpcDef } from "../../game/data/npcs";
 import type { KitContext } from "../assets/AssetManager";
-import { createCharacter, type CharacterRig, CHAR_HEIGHT } from "../assets/kit/characters";
+import { createCharacter, styleFor, type CharacterRig, CHAR_HEIGHT } from "../assets/kit/characters";
 import { lerpAngle, yawFor, yawForFacing } from "../world/coords";
 import { createBlobShadow } from "./PlayerView";
 import { createLabel, type Label } from "./Label";
@@ -23,12 +25,11 @@ export class NpcView {
     readonly z: number,
     groundY: number,
   ) {
-    this.rig = createCharacter(k, def.colors, `npc:${def.id}`);
+    this.rig = createCharacter(k, def.colors, `npc:${def.id}`, styleFor(def.id));
     this.rig.root.position.set(x, groundY, z);
     this.restYaw = yawForFacing(def.facing ?? "down");
     this.targetYaw = this.restYaw;
     this.rig.root.rotation.y = this.restYaw;
-    for (const m of this.rig.meshes) k.lighting?.addCaster(m);
     this.shadow = createBlobShadow(k, 0.75);
     this.shadow.position.set(x, groundY + 0.015, z);
     this.label = createLabel(k.scene, def.name, { scale: 0.85 });
@@ -38,6 +39,7 @@ export class NpcView {
   faceTowards(px: number, pz: number) {
     this.targetYaw = yawFor(px - this.x, pz - this.z);
     this.lookTimer = 6;
+    this.rig.gesture("nod");
   }
 
   update(dt: number, px: number, pz: number) {

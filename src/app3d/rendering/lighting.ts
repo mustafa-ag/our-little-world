@@ -11,6 +11,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Scene as SceneClass } from "@babylonjs/core/scene";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
 import { store } from "../../game/systems/store";
 import type { TimeOfDay } from "../../game/systems/save";
 
@@ -24,56 +25,84 @@ interface Preset {
   hemiSky: string;
   hemiGround: string;
   hemiIntensity: number;
+  /** Babylon shadow darkness: 0 = black shadow, 1 = no shadow. */
+  shadow: number;
+  exposure: number;
+  contrast: number;
+  vignette: number;
+  vignetteColor: string;
   lamps: boolean;
 }
 
+// Storybook grading: warm, gently desaturated days; a golden evening with long
+// soft shadows; a blue but readable night lit by warm lamps and windows.
 const PRESETS: Record<TimeOfDay, Preset> = {
   morning: {
-    sky: "#b9d4ea",
-    fog: "#d7e3ec",
+    sky: "#bfd5e6",
+    fog: "#dfe3e0",
     fogDensity: 0.011,
-    sunDir: new Vector3(-0.72, -0.62, 0.18),
-    sunColor: "#fff1d6",
-    sunIntensity: 1.15,
-    hemiSky: "#cfe0f2",
-    hemiGround: "#a48a6a",
-    hemiIntensity: 0.55,
+    sunDir: new Vector3(-0.78, -0.5, 0.26),
+    sunColor: "#ffe9c8",
+    sunIntensity: 1.1,
+    hemiSky: "#d4e0ea",
+    hemiGround: "#b09070",
+    hemiIntensity: 0.62,
+    shadow: 0.6,
+    exposure: 1.05,
+    contrast: 1.08,
+    vignette: 1.2,
+    vignetteColor: "#3a2c24",
     lamps: false,
   },
   afternoon: {
-    sky: "#a8cbe8",
-    fog: "#c9dcec",
+    sky: "#b3cfe4",
+    fog: "#d6dfe2",
     fogDensity: 0.009,
-    sunDir: new Vector3(-0.55, -0.78, 0.12),
-    sunColor: "#fff6e4",
-    sunIntensity: 1.25,
-    hemiSky: "#bfd6ee",
-    hemiGround: "#9c8767",
-    hemiIntensity: 0.55,
+    sunDir: new Vector3(-0.55, -0.74, 0.3),
+    sunColor: "#fff0d8",
+    sunIntensity: 1.15,
+    hemiSky: "#cddcea",
+    hemiGround: "#b09070",
+    hemiIntensity: 0.6,
+    shadow: 0.62,
+    exposure: 1.05,
+    contrast: 1.08,
+    vignette: 1.2,
+    vignetteColor: "#3a2c24",
     lamps: false,
   },
   evening: {
-    sky: "#e6a98a",
-    fog: "#e9b89c",
+    sky: "#e9b38f",
+    fog: "#e8bc9c",
     fogDensity: 0.012,
-    sunDir: new Vector3(0.7, -0.4, 0.3),
-    sunColor: "#ffb476",
-    sunIntensity: 1.0,
-    hemiSky: "#d7a4b3",
-    hemiGround: "#6d5a5e",
-    hemiIntensity: 0.5,
+    sunDir: new Vector3(0.78, -0.34, 0.4),
+    sunColor: "#ffba78",
+    sunIntensity: 1.05,
+    hemiSky: "#dcb0b4",
+    hemiGround: "#8a6a5c",
+    hemiIntensity: 0.58,
+    shadow: 0.66,
+    exposure: 1.05,
+    contrast: 1.07,
+    vignette: 1.35,
+    vignetteColor: "#3c2224",
     lamps: true,
   },
   night: {
-    sky: "#2a3a5c",
-    fog: "#33456a",
-    fogDensity: 0.014,
-    sunDir: new Vector3(0.3, -0.8, 0.4),
-    sunColor: "#8ea4d6",
-    sunIntensity: 0.45,
-    hemiSky: "#6d80b2",
-    hemiGround: "#3a3f5a",
-    hemiIntensity: 0.55,
+    sky: "#34466c",
+    fog: "#3d5076",
+    fogDensity: 0.013,
+    sunDir: new Vector3(0.35, -0.8, 0.45),
+    sunColor: "#98b0e6",
+    sunIntensity: 0.48,
+    hemiSky: "#7890cc",
+    hemiGround: "#5a4e5c",
+    hemiIntensity: 0.7,
+    shadow: 0.68,
+    exposure: 1.12,
+    contrast: 1.06,
+    vignette: 1.5,
+    vignetteColor: "#141a30",
     lamps: true,
   },
 };
@@ -122,10 +151,20 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     shadows.filteringQuality = isMobile ? ShadowGenerator.QUALITY_LOW : ShadowGenerator.QUALITY_MEDIUM;
     shadows.bias = 0.0015;
     shadows.normalBias = 0.02;
-    shadows.darkness = 0.45;
+    shadows.darkness = 0.6;
+    shadows.transparencyShadow = false;
   } catch {
     shadows = null;
   }
+
+  // colour grading inside the material shaders (no extra post-process pass)
+  const ip = scene.imageProcessingConfiguration;
+  ip.isEnabled = true;
+  ip.vignetteEnabled = true;
+  ip.vignetteStretch = 0.6;
+  ip.vignetteCameraFov = 0.8;
+  ip.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+  ip.toneMappingEnabled = false;
 
   scene.fogMode = SceneClass.FOGMODE_EXP2;
   scene.fogStart = 30;
@@ -142,7 +181,7 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     scene.clearColor = Color4.FromHexString(p.sky + "ff");
     scene.fogColor = Color3.FromHexString(p.fog);
     scene.fogDensity = p.fogDensity;
-    scene.ambientColor = Color3.FromHexString(p.hemiSky).scale(0.25);
+    scene.ambientColor = Color3.FromHexString(p.hemiSky).scale(0.22);
     sun.direction = p.sunDir.clone().normalize();
     sun.diffuse = Color3.FromHexString(p.sunColor);
     sun.specular = Color3.Black();
@@ -151,7 +190,13 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     hemi.groundColor = Color3.FromHexString(p.hemiGround);
     hemi.specular = Color3.Black();
     hemi.intensity = p.hemiIntensity;
-    if (shadows) shadows.darkness = time === "night" ? 0.7 : time === "evening" ? 0.5 : 0.45;
+    if (shadows) shadows.darkness = p.shadow;
+    const ip = scene.imageProcessingConfiguration;
+    ip.exposure = p.exposure;
+    ip.contrast = p.contrast;
+    ip.vignetteWeight = p.vignette;
+    const vc = Color3.FromHexString(p.vignetteColor);
+    ip.vignetteColor.set(vc.r, vc.g, vc.b, 1);
     for (const g of glows) {
       g.mat.unfreeze();
       g.mat.emissiveColor = p.lamps ? g.lit : g.dark;
@@ -164,7 +209,8 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
   const follow = (x: number, z: number) => {
     focus = { x, z };
     const d = sun.direction;
-    sun.position.set(x - d.x * 45, -d.y * 45, z - d.z * 45);
+    // the camera looks north, so centre the shadow frustum a little ahead
+    sun.position.set(x - d.x * 45, -d.y * 45, z + 3 - d.z * 45);
   };
 
   const onTime = (t: TimeOfDay) => apply(t);

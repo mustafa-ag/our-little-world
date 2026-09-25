@@ -1,118 +1,24 @@
-// Street furniture and small props. Each factory returns one merged mesh at
-// the origin, base at y=0, "front" facing -Z where it matters.
+// Street furniture and small props. The storybook set (bench, lamp post,
+// signpost, dry-stone wall, fences, planter, post box, café furniture, barrel,
+// crate) are hero assets from assets/hero/props.ts (GLB + procedural
+// fallback); the rest here stays procedural. Each factory returns one merged
+// mesh at the origin, base at y=0, "front" facing -Z where it matters.
 
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import type { AssetManager, KitContext } from "../AssetManager";
 import { PALETTE } from "../../rendering/materials";
-import { box, cyl, sphere, merge, parseVariant } from "./util";
+import { box, cyl, sphere, merge } from "./util";
 
-/** Dry-stone wall segment, 1 unit long along X. */
-function stoneWall(k: KitContext): Mesh {
-  const s = k.scene;
-  const stone = k.mats.textured("cobble", "#9d9283", 1);
-  const parts: Mesh[] = [box(s, 1.02, 0.42, 0.34, stone, 0, 0, 0, 1.6)];
-  // cap stones
-  const cap = k.mats.textured("stone", PALETTE.greyStoneDark, 2);
-  for (let i = 0; i < 5; i++) {
-    const b = box(s, 0.19, 0.1, 0.3 + (i % 2) * 0.06, cap, -0.4 + i * 0.2, 0.42, 0);
-    b.rotation.y = (i % 2 ? 1 : -1) * 0.12;
-    parts.push(b);
-  }
-  return merge("stone-wall", parts);
-}
 
-/** Low wooden picket fence, 1 unit long along X. */
-function woodenFence(k: KitContext): Mesh {
-  const s = k.scene;
-  const wood = k.mats.textured("planks", PALETTE.woodLight, 2);
-  const parts: Mesh[] = [];
-  parts.push(box(s, 0.08, 0.6, 0.08, wood, -0.5, 0, 0));
-  parts.push(box(s, 1.0, 0.06, 0.05, wood, 0, 0.42, 0));
-  parts.push(box(s, 1.0, 0.06, 0.05, wood, 0, 0.16, 0));
-  for (let i = 0; i < 4; i++) parts.push(box(s, 0.08, 0.5, 0.04, wood, -0.35 + i * 0.24, 0.06, 0.03));
-  return merge("wooden-fence", parts);
-}
 
-/** Black iron lamp post with a warm lantern (glows at night). */
-function lampPost(k: KitContext): Mesh {
-  const s = k.scene;
-  const iron = k.mats.flat(PALETTE.iron);
-  const glow = k.mats.flat(PALETTE.lamp, { emissive: 0.15 });
-  k.lighting?.registerGlow(glow, PALETTE.lamp, "#3a3020");
-  const parts: Mesh[] = [];
-  parts.push(cyl(s, 0.2, 0.28, 0.16, iron, 0, 0, 0, 8));
-  parts.push(cyl(s, 0.07, 0.11, 2.1, iron, 0, 0.16, 0, 6));
-  parts.push(cyl(s, 0.14, 0.09, 0.08, iron, 0, 2.26, 0, 6));
-  // lantern: glass box + cap
-  parts.push(box(s, 0.26, 0.34, 0.26, glow, 0, 2.34, 0));
-  parts.push(cyl(s, 0.02, 0.36, 0.16, iron, 0, 2.68, 0, 4));
-  parts.push(sphere(s, 0.08, iron, 0, 2.86, 0, 4));
-  for (let i = 0; i < 4; i++) {
-    const r = box(s, 0.03, 0.34, 0.03, iron, 0, 2.34, 0);
-    r.position.x = i % 2 ? 0.13 : -0.13;
-    r.position.z = i < 2 ? 0.13 : -0.13;
-    parts.push(r);
-  }
-  return merge("lamp-post", parts);
-}
 
-function bench(k: KitContext): Mesh {
-  const s = k.scene;
-  const wood = k.mats.textured("planks", PALETTE.wood, 2);
-  const iron = k.mats.flat(PALETTE.iron);
-  const parts: Mesh[] = [];
-  for (let i = 0; i < 3; i++) parts.push(box(s, 1.1, 0.05, 0.11, wood, 0, 0.42, -0.14 + i * 0.13));
-  for (let i = 0; i < 2; i++) {
-    const back = box(s, 1.1, 0.11, 0.05, wood, 0, 0.55 + i * 0.16, 0.2);
-    back.rotation.x = -0.15;
-    parts.push(back);
-  }
-  for (const x of [-0.45, 0.45]) {
-    parts.push(box(s, 0.06, 0.42, 0.4, iron, x, 0, 0));
-    const arm = box(s, 0.06, 0.45, 0.06, iron, x, 0.42, 0.2);
-    arm.rotation.x = -0.15;
-    parts.push(arm);
-  }
-  return merge("bench", parts);
-}
 
-/** Wooden direction signpost with three arrows. */
-function signpost(k: KitContext): Mesh {
-  const s = k.scene;
-  const wood = k.mats.textured("planks", PALETTE.wood, 2);
-  const cream = k.mats.flat(PALETTE.creamLight);
-  const parts: Mesh[] = [cyl(s, 0.12, 0.14, 2.0, wood, 0, 0, 0, 6)];
-  const ink = k.mats.flat("#5a4634");
-  const arrows: [number, number][] = [
-    [1.55, 1],
-    [1.25, -1],
-    [0.95, 1],
-  ];
-  for (const [y, dir] of arrows) {
-    parts.push(box(s, 0.7, 0.17, 0.05, cream, dir * 0.32, y, 0));
-    const tip = box(s, 0.12, 0.17, 0.12, cream, dir * 0.67, y, 0);
-    tip.rotation.y = Math.PI / 4;
-    parts.push(tip);
-    parts.push(box(s, 0.4, 0.035, 0.012, ink, dir * 0.3, y + 0.065, -0.03));
-  }
-  parts.push(sphere(s, 0.16, wood, 0, 2.05, 0, 6));
-  return merge("signpost", parts);
-}
 
-/** Red pillar post box. */
-function postBox(k: KitContext): Mesh {
-  const s = k.scene;
-  const red = k.mats.flat(PALETTE.postRed);
-  const dark = k.mats.flat(PALETTE.iron);
-  const parts: Mesh[] = [
-    cyl(s, 0.4, 0.4, 0.1, dark, 0, 0, 0, 10),
-    cyl(s, 0.38, 0.38, 0.9, red, 0, 0.1, 0, 10),
-    cyl(s, 0.1, 0.42, 0.14, red, 0, 1.0, 0, 10),
-    box(s, 0.2, 0.05, 0.06, dark, 0, 0.72, -0.19),
-    box(s, 0.24, 0.16, 0.02, k.mats.flat(PALETTE.creamLight), 0, 0.45, -0.19),
-  ];
-  return merge("post-box", parts);
-}
 
 /** Red telephone box. */
 function phoneBox(k: KitContext): Mesh {
@@ -137,47 +43,8 @@ function phoneBox(k: KitContext): Mesh {
   return merge("phone-box", parts);
 }
 
-/** Terracotta planter with a bushy plant. */
-function planter(k: KitContext): Mesh {
-  const s = k.scene;
-  const terra = k.mats.flat(PALETTE.terracotta);
-  const parts: Mesh[] = [cyl(s, 0.5, 0.36, 0.42, terra, 0, 0, 0, 10), cyl(s, 0.54, 0.54, 0.08, terra, 0, 0.4, 0, 10)];
-  const leaf = k.mats.flat(PALETTE.sage);
-  const bl = sphere(s, 0.55, leaf, 0, 0.62, 0, 6);
-  bl.convertToFlatShadedMesh();
-  parts.push(bl);
-  const cols = [PALETTE.dustyRose, PALETTE.mutedYellow, "#f4efe0"];
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2;
-    parts.push(sphere(s, 0.14, k.mats.flat(cols[i % cols.length]), Math.cos(a) * 0.2, 0.8, Math.sin(a) * 0.2, 4));
-  }
-  return merge("planter", parts);
-}
 
-function cafeChair(k: KitContext): Mesh {
-  const s = k.scene;
-  const wood = k.mats.textured("planks", PALETTE.woodLight, 2);
-  const parts: Mesh[] = [box(s, 0.4, 0.05, 0.4, wood, 0, 0.42, 0)];
-  for (const [x, z] of [
-    [-0.16, -0.16],
-    [0.16, -0.16],
-    [-0.16, 0.16],
-    [0.16, 0.16],
-  ])
-    parts.push(box(s, 0.05, 0.42, 0.05, wood, x, 0, z));
-  parts.push(box(s, 0.4, 0.4, 0.05, wood, 0, 0.47, 0.17));
-  return merge("cafe-chair", parts);
-}
 
-function cafeTable(k: KitContext): Mesh {
-  const s = k.scene;
-  const wood = k.mats.textured("planks", PALETTE.wood, 2);
-  const iron = k.mats.flat(PALETTE.iron);
-  const parts: Mesh[] = [cyl(s, 0.8, 0.8, 0.06, wood, 0, 0.66, 0, 12), cyl(s, 0.06, 0.06, 0.66, iron, 0, 0, 0, 6), cyl(s, 0.4, 0.5, 0.05, iron, 0, 0, 0, 10)];
-  // a little cup
-  parts.push(cyl(s, 0.1, 0.08, 0.1, k.mats.flat(PALETTE.creamLight), 0.2, 0.72, 0.1, 8));
-  return merge("cafe-table", parts);
-}
 
 function chalkboard(k: KitContext): Mesh {
   const s = k.scene;
@@ -241,37 +108,61 @@ function fountain(k: KitContext): Mesh {
   return merge("fountain", parts);
 }
 
-/** Generic unknown prop: a small crate. */
-function crate(k: KitContext): Mesh {
-  const s = k.scene;
-  return merge("crate", [box(s, 0.6, 0.5, 0.6, k.mats.textured("planks", PALETTE.woodLight, 2), 0, 0, 0, 1.5)]);
-}
 
-/** Warm pool of light under a lamp (enabled only in the evening/night). */
+/**
+ * Warm pool of light under a lamp (enabled only in the evening/night): a disc
+ * with a radial falloff, additive-blended, unlit, no depth write, no fog.
+ */
 function lampGlow(k: KitContext): Mesh {
   const s = k.scene;
-  const m = k.mats.flat(PALETTE.lamp, { emissive: 0.9, alpha: 0.28 });
-  const d = cyl(s, 2.6, 2.6, 0.02, m, 0, 0.012, 0, 16);
-  return merge("lamp-glow", [d]);
+  let mat = s.getMaterialByName("lampGlowMat") as StandardMaterial | null;
+  if (!mat) {
+    mat = new StandardMaterial("lampGlowMat", s);
+    const size = 128;
+    const t = new DynamicTexture("lampGlowTex", { width: size, height: size }, s, false);
+    const ctx = t.getContext() as CanvasRenderingContext2D;
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(0.35, "rgba(255,255,255,0.55)");
+    g.addColorStop(0.7, "rgba(255,255,255,0.14)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    t.update(false);
+    t.hasAlpha = true;
+    t.getAlphaFromRGB = true;
+    mat.opacityTexture = t;
+    mat.diffuseColor = Color3.Black();
+    mat.specularColor = Color3.Black();
+    mat.emissiveColor = Color3.FromHexString(PALETTE.lamp).scale(0.6);
+    mat.disableLighting = true;
+    mat.alphaMode = Constants.ALPHA_ADD;
+    mat.disableDepthWrite = true;
+    mat.backFaceCulling = false;
+    mat.fogEnabled = false;
+    mat.freeze();
+  }
+  const d = CreateDisc("lampGlowDisc", { radius: 1.5, tessellation: 20 }, s);
+  d.rotation.x = Math.PI / 2;
+  d.position.y = 0.02;
+  d.material = mat;
+  const m = merge("lamp-glow", [d]);
+  m.receiveShadows = false;
+  return m;
 }
 
 export function registerProps(am: AssetManager) {
+  // hero pieces (GLB + procedural fallback)
+  for (const key of ["bench", "lamp-post", "signpost", "stone-wall", "fence", "fence-gate", "planter", "post-box", "cafe-table", "cafe-chair", "barrel", "crate"] as const) am.registerHero(key);
+  am.registerAlias("wooden-fence", "fence");
+  // procedural extras
   am.register("lamp-glow", lampGlow, { shadow: false });
-  am.register("stone-wall", stoneWall, { shadow: true });
-  am.register("wooden-fence", woodenFence, { shadow: false });
-  am.register("lamp-post", lampPost, { shadow: true });
-  am.register("bench", bench, { shadow: true });
-  am.register("signpost", signpost, { shadow: true });
-  am.register("post-box", postBox, { shadow: true });
   am.register("phone-box", phoneBox, { shadow: true });
-  am.register("planter", planter, { shadow: false });
-  am.register("cafe-chair", cafeChair, { shadow: false });
-  am.register("cafe-table", cafeTable, { shadow: false });
   am.register("chalkboard", chalkboard, { shadow: false });
   am.register("bollard", bollard, { shadow: false });
   am.register("rock", rock, { shadow: true });
   am.register("well", well, { shadow: true });
   am.register("fountain", fountain, { shadow: true });
-  am.register("crate", crate, { shadow: false });
-  void parseVariant;
 }
