@@ -12,7 +12,7 @@ import { createFollowCamera, type FollowCamera } from "./rendering/camera";
 import { createLighting, type Lighting, type WarmSpot } from "./rendering/lighting";
 import { createSky, type Sky } from "./rendering/sky";
 import { createBackdrop, type Backdrop } from "./rendering/backdrop";
-import { createOcclusion, occludersFromThinMeshes, type Occlusion, type OccluderInfo } from "./rendering/occlusion";
+import { createOcclusion, occludersFromThinMeshes, type Occlusion } from "./rendering/occlusion";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { TimeOfDay } from "../game/systems/save";
 import { Materials } from "./rendering/materials";
@@ -173,13 +173,10 @@ export class Game3D {
       const backdrop = createBackdrop(this.host.scene, { mapW: world.w, mapH: world.h, castle: !hasCastle });
       this.backdrop = backdrop;
       backdrop.setAtmosphere(this.lighting.atmosphere());
-      // TRANSITIONAL: the environment's old hill ring / far crag + keep are replaced
-      // by rendering/backdrop.ts (W2 removes them from environment.ts); hide any left.
-      for (const m of env.meshes) if (/^(hill\d+|crag|farKeep|farTower-?\d+)$/.test(m.name)) m.setEnabled(false);
 
-      // buildings that fade when they hide the player (world builder's list when
-      // it publishes one, else derived from the building thin-instance batches)
-      const occluders = (built as BuiltWorld & { occluders?: OccluderInfo[] }).occluders ?? occludersFromThinMeshes(this.host.scene.meshes, (m) => /^(building|castle)#/.test(m.name));
+      // buildings that fade when they hide the player (filled by placer.flush()
+      // above; the thin-instance scan is a fallback for an empty list)
+      const occluders = built.occluders.length ? built.occluders : occludersFromThinMeshes(this.host.scene.meshes, (m) => /^(building|castle)#/.test(m.name));
       this.occlusion.setOccluders(occluders);
 
       // spawn (WorldScene.create semantics)
