@@ -1577,7 +1577,7 @@ export const LOCATIONS: Record<string, LocationDef> = {
     id: "amman",
     cityId: "amman",
     name: "Amman",
-    subtitle: "Coming soon (beta)",
+    subtitle: "Jordan · Citadel hill above the old city",
     path: "t_path",
     border: "rock",
     landmark: "lm_citadel",

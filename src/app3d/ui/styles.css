@@ -2879,8 +2879,9 @@
 }
 
 .olw-world-loc--locked,
-.olw-world-loc--unbuilt {
-  opacity: 0.62;
+.olw-drive-list {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .olw-world-loc-head {

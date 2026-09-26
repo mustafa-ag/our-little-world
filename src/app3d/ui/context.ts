@@ -3,7 +3,7 @@ import { EventEmitter } from "../../core/events";
 import { controls, uiEvents } from "../../game/systems/controls";
 import type { Disposer } from "./dom";
 
-export type ModalKind = "shop" | "phone" | "map" | "localMap" | "minigame" | "gift" | "wardrobe" | "rest" | "photoWall" | "adnoc" | "mall" | "babaShopping" | "story";
+export type ModalKind = "shop" | "phone" | "map" | "localMap" | "minigame" | "gift" | "wardrobe" | "rest" | "photoWall" | "adnoc" | "mall" | "babaShopping" | "story" | "drive";
 
 export class UIContext {
   /** Internal bus: "change" fires whenever open/closed/started state flips. */

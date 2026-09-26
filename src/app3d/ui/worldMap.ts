@@ -10,7 +10,7 @@
 //     it (e.g. Last Exit, which its quest says to reach "from the world map");
 //   - otherwise it shows how to unlock it: walk in from a neighbour, and which
 //     quests need it.
-//   - only locations with a 3D scene (PORTED_LOCATIONS) can be travelled to.
+//   - only locations with a 3D scene (PORTED_LOCATIONS) are listed.
 import { store } from "../../game/systems/store";
 import { currentStep, statusOf } from "../../game/systems/quests";
 import { QUESTS } from "../../game/data/quests";
@@ -36,7 +36,7 @@ export type Access =
   | { state: "here" }
   | { state: "open"; quest?: string }
   | { state: "locked"; reason: string }
-  | { state: "unbuilt"; reason: string };
+  | { state: "unbuilt" };
 
 /** The location the 3D world is actually showing (falls back to the save's). */
 export function hereId() {
@@ -63,7 +63,7 @@ function questsNeeding(id: string) {
 
 export function accessOf(loc: LocationDef): Access {
   if (loc.id === hereId()) return { state: "here" };
-  if (!PORTED_LOCATIONS.has(loc.id)) return { state: "unbuilt", reason: "Not built in 3D yet" };
+  if (!PORTED_LOCATIONS.has(loc.id)) return { state: "unbuilt" };
   const quests = questsNeeding(loc.id);
   const questNow = quests.find((q) => q.active);
   const neighbours = walkInFrom(loc.id);
@@ -81,7 +81,8 @@ export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLEl
     const hereCity = LOCATIONS[here]?.cityId;
     const groups: HTMLElement[] = [];
     for (const c of CITY_ORDER) {
-      const locs = districtsOf(c.id);
+      // locations without a 3D scene aren't listed at all (none since Phase 5C)
+      const locs = districtsOf(c.id).filter((l) => PORTED_LOCATIONS.has(l.id));
       if (!locs.length) continue;
       // hub first, then the rest in data order
       const hub = CITIES.find((m) => m.id === c.id)?.hub;
@@ -89,8 +90,8 @@ export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLEl
       const rows = locs.map((loc) => {
         const a = accessOf(loc);
         const chip =
-          a.state === "here" ? "You're here" : a.state === "open" ? (a.quest ? "Quest" : "Unlocked") : a.state === "locked" ? "Locked" : "Soon";
-        const detail = a.state === "locked" || a.state === "unbuilt" ? a.reason : a.state === "open" && a.quest ? `Quest: ${a.quest}` : loc.subtitle;
+          a.state === "here" ? "You're here" : a.state === "open" ? (a.quest ? "Quest" : "Unlocked") : "Locked";
+        const detail = a.state === "locked" ? a.reason : a.state === "open" && a.quest ? `Quest: ${a.quest}` : loc.subtitle;
         const go =
           a.state === "open"
             ? button(md, "Travel here", "olw-btn olw-btn--rose olw-world-go", () => travel(loc.id))
@@ -104,12 +105,11 @@ export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLEl
           go,
         ]);
       });
-      const builtCount = locs.filter((l) => PORTED_LOCATIONS.has(l.id)).length;
       groups.push(
         el("section", { class: c.id === hereCity ? "olw-world-city olw-world-city--here" : "olw-world-city" }, [
           el("h3", { class: "olw-world-city-name" }, [
             c.label,
-            el("span", { class: "olw-world-city-count", text: builtCount ? ` ${builtCount}/${locs.length} in 3D` : " coming soon" }),
+            el("span", { class: "olw-world-city-count", text: ` ${locs.length} ${locs.length === 1 ? "place" : "places"}` }),
           ]),
           el("ul", { class: "olw-world-list" }, rows),
         ]),

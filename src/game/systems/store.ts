@@ -562,6 +562,23 @@ class Store extends EventEmitter {
     return true;
   }
 
+  setPhotoCaption(id: string, caption: string) {
+    const photo = this.state.photos[id];
+    if (!photo) return false;
+    photo.caption = caption.trim().slice(0, 140) || undefined;
+    this.emit("photo", id);
+    this.save();
+    return true;
+  }
+
+  deletePhoto(id: string) {
+    if (!this.state.photos[id]) return false;
+    delete this.state.photos[id];
+    this.emit("photo", id);
+    this.save();
+    return true;
+  }
+
   addNote(id: string) {
     if (this.state.discoveredNotes.includes(id)) return false;
     this.state.discoveredNotes.push(id);

@@ -32,7 +32,7 @@ export interface WorldViewHooks {
   setTimeout(ms: number, fn: () => void): void;
 }
 
-/** Locations that have a 3D scene. Others show a toast when you try to go there. */
+/** Locations that have a 3D scene (all of game/data/locations.ts since Phase 5C). */
 export const PORTED_LOCATIONS = new Set([
   "edinburgh_oldtown",
   "edinburgh_dean",
@@ -54,6 +54,14 @@ export const PORTED_LOCATIONS = new Set([
   "london_westminster",
   "london_westend",
   "leicester",
+  // Yas side districts (Phase 5C): walk-ins from Yas (north / south exits)
+  "abudhabi_noya",
+  "abudhabi_yasmall",
+  // Abroad (Phase 5C): every region has an art profile (world/artProfile.ts)
+  "amman",
+  "germany",
+  "italy_positano",
+  "greece_santorini",
 ]);
 
 export const TIME_TICK_MS = 90_000;
@@ -364,8 +372,8 @@ export class WorldController {
       kind: "vehicle",
       enabled: () => this.now > this.arriveAt,
       trigger: () => {
-        // DrivingScene / drive menu are not ported yet.
-        if (!uiEvents.emit("driveMenu", { locationId: this.locationId })) store.toast("The Jeep isn't road-ready in 3D yet", "#2f6fd0");
+        // ui/modals.ts answers with the drive menu (districts of this city).
+        uiEvents.emit("driveMenu", { locationId: this.locationId });
       },
     });
   }
@@ -522,7 +530,7 @@ export class WorldController {
 
   /** Hand off to the UI layer (ui/house.ts fades into the 3D interior); toast if nothing listens. */
   private enterHouse(title: string, interior: "cream" | "brown") {
-    if (!uiEvents.emit("enterHouse", { title, interior })) store.toast(`${title} — interiors aren't in 3D yet`, "#f4a6c0");
+    uiEvents.emit("enterHouse", { title, interior });
   }
 
   /** ui/mall.ts opens the store directory (and Baba Shopping from there). */
@@ -536,13 +544,9 @@ export class WorldController {
     if (!to || to === this.locationId) return;
     const dest = getLocation(to);
     if (!dest || dest.id === this.locationId) return;
-    if (!PORTED_LOCATIONS.has(dest.id)) {
-      if (!store.hasDaily(`notyet_${dest.id}`)) {
-        store.setDaily(`notyet_${dest.id}`);
-        store.toast(`${dest.name} isn't built in 3D yet`, "#8ecae6");
-      }
-      return;
-    }
+    // Every location is ported; an id outside the set (new data) is simply not walkable yet.
+    // TODO(3d): add new locations to PORTED_LOCATIONS once they have an art profile.
+    if (!PORTED_LOCATIONS.has(dest.id)) return;
     this.transitioning = true;
     this.interaction.setSuspended(true);
     uiEvents.emit("prompt", null);
