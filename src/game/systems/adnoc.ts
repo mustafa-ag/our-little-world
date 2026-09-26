@@ -85,6 +85,11 @@ export function rankLabel(rank = store.state.adnocRank) {
   return adnocRankDef(rank).label;
 }
 
+/** XP / workday target (and story quest title) for the next promotion from `rank`. */
+export function promotionTarget(rank = store.state.adnocRank) {
+  return PROMOTION_TARGETS[rank];
+}
+
 export function careerProgressText() {
   const target = PROMOTION_TARGETS[store.state.adnocRank];
   if (!target) return store.state.adnocRank === "ceo" ? "CAREER COMPLETE · WORK DAYS STILL AVAILABLE" : "FIRST DAY IN PROGRESS";

@@ -39,6 +39,14 @@ export const ITEMS: Record<string, ItemDef> = {
   shopping_macarons: { id: "shopping_macarons", name: "Tiny macarons", desc: "Six colors from the final speed-shopping lap.", kind: "food", icon: "ui_heart", giftable: true },
   shopping_fancy_chocolate: { id: "shopping_fancy_chocolate", name: "Fancy chocolate", desc: "For recovery from financial discussion.", kind: "gift", icon: "ui_heart", giftable: true },
   shopping_crisps: { id: "shopping_crisps", name: "Emergency crisps", desc: "The one purchase Baba almost called practical.", kind: "food", icon: "ui_coin", giftable: true },
+  // Baba's Shopping Nightmare "item" rewards (data/babaShopping.ts) that had no definition yet
+  mall_romcom_stack: { id: "mall_romcom_stack", name: "Mall rom-com stack", desc: "Research material. Moomoo is unconvinced.", kind: "gift", icon: "ui_star", giftable: true },
+  tiny_feast_cookbook: { id: "tiny_feast_cookbook", name: "Tiny feast cookbook", desc: "Optimistic evidence that dinner may happen.", kind: "gift", icon: "ui_star", giftable: true },
+  cloud_headphones: { id: "cloud_headphones", name: "Cloud headphones", desc: "Noise cancellation for budget discussions.", kind: "keepsake", icon: "ui_star" },
+  heart_power_bank: { id: "heart_power_bank", name: "Heart power bank", desc: "Practical, pink, and only slightly overpriced.", kind: "keepsake", icon: "ui_heart" },
+  sunset_vase: { id: "sunset_vase", name: "Sunset vase", desc: "Fragile, dramatic, and now Moomoo's problem.", kind: "keepsake", icon: "ui_star" },
+  victory_iced_coffee: { id: "victory_iced_coffee", name: "Victory iced coffee", desc: "Necessary fuel for the final six hundred metres.", kind: "food", icon: "ui_coin", giftable: true },
+  celebration_cake_box: { id: "celebration_cake_box", name: "Celebration cake box", desc: "Too large. Completely correct.", kind: "food", icon: "ui_heart", giftable: true },
 };
 
 export const itemById = (id: string) => ITEMS[id];

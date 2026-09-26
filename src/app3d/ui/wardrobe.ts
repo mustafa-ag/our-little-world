@@ -18,7 +18,7 @@ const FALLBACK_EMOJI: Record<string, string> = {
   shopping_sandals: "🩴",
 };
 
-function swatch(id: string): HTMLElement {
+export function swatch(id: string): HTMLElement {
   const o = Outfits[id];
   if (!o) return el("span", { class: "olw-ward-swatch olw-ward-swatch--emoji", text: FALLBACK_EMOJI[id] ?? "👗", attrs: { "aria-hidden": "true" } });
   return el("span", {
