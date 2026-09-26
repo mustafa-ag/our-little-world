@@ -258,6 +258,34 @@
   box-shadow: 0 2px 6px rgba(74, 52, 38, 0.12);
 }
 
+.olw-rest {
+  min-height: 36px;
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+/* full-screen fade used by Rest (above HUD/modals, below the title) */
+.olw-sleep-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: #0b0d18;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.7s ease;
+}
+
+.olw-sleep-fade--on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .olw-sleep-fade {
+    transition: none;
+  }
+}
+
 /* quest tracker ---------------------------------------------------------------- */
 .olw-quests {
   position: absolute;
@@ -1098,6 +1126,71 @@
   font-size: 12.5px;
 }
 
+/* phone: quests */
+.olw-quest-head {
+  margin: 12px 0 6px;
+  font-family: var(--olw-serif);
+  font-size: 16px;
+  color: var(--olw-rose-deep);
+}
+
+.olw-quest-head:first-child {
+  margin-top: 0;
+}
+
+.olw-quest-replay {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #e3f1f8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.olw-quest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.olw-quest {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--olw-brown-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.olw-quest--active {
+  border-color: var(--olw-rose);
+  background: #fdecef;
+}
+
+.olw-quest-title {
+  font-weight: 800;
+}
+
+.olw-quest-line {
+  font-size: 13px;
+  color: var(--olw-ink-soft);
+}
+
+.olw-quest-btn {
+  align-self: flex-end;
+  margin-top: 6px;
+}
+
+.olw-quest--locked,
+.olw-quest--done {
+  opacity: 0.6;
+}
+
+.olw-quest--done .olw-quest-title::before {
+  content: "\2713  ";
+}
+
 .olw-phone-map {
   display: flex;
   flex-direction: column;
@@ -1297,6 +1390,60 @@
   50% {
     transform: scale(1.04);
   }
+}
+
+/* title: save slots + new-game confirm */
+.olw-title-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.olw-title-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--olw-brown-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.olw-title-slot--active {
+  border-color: var(--olw-rose);
+  background: #fdecef;
+}
+
+.olw-title-slot--empty .olw-title-slot-line {
+  font-style: italic;
+}
+
+.olw-title-slot-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.olw-title-slot-name {
+  font-weight: 800;
+}
+
+.olw-title-slot-line {
+  font-size: 13px;
+  color: var(--olw-ink-soft);
+}
+
+.olw-title-slot-btn {
+  flex: none;
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.olw-title-confirm {
+  margin-bottom: 6px;
+  font-weight: 800;
 }
 
 .olw-title-keys {

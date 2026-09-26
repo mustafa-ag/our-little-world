@@ -24,14 +24,16 @@ function boot() {
   // state.started before emitting "startGame".
   const bootState = store.state;
   const bootFresh = !store.state.started;
-  const start = () => {
+  const start = (opts?: { fresh?: boolean }) => {
     if (started) return;
     started = true;
     void ready.then(() => {
       // a New game may have reset the save while the world was pre-built; the
       // save-dependent entities (pickups, secrets, NPCs...) are only created
-      // by the deferred setup, so rebuilding is needed only if the location changed
-      const fresh = bootFresh || store.state !== bootState;
+      // by the deferred setup, so rebuilding is needed only if the location changed.
+      // The title says whether the chosen story is fresh (loading another,
+      // already-started slot also replaces store.state but is not fresh).
+      const fresh = opts?.fresh ?? (bootFresh || store.state !== bootState);
       const want = Game3D.sessionLocation();
       if (game.current?.id !== want) ready = game.loadLocation(want, { deferSetup: true }).then(() => game.beginSession({ fresh }));
       else game.beginSession({ fresh });

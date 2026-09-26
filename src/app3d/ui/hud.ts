@@ -1,8 +1,9 @@
-// Top-left HUD: hearts, coins, clock + the big location title card and the
-// little heart pop on relationship gains.
+// Top-left HUD: hearts, coins, clock, the evening "Rest" button + the big
+// location title card and the little heart pop on relationship gains.
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
-import { el, icon, prefersReducedMotion } from "./dom";
+import { tryDeliverMessages } from "../../game/systems/phone";
+import { button, el, icon, prefersReducedMotion } from "./dom";
 import type { UIContext } from "./context";
 
 export function mountHud(ctx: UIContext, onLocation: () => void) {
@@ -10,6 +11,7 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
   const hearts = el("span", { class: "olw-stat-value" });
   const coins = el("span", { class: "olw-stat-value" });
   const clock = el("div", { class: "olw-clock", attrs: { "aria-live": "polite" } });
+  const rest = button(d, "Rest for the night", "olw-btn olw-btn--ghost olw-rest", () => sleep());
   const hud = d.node(
     el("div", { class: "olw-hud olw-play-only" }, [
       el("div", { class: "olw-panel olw-stats" }, [
@@ -17,9 +19,50 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
         el("span", { class: "olw-stat olw-stat--coins", attrs: { title: "Coins" } }, [icon("coin"), coins]),
       ]),
       clock,
+      rest,
     ]),
   );
   ctx.layer.append(hud);
+
+  // ---- Rest / sleep (HouseScene's bed isn't ported, so the HUD offers it) ----
+  // Mirrors HouseScene.sleep(): +1 heart, new day at morning, wake-up texts, save.
+  const fade = d.node(el("div", { class: "olw-sleep-fade", attrs: { "aria-hidden": "true" } }));
+  ctx.layer.append(fade);
+  let sleeping = false;
+  const canRest = () => {
+    const t = store.state.timeOfDay;
+    return ctx.started && !sleeping && !ctx.anyModal() && !store.isQuestReplay && (t === "evening" || t === "night");
+  };
+  const refreshRest = () => rest.classList.toggle("olw-hidden", !canRest());
+  const sleep = () => {
+    if (!canRest()) return;
+    sleeping = true;
+    refreshRest();
+    ctx.lock();
+    const ms = prefersReducedMotion() ? 0 : 700;
+    fade.classList.add("olw-sleep-fade--on");
+    d.timeout(() => {
+      store.addHearts(1);
+      store.sleep(); // day += 1, morning, clears dailies, emits time/newDay, saves
+      tryDeliverMessages({ wake: true, limit: 2 });
+      store.save();
+      setClock();
+      d.timeout(() => {
+        fade.classList.remove("olw-sleep-fade--on");
+        d.timeout(() => {
+          sleeping = false;
+          ctx.unlockIfIdle();
+          store.toast("A cozy new day together", "#ff8fae");
+          uiEvents.emit("dialogue", "Home", ["You sleep. The world keeps your things exactly where you left them.", store.clockLabel()]);
+          refreshRest();
+        }, ms);
+      }, ms ? 500 : 0);
+    }, ms);
+  };
+  d.on(ctx.bus, "change", refreshRest);
+  d.on(store, "time", refreshRest);
+  d.on(store, "changed", refreshRest);
+  refreshRest();
 
   const bump = (node: HTMLElement) => {
     node.classList.remove("olw-bump");
@@ -50,7 +93,10 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
   d.on(store, "newDay", setClock);
   d.on(store, "changed", refreshAll);
   // UIScene refreshed the clock every frame; a slow poll covers direct state writes.
-  d.interval(setClock, 1000);
+  d.interval(() => {
+    setClock();
+    refreshRest();
+  }, 1000);
 
   // ---- location title ("locationTitle", name, subtitle) ----
   let titleNode: HTMLElement | null = null;

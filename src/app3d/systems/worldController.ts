@@ -359,7 +359,10 @@ export class WorldController {
           hint: brown ? "20 steps. 13 seconds. There is no skip button in this building." : "Climb quickly to the lobby.",
           taps: brown ? 20 : 10,
           onDone: () => {
-            if (z.tag) quests.onInteract(z.tag);
+            // q_edinburgh's Well Court step is a playMinigame("well_court_race")
+            // step, not an interact step (matches WorldScene).
+            if (brown) quests.onMinigame("well_court_race");
+            else if (z.tag) quests.onInteract(z.tag);
             if (brown) store.unlockMemory("mem_well_court");
             this.enterHouse(d.name ?? "Inside", brown ? "brown" : "cream");
           },

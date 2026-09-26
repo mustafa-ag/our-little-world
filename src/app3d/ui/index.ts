@@ -103,6 +103,15 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
     (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (title.visible) {
+        if (title.overlayOpen) {
+          // slot picker / confirm: Esc closes it, Space/Enter only activate its buttons
+          const onButton = e.target instanceof HTMLButtonElement && layer.contains(e.target);
+          if (e.code === "Escape") {
+            consume(e);
+            title.closeOverlay();
+          } else if (ADVANCE_KEYS.has(e.code) && !onButton) consume(e);
+          return;
+        }
         if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") {
           // focused buttons / links (e.g. "Play Full Pixel Game") keep their own activation
           const onButton =
