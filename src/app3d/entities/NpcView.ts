@@ -2,11 +2,13 @@
 // colours, with a hair variant / skirt or jeans / cardigan picked per person
 // (procedural fallback until the GLB loads), idle breathing, a name tag above
 // the head, and "face the player" when talked to (turns smoothly, waves the
-// first time, nods after that).
+// first time, nods after that). Family members get their own silhouette
+// (npcBuild: Moomoo tall and broad, Mama with a hijab, Baba stocky with a
+// beard); the name tag shows the NpcDef display name just above their head.
 
 import type { NpcDef } from "../../game/data/npcs";
 import type { AssetManager, KitContext } from "../assets/AssetManager";
-import { characterAssets, createCharacter, createNpcRig, styleFor, type CharacterRig, CHAR_HEIGHT } from "../assets/kit/characters";
+import { characterAssets, createCharacter, createNpcRig, npcBuild, npcHeight, styleFor, type CharacterRig } from "../assets/kit/characters";
 import { lerpAngle, yawFor, yawForFacing } from "../world/coords";
 import { createBlobShadow } from "./PlayerView";
 import { createLabel, type Label } from "./Label";
@@ -26,6 +28,7 @@ export class NpcView {
   private lookTimer = 0;
   private greeted = false;
   private trailing = false;
+  private labelY: number;
 
   constructor(
     k: KitContext,
@@ -38,13 +41,16 @@ export class NpcView {
     const am2 = am ?? characterAssets();
     this.rig = am2 ? createNpcRig(k, am2, def.id, def.colors) : createCharacter(k, def.colors, `npc:${def.id}`, styleFor(def.id));
     this.rig.root.position.set(x, groundY, z);
+    const [sx, sy, sz] = npcBuild(def.id).scale;
+    this.rig.root.scaling.set(sx, sy, sz);
+    this.labelY = npcHeight(def.id) + 0.32;
     this.restYaw = yawForFacing(def.facing ?? "down");
     this.targetYaw = this.restYaw;
     this.rig.root.rotation.y = this.restYaw;
     this.shadow = createBlobShadow(k, 0.56);
     this.shadow.position.set(x, groundY + 0.015, z);
     this.label = createLabel(k.scene, def.name, { scale: 0.85 });
-    this.label.setPosition(x, groundY + CHAR_HEIGHT + 0.32, z);
+    this.label.setPosition(x, groundY + this.labelY, z);
   }
 
   faceTowards(px: number, pz: number) {
@@ -60,7 +66,7 @@ export class NpcView {
     this.z = z;
     this.rig.root.position.set(x, groundY, z);
     this.shadow.position.set(x, groundY + 0.015, z);
-    this.label.setPosition(x, groundY + CHAR_HEIGHT + 0.32, z);
+    this.label.setPosition(x, groundY + this.labelY, z);
   }
 
   /**
