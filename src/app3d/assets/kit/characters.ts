@@ -213,15 +213,37 @@ export interface NpcBuild {
   beard?: string;
   /** false: never layer a cardigan over the top (a plain shirt / thobe / dress). */
   outer?: false;
+  /** Fixed clothing colours that override their CharColors (a signature outfit). */
+  look?: { top?: string; outer?: string; bottom?: string; shoes?: string };
+  /** Highlight streak colour painted into the front-left of their hair. */
+  hairStreak?: string;
 }
 
+// Scales stay subtle (within +-8% per axis, family builds aside) so everyone
+// still reads as the same storybook cast.
 const NPC_BUILDS: Record<string, NpcBuild> = {
   // taller, broader shoulders; plain blue shirt
   moomoo: { scale: [1.08, 1.1, 1.05], outer: false },
-  // medium height, modest dress + hijab
-  mama: { scale: [1.02, 0.97, 1.02], hijab: "#2f3a56", outer: false },
+  // medium height; cream modest dress under a navy outer layer, matching navy hijab
+  mama: {
+    scale: [1.02, 0.97, 1.02],
+    hijab: "#2f3a56",
+    look: { top: "#f4f1e8", outer: "#2f3a56", bottom: "#7a8a96", shoes: "#e8e0d0" },
+  },
   // stocky, grey beard, white thobe
   baba: { scale: [1.14, 0.98, 1.14], beard: "#a9a6a0", outer: false },
+  // (the player uses createPlayerRig; this applies only if "her" is ever spawned as an NPC)
+  her: { scale: [0.98, 1.04, 0.98], hairStreak: "#5a3810" },
+  // slightly shorter
+  fadwa: { scale: [1.0, 0.96, 1.0] },
+  // petite, with a fun gold streak in her curls
+  nour: { scale: [0.97, 0.99, 0.97], hairStreak: "#d4a040" },
+  // a slightly bigger build (lighter hair: no streak)
+  chloe: { scale: [1.02, 1.02, 1.02] },
+  // taller, auburn streak in her bob
+  hazel: { scale: [1.01, 1.05, 1.0], hairStreak: "#7a3020" },
+  // tall
+  rhiannon: { scale: [1.03, 1.06, 1.0] },
 };
 
 export function npcBuild(id: string): NpcBuild {
@@ -255,14 +277,15 @@ export function styleFor(id: string): CharacterOpts {
 export function npcAppearance(c: CharColors, opts: CharacterOpts, id = ""): Appearance {
   const b = npcBuild(id);
   const layered = !!opts.scarf && b.outer !== false;
+  const look = b.look ?? {};
   return {
     skin: c.skin,
     hair: c.hair,
     // layered people wear a cream tee under a cardigan in their colour
-    top: layered ? "#f3ebdd" : c.top,
-    outer: layered ? c.top : undefined,
-    bottom: c.bottom,
-    shoes: c.shoes,
+    top: look.top ?? (layered ? "#f3ebdd" : c.top),
+    outer: look.outer ?? (layered ? c.top : undefined),
+    bottom: look.bottom ?? c.bottom,
+    shoes: look.shoes ?? c.shoes,
     bottomKind: opts.skirt === false ? "jeans" : "skirt",
     hairStyle: opts.hair ?? "long",
     hideHair: !!b.hijab,
@@ -282,6 +305,59 @@ const NPC_FACE_KINDS: Record<string, FaceKind> = {
 
 export function npcFaceKind(id: string): FaceKind {
   return NPC_FACE_KINDS[id] ?? "female";
+}
+
+// ------------------------------------------------- unnamed NPC palettes ----
+
+/** The people we know keep their hand-picked NpcDef colours. */
+const NAMED_IDS = new Set(["her", "moomoo", "mama", "baba", "fadwa", "nour", "jad", "shan", "hazel", "rhiannon", "chloe"]);
+
+/** Hair for everyone else: the existing dark / black options plus warm browns, a cool dark, red-brown and sandy. */
+const NPC_HAIR_COLORS = [
+  "#2b1d16", "#33312e", "#2f2a3d", "#1c130d", // dark / near-black
+  "#5a382c", "#7b4f35", "#7a5030", "#9a6840", // warm browns
+  "#2a2535", // cool dark with a blue tint
+  "#8a3820", // warm red-brown
+  "#c8a870", // sandy light
+];
+
+/** Skin tones for everyone else: fair through deep warm. */
+const NPC_SKIN_TONES = ["#f8d5b0", "#f2d3b0", "#f0c49a", "#e8b888", "#e6b58c", "#d9a679", "#c49060", "#a8714a", "#8a6040"];
+
+/** Tops for everyone else: the cooler European shades alongside warm Gulf / Levant tones. */
+const NPC_TOP_COLORS = [
+  "#2f6fd0", "#5c8ce2", "#60a0d0", "#7be0a3", "#f28ab2", "#f4c95d",
+  "#e8a060", "#4a8060", "#c86880", "#8060c0",
+];
+
+/** 32-bit integer finaliser (lowbias32): decorrelates nearby hash inputs. */
+function mix32(h: number): number {
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+function darken(hex: string, f = 0.82): string {
+  const [r, g, b] = hexRgb(hex).map((v) => Math.round(v * f));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+/**
+ * The colours an NPC is drawn with: the people we know keep their own; anyone
+ * else (shop staff, recruiters, passers-by) hashes their id into the wider
+ * hair / skin / top palettes, so background characters stop sharing a look.
+ */
+export function npcColors(id: string, c: CharColors): CharColors {
+  if (NAMED_IDS.has(id)) return c;
+  const h = strHash(id);
+  // independent picks per trait, so two ids never drift into the same look together
+  const hair = NPC_HAIR_COLORS[mix32(h ^ 1) % NPC_HAIR_COLORS.length];
+  const skin = NPC_SKIN_TONES[mix32(h ^ 2) % NPC_SKIN_TONES.length];
+  const top = NPC_TOP_COLORS[mix32(h ^ 3) % NPC_TOP_COLORS.length];
+  return { ...c, hair, hairShade: darken(hair, 0.7), skin, skinShade: darken(skin), top, topShade: darken(top) };
 }
 
 // ------------------------------------------------------------- skinned rig --
@@ -441,8 +517,12 @@ export interface RigExtras {
   hipSway?: number;
   hijab?: string;
   beard?: string;
-  /** Recolour one side of the "hair" mesh towards this colour (Juju). */
-  hairStreak?: { base: string; streak: string };
+  /**
+   * Recolour one side of the hair towards this colour: Juju's "hair" mesh, or
+   * an NPC's hair variant (hair_long / bob / ...). `mesh` limits it to one
+   * hair mesh by name (the variant the NPC wears); omitted = every hair mesh.
+   */
+  hairStreak?: { base: string; streak: string; mesh?: string };
 }
 
 const streaked = new WeakSet<Geometry>();
@@ -456,11 +536,16 @@ function hexRgb(hex: string): [number, number, number] {
  * A highlight streak down the front-left curtain of the hair: the hair's
  * vertex colours are shading multipliers under a flat material, so vertices
  * in the streak band get multiplied by streak / base (GLB bind-pose model
- * space: x lateral, y up, z forward). Shared geometry: done once.
+ * space: x lateral, y up, z forward). Geometry already streaked (a second
+ * Juju instance) is left alone; geometry shared with other meshes (every NPC
+ * instance of npc-base.glb) is made unique first so the streak stays on this
+ * person.
  */
 function paintHairStreak(mesh: Mesh, base: string, streak: string) {
+  if (!mesh.geometry || streaked.has(mesh.geometry)) return;
+  if (mesh.geometry.meshes.length > 1) mesh.makeGeometryUnique();
   const geo = mesh.geometry;
-  if (!geo || streaked.has(geo)) return;
+  if (!geo) return;
   streaked.add(geo);
   const pos = mesh.getVerticesData(VertexBuffer.PositionKind);
   const col = mesh.getVerticesData(VertexBuffer.ColorKind);
@@ -544,7 +629,14 @@ function applyExtras(k: KitContext, ai: AnimatedInstance, x: RigExtras): { meshe
     if (nm) nodes.set(nm, n);
   }
   const head = nodes.get("head");
-  if (x.hairStreak) for (const m of ai.meshes) if ((m.metadata as SlotMeta | null)?.olwName === "hair") paintHairStreak(m, x.hairStreak.base, x.hairStreak.streak);
+  if (x.hairStreak) {
+    const { base, streak, mesh } = x.hairStreak;
+    for (const m of ai.meshes) {
+      const nm = (m.metadata as SlotMeta | null)?.olwName ?? m.name;
+      const isHair = nm === "hair" || nm.startsWith("hair_");
+      if (isHair && (!mesh || nm === mesh)) paintHairStreak(m, base, streak);
+    }
+  }
   const meshes = head ? addHeadwear(k, ai, head, nodes.get("chest"), x) : [];
 
   const hips = nodes.get("hips");
@@ -780,6 +872,7 @@ export function createCharacter(k: KitContext, colors: CharColors, name = "char"
 /** An NPC: npc-base.glb retinted to their CharColors (procedural until it loads). */
 export function createNpcRig(k: KitContext, am: AssetManager, id: string, colors: CharColors, name = `npc:${id}`): CharacterRig {
   const opts = styleFor(id);
+  colors = npcColors(id, colors);
   let cur = colors;
   const male = MALE_IDS.has(id);
   const build = npcBuild(id);
@@ -788,6 +881,7 @@ export function createNpcRig(k: KitContext, am: AssetManager, id: string, colors
     hipSway: male ? undefined : NPC_HIP_SWAY,
     hijab: build.hijab,
     beard: build.beard,
+    hairStreak: build.hairStreak && !build.hijab ? { base: colors.hair, streak: build.hairStreak, mesh: `hair_${opts.hair ?? "long"}` } : undefined,
   };
   const rig = hybridRig(
     k,
@@ -804,8 +898,8 @@ export function createNpcRig(k: KitContext, am: AssetManager, id: string, colors
   );
   const set = rig.setColors.bind(rig);
   rig.setColors = (c) => {
-    cur = c;
-    set(c);
+    cur = npcColors(id, c);
+    set(cur);
   };
   return rig;
 }
