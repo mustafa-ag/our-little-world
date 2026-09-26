@@ -3167,6 +3167,52 @@
   gap: 8px;
 }
 
+.olw-homes-sale {
+  margin-top: 14px;
+}
+
+.olw-homes-head {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--olw-rose-deep);
+}
+
+.olw-home--sale {
+  align-items: flex-start;
+}
+
+.olw-home--cant {
+  opacity: 0.8;
+}
+
+.olw-home-price {
+  font-weight: 800;
+  color: var(--olw-rose-deep);
+}
+
+.olw-home-desc {
+  font-size: 13px;
+}
+
+.olw-home-note {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--olw-ink-soft);
+}
+
+.olw-home-actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.olw-home-actions .olw-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .olw-rest-modal {
   width: min(380px, calc(100vw - 32px));
 }

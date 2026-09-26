@@ -39,7 +39,7 @@ export function mountModals(ctx: UIContext) {
   const fade = d.node(el("div", { class: "olw-sleep-fade olw-travel-fade", attrs: { "aria-hidden": "true" } }, [fadeLabel]));
   ctx.layer.append(fade);
   let travelling = false;
-  const travelTo = (id: string) => {
+  const travelTo = (id: string, onArrive?: () => void) => {
     if (travelling) return;
     travelling = true;
     host.closeAny();
@@ -55,6 +55,7 @@ export function mountModals(ctx: UIContext) {
           travelling = false;
           ctx.unlockIfIdle();
           if (!ok) store.toast(`Couldn't get to ${getLocation(id).name} right now`, "#e46d94");
+          else onArrive?.();
         }, ms ? 250 : 0);
       };
       // main.ts answers "travelTo" (Game3D.travelTo); no listener = no world

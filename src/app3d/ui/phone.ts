@@ -3,14 +3,14 @@
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { markRead } from "../../game/systems/phone";
-import { activateFromMessage, canStartQuest, prerequisiteHint, startQuest, statusOf } from "../../game/systems/quests";
+import { activateFromMessage, canStartQuest, onInteract, prerequisiteHint, startQuest, statusOf } from "../../game/systems/quests";
 import { QUESTS } from "../../game/data/quests";
 import { NPCS } from "../../game/data/npcs";
 import { ITEMS } from "../../game/data/items";
 import { MEMORIES } from "../../game/data/memories";
 import { CITIES } from "../../game/data/locations";
-import { PROPERTIES } from "../../game/data/properties";
-import { setPrimaryHome } from "../../game/systems/properties";
+import { PROPERTIES, type PropertyDefinition } from "../../game/data/properties";
+import { buyProperty, ensurePropertyState, propertyStatus, setPrimaryHome } from "../../game/systems/properties";
 import { button, el, type Disposer } from "./dom";
 import { worldMapView } from "./worldMap";
 import { wardrobeView } from "./wardrobe";
@@ -42,7 +42,7 @@ const PHONE_STORIES = new Set<StorySceneId>(["romance", "wedding", "tigor", "pir
 
 const npcName = (id: string) => NPCS.find((n) => n.id === id)?.name ?? id;
 
-export function phoneBody(md: Disposer, close: () => void, travel: (id: string) => void): Node {
+export function phoneBody(md: Disposer, close: () => void, travel: (id: string, onArrive?: () => void) => void): Node {
   const tabs = el("div", { class: "olw-tabs", attrs: { role: "tablist" } });
   const pane = el("div", { class: "olw-tabpane" });
   const tabBtns = new Map<Tab, HTMLButtonElement>();
@@ -168,18 +168,100 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
     return ul;
   };
 
-  // Homes: owned properties; the chosen one is where Juju lives (primary +
-  // active home, HouseScene / systems/properties.setPrimaryHome)
+  // Homes: owned properties (the chosen one is where Juju lives: primary +
+  // active home, HouseScene / systems/properties.setPrimaryHome), then the
+  // homes still for sale (legacy PhoneOverlay.drawHomes: tour first, then buy)
+  const tourLine = "A beautiful space. You could see yourself here.";
+
+  // Tour: close the phone, travel there, then a short walk-through line.
+  // Marks the home visited (systems/properties.buyProperty requires it) without
+  // visitProperty's activeHomeId / setLocation side effects, which the 3D
+  // travel pipeline owns.
+  const tour = (p: PropertyDefinition) => {
+    close();
+    const arrive = () => {
+      const state = ensurePropertyState(p.id);
+      state.visited = true;
+      store.incrementStat("property_tours");
+      store.save();
+      uiEvents.emit("dialogue", p.name, p.tourLines ?? [tourLine]);
+      onInteract("property_tour");
+    };
+    if (store.state.currentLocation === p.locationId) arrive();
+    else travel(p.locationId, arrive);
+  };
+
+  const buy = (p: PropertyDefinition) => {
+    // buyProperty spends the coins (store.spendCoins) and fires
+    // quests.onBuyProperty — the step type q_first_property / q_positano_life /
+    // q_santorini_life wait on
+    const res = buyProperty(p.id);
+    if (res.ok) store.toast(`You own ${p.name}!`, "#f4c95d");
+    else store.toast(res.reason, "#a08a70");
+    render();
+  };
+
+  const forSaleList = () => {
+    const forSale = PROPERTIES.filter((p) => p.price > 0 && !store.state.properties[p.id]?.owned);
+    if (!forSale.length) return null;
+    const ul = el("ul", { class: "olw-homes olw-homes--sale" });
+    for (const p of forSale) {
+      const { state, locked, affordable } = propertyStatus(p.id);
+      const actions = el("span", { class: "olw-home-actions" });
+      if (locked) {
+        const b = button(md, "After the wedding", "olw-btn olw-btn--ghost olw-btn--small olw-home-btn", () => undefined);
+        b.disabled = true;
+        actions.append(b);
+      } else {
+        actions.append(button(md, state.visited ? "Tour again" : "Tour", "olw-btn olw-btn--ghost olw-btn--small olw-home-btn", () => tour(p)));
+        if (!affordable) {
+          const b = button(md, `${p.price} coins`, "olw-btn olw-btn--small olw-home-btn", () => undefined);
+          b.disabled = true;
+          b.title = `Unable to afford: save ${p.price - store.state.coins} more coins`;
+          actions.append(b);
+        } else if (!state.visited) {
+          const b = button(md, "Tour first", "olw-btn olw-btn--small olw-home-btn", () => undefined);
+          b.disabled = true;
+          b.title = "Big decisions deserve a walk around.";
+          actions.append(b);
+        } else {
+          actions.append(button(md, `Buy · ${p.price}`, "olw-btn olw-btn--rose olw-btn--small olw-home-btn", () => buy(p)));
+        }
+      }
+      const note = locked ? "Plan this one together after the wedding." : !affordable ? `Unable to afford · ${p.price - store.state.coins} coins short` : null;
+      ul.append(
+        el("li", { class: `olw-home olw-home--sale${affordable && !locked ? "" : " olw-home--cant"}` }, [
+          el("span", { class: "olw-home-text" }, [
+            el("span", { class: "olw-home-name", text: p.name }),
+            el("span", { class: "olw-home-meta", text: `${p.location} · ${p.type} · ${p.bedrooms} bed` }),
+            el("span", { class: "olw-home-price", text: `${p.price} coins` }),
+            el("span", { class: "olw-home-desc", text: p.description }),
+            note ? el("span", { class: "olw-home-note", text: note }) : null,
+          ]),
+          actions,
+        ]),
+      );
+    }
+    return el("div", { class: "olw-homes-sale" }, [
+      el("h3", { class: "olw-homes-head", text: `For sale · you have ${store.state.coins} coins` }),
+      ul,
+    ]);
+  };
+
   const homes = () => {
     const owned = PROPERTIES.filter((p) => store.state.properties[p.id]?.owned);
+    const sale = forSaleList();
     if (!owned.length) {
       const quest = QUESTS.find((q) => q.id === "q_first_property");
-      return el("div", { class: "olw-homes-empty" }, [
-        el("p", { class: "olw-empty", text: "You don't own a home yet." }),
-        button(md, quest ? `Estate agent: ${quest.title}` : "See quests", "olw-btn olw-btn--ghost olw-btn--small", () => {
-          lastTab = "quests";
-          render();
-        }),
+      return el("div", {}, [
+        el("div", { class: "olw-homes-empty" }, [
+          el("p", { class: "olw-empty", text: "You don't own a home yet." }),
+          button(md, quest ? `Estate agent: ${quest.title}` : "See quests", "olw-btn olw-btn--ghost olw-btn--small", () => {
+            lastTab = "quests";
+            render();
+          }),
+        ]),
+        sale,
       ]);
     }
     const ul = el("ul", { class: "olw-homes" });
@@ -201,7 +283,7 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
         ]),
       );
     }
-    return el("div", {}, [el("p", { class: "olw-home-hint", text: "Your home is where you wake up and where the front door leads." }), ul]);
+    return el("div", {}, [el("p", { class: "olw-home-hint", text: "Your home is where you wake up and where the front door leads." }), ul, sale]);
   };
 
   const memories = () => {
@@ -301,6 +383,9 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
   });
   md.on(store, "inventory", () => {
     if (lastTab === "bag") render();
+  });
+  md.on(store, "coins", () => {
+    if (lastTab === "homes") render();
   });
   md.on(store, "relationship", () => {
     if (lastTab === "contacts" || lastTab === "stats") render();
