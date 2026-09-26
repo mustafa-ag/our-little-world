@@ -54,6 +54,7 @@ export const PROP_SIZES: Record<string, { w: number; h: number }> = {
   o_cat: { w: 16, h: 14 },
   o_note: { w: 12, h: 14 },
   o_postcard: { w: 16, h: 12 },
+  o_tigor: { w: 20, h: 16 },
   b_house_red: { w: 48, h: 56 },
   b_house_blue: { w: 48, h: 56 },
   b_house_purple: { w: 48, h: 56 },
