@@ -7,6 +7,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { WorldArtProfile } from "../world/artProfile";
 
 export const PALETTE = {
   cream: "#f0e2c6",
@@ -102,6 +103,83 @@ export const SLOT_STYLE: Record<string, { style: TexStyle | "flat"; hex: string;
   olw_rubber: { style: "flat", hex: "#34322f" },
   olw_flower: { style: "flat", hex: "#ffffff" },
 };
+
+// ---------------------------------------------------------------------------
+// Regional palette. `applyRegionPalette(profile)` swaps the wall / roof slot
+// colours (SLOT_STYLE, used by the hero GLB slot remap) and publishes the
+// active ground / road colours (ACTIVE_REGION). The Scotland profile maps
+// onto exactly the defaults below, so Edinburgh is unchanged.
+
+/** Wall slot colours per wall material (olw_stone / olw_stone_dark). */
+const WALL_HEX: Record<WorldArtProfile["wallMaterial"], { stone: string; dark: string }> = {
+  stone: { stone: PALETTE.stoneWarm, dark: PALETTE.greyStoneDark },
+  render_white: { stone: "#f1efe9", dark: "#cfcac0" },
+  render_cream: { stone: "#eadcc0", dark: "#c9b894" },
+  brick_london: { stone: "#a8664e", dark: "#7c4a3a" },
+  limestone: { stone: "#e3d6b8", dark: "#bfae8a" },
+  marble: { stone: "#eeeae4", dark: "#c8c2b8" },
+};
+
+/** Roof slot colours per roof style (olw_roof_tile / olw_slate). */
+const ROOF_HEX: Record<WorldArtProfile["roofStyle"], { tile: string; slate: string }> = {
+  slate: { tile: PALETTE.terracottaMuted, slate: PALETTE.slate },
+  terracotta: { tile: PALETTE.terracotta, slate: PALETTE.terracottaMuted },
+  flat_parapet: { tile: "#d8ccb6", slate: "#bcb3a4" },
+  lead_flat: { tile: "#8a8f94", slate: "#6f7479" },
+  glass: { tile: "#9fb8c6", slate: "#7f98a8" },
+};
+
+export interface RegionPalette {
+  ground: string;
+  path: string;
+  road: string;
+  sidewalk: string;
+  sand: string;
+  wall: string;
+  wallDark: string;
+  roofTile: string;
+  slate: string;
+  accent: string;
+}
+
+/** The palette of the region currently loaded (Scotland until a profile is applied). */
+export const ACTIVE_REGION: RegionPalette = {
+  ground: PALETTE.grass,
+  path: "#ada08b",
+  road: "#9d978e",
+  sidewalk: "#d2c6b1",
+  sand: "#e2cfa3",
+  wall: PALETTE.stoneWarm,
+  wallDark: PALETTE.greyStoneDark,
+  roofTile: PALETTE.terracottaMuted,
+  slate: PALETTE.slate,
+  accent: PALETTE.wood,
+};
+
+/**
+ * Swap the ground / road / wall / roof colours for a region. Affects slot
+ * materials created from now on (Materials caches by hex, so each region gets
+ * its own cached materials and switching back restores the originals).
+ */
+export function applyRegionPalette(profile: WorldArtProfile): RegionPalette {
+  const wall = WALL_HEX[profile.wallMaterial];
+  const roof = ROOF_HEX[profile.roofStyle];
+  ACTIVE_REGION.ground = profile.groundColor;
+  ACTIVE_REGION.path = profile.pathColor;
+  ACTIVE_REGION.road = profile.roadColor;
+  ACTIVE_REGION.sidewalk = profile.sidewalkColor;
+  ACTIVE_REGION.sand = profile.sandColor;
+  ACTIVE_REGION.wall = wall.stone;
+  ACTIVE_REGION.wallDark = wall.dark;
+  ACTIVE_REGION.roofTile = roof.tile;
+  ACTIVE_REGION.slate = roof.slate;
+  ACTIVE_REGION.accent = profile.accentColor;
+  SLOT_STYLE.olw_stone.hex = wall.stone;
+  SLOT_STYLE.olw_stone_dark.hex = wall.dark;
+  SLOT_STYLE.olw_roof_tile.hex = roof.tile;
+  SLOT_STYLE.olw_slate.hex = roof.slate;
+  return ACTIVE_REGION;
+}
 
 export class Materials {
   private mats = new Map<string, StandardMaterial>();

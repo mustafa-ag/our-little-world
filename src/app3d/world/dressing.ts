@@ -14,14 +14,15 @@ import { hash01 } from "../assets/kit/util";
 import { kitDoorX, presetVariant } from "../assets/kit/architecture";
 import type { BuildContext, BuiltWorld, PlaceMeta, PlacedBuilding } from "./worldBuilder";
 import { groundUnder, heroBuilding, isRoadTex, tileKey } from "./worldBuilder";
+import { SCOTLAND_PROFILE } from "./artProfile";
 
 const isTree = (k: string) => k.startsWith("tree") || k === "bush" || k.startsWith("bush-");
 
 const MAX_EXTRA_BUILDINGS = 120;
 const GREENS = ["#6b8a4e", "#7a9a56", "#5f8048", "#8aa262"];
 const PINES = ["#5f7f4a", "#557344", "#6a8a52"];
-/** dusty pink / cream / soft yellow / lavender / muted purple */
-const FLOWERS = ["#d9a3a3", "#f1e7d0", "#e3cf86", "#bfa8d6", "#9b7fb0"];
+/** Palm key (procedural, registered by kit/foliage.ts). */
+const PALM = "tree-palm";
 
 /** Street-side cottage presets (name, footprint width in tiles); each is one thin-instance batch. */
 const EXTRA_PRESETS: [string, number][] = [
@@ -44,6 +45,9 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   const { world, reserved, placer, buildings } = built;
   const seed = def.id.length * 17;
   const city = def.city;
+  const profile = ctx.profile ?? SCOTLAND_PROFILE;
+  /** flower colours of the region (Scotland: dusty pink / cream / soft yellow / lavender / muted purple) */
+  const FLOWERS = profile.flowerPalette;
 
   // ---------------------------------------------------------------- asset keys
   // (hero keys from the AssetManager when registered, procedural fallbacks otherwise)
@@ -70,9 +74,39 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     crate: key("crate", "crate"),
   };
   const isFallback = (k: keyof typeof K, want: string) => K[k] !== want;
-  // variants only the procedural fallbacks understand
-  const oakVariant = (i: number) => (isFallback("oakA", "tree-oak-a") ? `c=${GREENS[i % GREENS.length]}` : "");
+  // variants only the procedural fallbacks understand (a region foliage tint retints hero trees too)
+  const oakVariant = (i: number) => (profile.foliageTint ? `c=${profile.foliageTint}` : isFallback("oakA", "tree-oak-a") ? `c=${GREENS[i % GREENS.length]}` : "");
   const pineVariant = (i: number) => (isFallback("pine", "tree-pine") ? `c=${PINES[i % PINES.length]}` : "");
+
+  // ---- regional vegetation: primary (the "oak" slots) and secondary (the "pine" slots) trees
+  const palms = am.has(PALM);
+  /** key for a primary-tree slot that would have been `oakKey` in Scotland */
+  const primary = (oakKey: string) => {
+    switch (profile.treePrimary) {
+      case "palm":
+        return palms ? PALM : oakKey;
+      case "bare_urban":
+        return K.small;
+      default:
+        return oakKey; // broadleaf / mediterranean (tinted via oakVariant)
+    }
+  };
+  const primaryVariant = (k: string, i: number) => (k === PALM ? "" : oakVariant(i));
+  /** key + variant for a secondary-tree slot (Scotland: the pine) */
+  const secondary = (i: number): [string, string] => {
+    switch (profile.treeSecondary) {
+      case "pine":
+        return [K.pine, pineVariant(i)];
+      case "cypress":
+        return [am.has("tree-cypress") ? "tree-cypress" : K.pine, profile.foliageTint ? `c=${profile.foliageTint}` : ""];
+      case "olive":
+        return [K.small, `c=${profile.foliageTint ?? "#8c9c6c"}`];
+      default: {
+        const k = primary(i % 2 ? K.oakA : K.oakB);
+        return [k, primaryVariant(k, i)];
+      }
+    }
+  };
   const bushVariant = (flowers: boolean) => (isFallback("bushA", "bush-a") && flowers ? "flowers=1" : "");
   const barrelScale = isFallback("barrel", "barrel") ? 0.55 : 1;
   const smallScale = isFallback("small", "tree-small") ? 0.62 : 1;
@@ -104,6 +138,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     return true;
   };
   const thin = (k: string, variant: string, p: ThinPlacement, meta: PlaceMeta = {}) => {
+    // heather only where the region has it (elsewhere the same spot gets a grass tuft)
+    if (k === "heather" && !profile.hasHeather) k = "grass-tuft";
     if (k.startsWith("flower-cluster") || k === "heather") {
       // loose flowers only grow in soil or inside a front garden: on paving /
       // the street a lone stem reads as litter (paving gets beds and planters)
@@ -445,7 +481,7 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       const side = r > 0.5 ? 1 : -1;
       if (r > 0.25) at(b, K.planter, side * 0.85, front, 0, "", 0.85 + r * 0.2);
       if (b.kind !== "hero" && hash01(seed, b.tx, 2) > 0.6) at(b, hash01(seed, b.ty, 3) > 0.5 ? K.barrel : K.crate, -side * (hw - 0.55), front - 0.05, r * 0.6, "", (hash01(seed, b.ty, 3) > 0.5 ? barrelScale : 0.6) * (0.9 + r * 0.2));
-      if (b.kind !== "hero" && hash01(seed, b.tx, b.ty, 4) > 0.72) at(b, K.ivy, -side * (hw - 0.5), -hd + 0.1, 0, "", 0.8 + r * 0.4);
+      if (profile.hasIvy && b.kind !== "hero" && hash01(seed, b.tx, b.ty, 4) > 0.72) at(b, K.ivy, -side * (hw - 0.5), -hd + 0.1, 0, "", 0.8 + r * 0.4);
       if (b.kind === "cottage" && r > 0.45) {
         // a run of low fence along one side of the front
         const fside = r > 0.72 ? 1 : -1;
@@ -471,8 +507,9 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       at(b, K.planter, -hw - 0.35, front + 0.05, 0, "", 0.9);
       at(b, K.lamp, hw + 0.55, front - 1.1, 0, "", 1, true);
       at(b, K.bench, hw + 1.3, -hd + 0.5, Math.PI / 2, "", 1, true);
-      at(b, K.ivy, -hw + 0.45, -hd + 0.05, 0, "", 1.1);
-      at(b, K.oakB, -hw - 1.8, -hd - 0.2, 0.7, oakVariant(1), 1.05, true);
+      if (profile.hasIvy) at(b, K.ivy, -hw + 0.45, -hd + 0.05, 0, "", 1.1);
+      const cafeTree = primary(K.oakB);
+      at(b, cafeTree, -hw - 1.8, -hd - 0.2, 0.7, primaryVariant(cafeTree, 1), 1.05, true);
       at(b, K.bushA, -hw - 1.0, -hd + 0.4, 0.3, bushVariant(true), 0.8);
       // flower beds along the façade foot either side of the door
       for (const lx of [-1.25, 1.3]) {
@@ -530,8 +567,12 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       if (g) {
         if (r > 0.965 && ringFree(tx, ty, 1, 1)) {
           claim(tx, ty);
-          const pine = hash01(seed, tx, ty, 4) > 0.7;
-          thin(pine ? K.pine : i % 2 ? K.oakA : K.oakB, pine ? pineVariant(i) : oakVariant(i), { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 3) * 0.4 }, { solid: true, trunk: 0.2 });
+          // ~30% secondary trees (Scotland: pines), the odd palm where the region has them
+          const sec = hash01(seed, tx, ty, 4) > 0.7;
+          const palm = !sec && profile.hasPalms && palms && profile.treePrimary !== "palm" && hash01(seed, tx, ty, 10) > 0.6;
+          const pk = primary(i % 2 ? K.oakA : K.oakB);
+          const [k2, v2] = sec ? secondary(i) : palm ? [PALM, ""] : [pk, primaryVariant(pk, i)];
+          thin(k2, v2, { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 3) * 0.4 }, { solid: true, trunk: 0.2 });
         } else if (r > 0.94) {
           claim(tx, ty);
           thin(i % 2 ? K.bushA : K.bushB, bushVariant(hash01(seed, tx, ty, 5) > 0.6), { ...c, rotationY: rot, scale: 0.8 + hash01(seed, tx, ty, 6) * 0.4 }, { solid: true, trunk: 0.3 });
@@ -542,6 +583,12 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
         } else if (r > 0.83) {
           thin("grass-tuft", "", { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 9) * 0.6 });
         }
+      } else if (profile.hasSand && tex(tx, ty) === "t_sand") {
+        // desert / beach verges: the odd palm, never crowding
+        if (palms && profile.hasPalms && r > 0.985 && ringFree(tx, ty, 1, 1)) {
+          claim(tx, ty);
+          thin(PALM, "", { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 3) * 0.35 }, { solid: true, trunk: 0.2 });
+        }
       } else if (tex(tx, ty) === "t_pavement" || tex(tx, ty) === "t_plaza_stone" || tex(tx, ty) === "t_paving_light") {
         // plazas: planters and flowers, sparse, never blocking
         if (r > 0.985) thin(K.planter, "", { ...c, rotationY: rot });
@@ -550,7 +597,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
         // the odd tree / planter / bush inside the village so squares don't feel empty
         if (r > 0.988 && ringFree(tx, ty, 1, 1)) {
           claim(tx, ty);
-          thin(i % 2 ? K.oakA : K.oakB, oakVariant(i), { ...c, rotationY: rot, scale: 0.85 + hash01(seed, tx, ty, 3) * 0.3 }, { solid: true, trunk: 0.2 });
+          const pk = primary(i % 2 ? K.oakA : K.oakB);
+          thin(pk, primaryVariant(pk, i), { ...c, rotationY: rot, scale: 0.85 + hash01(seed, tx, ty, 3) * 0.3 }, { solid: true, trunk: 0.2 });
         } else if (r > 0.98 && sidewalkOk(tx, ty)) {
           claim(tx, ty);
           thin(K.planter, "", { ...c, rotationY: rot }, { solid: true });

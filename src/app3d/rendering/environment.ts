@@ -29,11 +29,12 @@ import type { WorldData } from "../../game/worldgen";
 import { Materials, PALETTE } from "./materials";
 import type { Lighting } from "./lighting";
 import { CURB_H } from "../world/scale";
+import { SCOTLAND_PROFILE, type WorldArtProfile } from "../world/artProfile";
 
 /** Paint family: what the splat paints. */
-type Paint = "grass" | "heather" | "moss" | "cobble" | "path" | "pavement" | "road" | "water";
+type Paint = "grass" | "heather" | "moss" | "sand" | "cobble" | "path" | "pavement" | "road" | "water";
 /** Grain family: which ground mesh / detail texture a tile belongs to. */
-type Grain = "grass" | "cobble" | "paved" | "road" | "water";
+type Grain = "grass" | "sand" | "cobble" | "paved" | "road" | "water";
 
 const TILE_PAINT: Record<string, Paint> = {
   t_grass: "grass",
@@ -41,7 +42,7 @@ const TILE_PAINT: Record<string, Paint> = {
   t_lawn: "grass",
   t_golf: "grass",
   t_snow: "heather", // heathery pale patches on the Edinburgh maps
-  t_sand: "grass",
+  t_sand: "grass", // "sand" when the art profile has sand (see paintOf)
   t_hedge: "moss",
   t_cobble: "cobble",
   t_plaza_stone: "cobble",
@@ -61,8 +62,12 @@ const TILE_PAINT: Record<string, Paint> = {
   t_water: "water",
 };
 
+/** Paint family of a ground texture key under an art profile. */
+const paintOf = (tex: string, profile: WorldArtProfile): Paint => (tex === "t_sand" && profile.hasSand ? "sand" : TILE_PAINT[tex] ?? "grass");
+
 const GRAIN_OF: Record<Paint, Grain> = {
   grass: "grass",
+  sand: "sand",
   heather: "grass",
   moss: "grass",
   // the street itself (t_path: the Royal Mile & lanes) is cobbled setts; the
@@ -79,7 +84,7 @@ const GRAIN_OF: Record<Paint, Grain> = {
 const isRaised = (p: Paint) => p === "cobble" || p === "pavement";
 const isRoadPaint = (p: Paint) => p === "path" || p === "road";
 
-const isSoft = (p: Paint) => p === "grass" || p === "heather" || p === "moss";
+const isSoft = (p: Paint) => p === "grass" || p === "heather" || p === "moss" || p === "sand";
 
 // ---- colours (linear 0..255 triples), desaturated & warm ----
 type RGB = [number, number, number];
@@ -87,11 +92,15 @@ const hex = (h: string): RGB => {
   const n = parseInt(h.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
-const C = {
-  grass: hex(PALETTE.grass),
-  grassLight: hex(PALETTE.grassLight),
-  olive: hex(PALETTE.olive),
-  mossDark: hex(PALETTE.mossDark),
+/** Splat colours for a region (the Scotland profile yields the original Edinburgh values). */
+const colours = (profile: WorldArtProfile) => ({
+  grass: hex(profile.groundColor),
+  grassLight: hex(profile.groundTones.light),
+  olive: hex(profile.groundTones.olive),
+  mossDark: hex(profile.groundTones.dark),
+  sand: hex(profile.sandColor),
+  sandLight: lighten(hex(profile.sandColor), 0.12),
+  sandDark: lighten(hex(profile.sandColor), -0.1),
   heather: hex("#a98f9f"),
   heatherDeep: hex("#8a7188"),
   heatherBloom: hex("#c49ab8"),
@@ -99,14 +108,20 @@ const C = {
   cobble: hex("#c2b49c"),
   cobbleDark: hex("#a49682"),
   stoneWarm: hex(PALETTE.stoneWarm),
-  path: hex("#ada08b"),
+  path: hex(profile.pathColor),
   kerb: hex("#e4d8bf"),
-  pavement: hex("#d2c6b1"),
-  road: hex("#9d978e"),
+  pavement: hex(profile.sidewalkColor),
+  road: hex(profile.roadColor),
   water: hex("#86aec0"),
   warmCloud: hex("#e8c890"),
   coolCloud: hex("#8a9aa0"),
-};
+});
+/** Mix toward white (t>0) or black (t<0). */
+function lighten(c: RGB, t: number): RGB {
+  const to = t < 0 ? 0 : 255;
+  const k = Math.abs(t);
+  return [c[0] + (to - c[0]) * k, c[1] + (to - c[1]) * k, c[2] + (to - c[2]) * k];
+}
 
 // ---- noise ----
 function hash(x: number, y: number, s: number) {
@@ -165,7 +180,8 @@ export interface Environment {
   dispose(): void;
 }
 
-export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighting | null, world: WorldData): Environment {
+export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighting | null, world: WorldData, profile: WorldArtProfile = SCOTLAND_PROFILE): Environment {
+  const C = colours(profile);
   const meshes: Mesh[] = [];
   const ownMats: StandardMaterial[] = [];
   const ownTex: Texture[] = [];
@@ -179,7 +195,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   for (let ty = 0; ty < H; ty++) {
     heights[ty] = [];
     for (let tx = 0; tx < W; tx++) {
-      const p = TILE_PAINT[world.ground[ty][tx]] ?? "grass";
+      const p = paintOf(world.ground[ty][tx], profile);
       paint[ty * W + tx] = p;
       heights[ty][tx] = p === "water" ? -0.12 : isRaised(p) ? CURB_H : 0;
     }
@@ -193,6 +209,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   const softI = indicator(isSoft);
   const heatherI = indicator((p) => p === "heather");
   const mossI = indicator((p) => p === "moss");
+  const grassI = indicator((p) => p === "grass" || p === "heather" || p === "moss");
   const at = (arr: Uint8Array, tx: number, ty: number) => arr[(ty < 0 ? 0 : ty >= H ? H - 1 : ty) * W + (tx < 0 ? 0 : tx >= W ? W - 1 : tx)];
   /** Bilinear field over tile centres of an indicator. */
   const field = (x: number, y: number, arr: Uint8Array) => {
@@ -309,7 +326,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
         // the warp only moves the soft<->hard edge; hard<->hard edges (kerb
         // lines between cobbles and pavement) stay straight like the grain
         let fam = paintAt(Math.floor(wp.x), Math.floor(wp.y));
-        const soft = fam === "grass" || fam === "heather" || fam === "moss";
+        const soft = isSoft(fam);
         const tx0 = Math.floor(x);
         const ty0 = Math.floor(y);
         const own = paintAt(tx0, ty0);
@@ -345,7 +362,19 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
         const fine = hash(pxi, py, 7) - 0.5;
         // grass-ness of the neighbourhood (0..1, 0.5 at the painted edge)
         const g = field(wp.x, wp.y, softI);
-        if (soft) {
+        if (fam === "sand") {
+          // sand: warm pale base, soft dune tone drift, wind ripples and grit
+          lerp3(c, C.sand, C.sandLight, smooth(0.3, 0.75, mid));
+          mixInto(c, C.sandDark, smooth(0.6, 0.9, F[4]) * 0.4);
+          const ripple = Math.sin(x * 2.4 + y * 0.9 + F[6] * 3) * 0.5 + 0.5;
+          c[0] += (ripple - 0.5) * 7;
+          c[1] += (ripple - 0.5) * 6;
+          c[2] += (ripple - 0.5) * 4;
+          if (hash(pxi, py, 39) > 0.93) mixInto(c, C.sandDark, 0.35);
+          // a thin fringe of lawn where the sand meets grass
+          const gr = field(wp.x, wp.y, grassI);
+          if (gr > 0.35) mixInto(c, C.grass, smooth(0.35, 0.7, gr) * 0.5);
+        } else if (soft) {
           lerp3(c, C.grass, C.grassLight, smooth(0.3, 0.75, mid));
           mixInto(c, C.olive, smooth(0.55, 0.85, F[4]) * 0.7);
           mixInto(c, C.mossDark, smooth(0.62, 0.9, F[5]) * 0.45);
@@ -449,12 +478,13 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   // (cached per scene: identical for every district)
   let grain = GRAIN_CACHE.get(scene);
   if (!grain || !grain.grass.getScene()) {
-    grain = { grass: grainTexture(scene, "grass"), cobble: grainTexture(scene, "cobble"), paved: grainTexture(scene, "paving") };
+    grain = { grass: grainTexture(scene, "grass"), sand: grainTexture(scene, "sand"), cobble: grainTexture(scene, "cobble"), paved: grainTexture(scene, "paving") };
     GRAIN_CACHE.set(scene, grain);
   }
   // tiles per texture repeat, rotation to break axis alignment
   const GRAIN_SETUP: Record<Exclude<Grain, "water" | "road">, { rep: number; ang: number; blend: number }> = {
     grass: { rep: 2.6, ang: 0.47, blend: 0.4 },
+    sand: { rep: 3.2, ang: 0.3, blend: 0.22 },
     cobble: { rep: 2.0, ang: 0, blend: 0.26 },
     paved: { rep: 2.2, ang: 0, blend: 0.42 },
   };
@@ -536,7 +566,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
       // rotated so courses never line up with the tile grid), modulated by the
       // baked macro map (uv1): wheel tracks, gutter grime, worn patches
       const mat = new StandardMaterial("ground:road", scene);
-      const setts = settTexture(scene);
+      const setts = profile.roadSurface === "setts" ? settTexture(scene) : asphaltTexture(scene, profile.roadColor);
       setts.coordinatesIndex = 1;
       setts.uScale = 0.5;
       setts.vScale = 0.5;
@@ -591,7 +621,7 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   // an endless meadow under everything so the horizon never shows the void
   const under = CreateGround("ground:under", { width: 600, height: 600, subdivisions: 1 }, scene);
   under.position.set(W / 2, -0.03, -H / 2);
-  under.material = mats.textured("grass", "#8a9c66", 0.5);
+  under.material = mats.textured(profile.hasSand ? "noise" : "grass", profile.underColor, 0.5);
   under.receiveShadows = true;
   under.isPickable = false;
   under.freezeWorldMatrix();
@@ -724,7 +754,7 @@ function grey(v: number, a = 1) {
   return `rgba(${c},${c},${c},${a})`;
 }
 
-const GRAIN_CACHE = new WeakMap<Scene, { grass: DynamicTexture; cobble: DynamicTexture; paved: DynamicTexture }>();
+const GRAIN_CACHE = new WeakMap<Scene, { grass: DynamicTexture; sand: DynamicTexture; cobble: DynamicTexture; paved: DynamicTexture }>();
 
 /** A CPU-backed 2D canvas (cheap getImageData / putImageData). */
 function cpuCanvas(w: number, h: number) {
@@ -735,14 +765,14 @@ function cpuCanvas(w: number, h: number) {
   return cv;
 }
 
-function grainTexture(scene: Scene, kind: "grass" | "cobble" | "paving"): DynamicTexture {
+function grainTexture(scene: Scene, kind: "grass" | "sand" | "cobble" | "paving"): DynamicTexture {
   const s = 256;
   const t = new DynamicTexture(`ground:grain:${kind}`, cpuCanvas(s, s), scene, true);
   t.wrapU = Texture.WRAP_ADDRESSMODE;
   t.wrapV = Texture.WRAP_ADDRESSMODE;
   t.anisotropicFilteringLevel = 8;
   const ctx = t.getContext() as CanvasRenderingContext2D;
-  gseed = kind === "grass" ? 5 : kind === "cobble" ? 17 : 29;
+  gseed = kind === "grass" ? 5 : kind === "cobble" ? 17 : kind === "sand" ? 41 : 29;
   // draw every shape at the 9 wrapped offsets so the tile is seamless
   const wrapped = (x: number, y: number, r: number, fn: (x: number, y: number) => void) => {
     for (let ox = -1; ox <= 1; ox++)
@@ -787,6 +817,23 @@ function grainTexture(scene: Scene, kind: "grass" | "cobble" | "paving"): Dynami
         ctx.quadraticCurveTo(X + dx * 0.3, Y - len * 0.6, X + dx, Y - len);
         ctx.stroke();
       });
+    }
+  } else if (kind === "sand") {
+    // fine grit + soft wind ripples
+    ctx.fillStyle = grey(128);
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 18; i++) {
+      const y = (i / 18) * s + grnd() * 4;
+      ctx.strokeStyle = grey(grnd() > 0.5 ? 140 : 116, 0.45);
+      ctx.lineWidth = 2 + grnd() * 2;
+      ctx.beginPath();
+      for (let x = 0; x <= s; x += 16) ctx.lineTo(x, y + Math.sin((x / s) * Math.PI * 4 + i) * 3);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 2200; i++) {
+      const v = 128 + (grnd() - 0.5) * 60;
+      ctx.fillStyle = grey(v, 0.5);
+      ctx.fillRect(grnd() * s, grnd() * s, 1.2, 1.2);
     }
   } else if (kind === "cobble") {
     // soft mortar, squarish worn setts in offset rows: low contrast so the
@@ -973,6 +1020,44 @@ function settTexture(scene: Scene): DynamicTexture {
   }
   t.update(true);
   SETT_CACHE.set(scene, t);
+  return t;
+}
+
+/** Road surface for non-sett regions: painted asphalt (fine aggregate, soft patches, faint lane dashes). */
+const ASPHALT_CACHE = new WeakMap<Scene, Map<string, DynamicTexture>>();
+
+function asphaltTexture(scene: Scene, base: string): DynamicTexture {
+  let bySc = ASPHALT_CACHE.get(scene);
+  if (!bySc) ASPHALT_CACHE.set(scene, (bySc = new Map()));
+  const cached = bySc.get(base);
+  if (cached && cached.getScene()) return cached;
+  const s = 512;
+  const t = new DynamicTexture(`ground:asphalt:${base}`, cpuCanvas(s, s), scene, true);
+  t.wrapU = Texture.WRAP_ADDRESSMODE;
+  t.wrapV = Texture.WRAP_ADDRESSMODE;
+  t.anisotropicFilteringLevel = 8;
+  const ctx = t.getContext() as CanvasRenderingContext2D;
+  rseed = 11;
+  const b = hex(base);
+  const tone = (k: number) => `rgb(${Math.round(b[0] * k)},${Math.round(b[1] * k)},${Math.round(b[2] * k)})`;
+  ctx.fillStyle = tone(0.78);
+  ctx.fillRect(0, 0, s, s);
+  // soft tonal patches (repairs, wear)
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = tone(0.7 + rrnd() * 0.18);
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.ellipse(rrnd() * s, rrnd() * s, 20 + rrnd() * 60, 12 + rrnd() * 40, rrnd() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // aggregate speckle
+  for (let i = 0; i < 6000; i++) {
+    ctx.fillStyle = rrnd() > 0.5 ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.12)";
+    ctx.fillRect(rrnd() * s, rrnd() * s, 1.5, 1.5);
+  }
+  t.update(true);
+  bySc.set(base, t);
   return t;
 }
 

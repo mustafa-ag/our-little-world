@@ -16,6 +16,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { OccluderInfo } from "../rendering/occlusion";
 import { CAFE_TABLE_H, CAR_H, FENCE_H, LAMP_H, POSTBOX_H, SIGNPOST_H, WALL_H } from "./scale";
 import { installValidator } from "./validate";
+import { SCOTLAND_PROFILE, type LandmarkMesh, type WorldArtProfile } from "./artProfile";
 
 export type { OccluderInfo };
 
@@ -173,6 +174,38 @@ export interface BuildContext {
   env: Environment;
   def: LocationDef;
   world: WorldData;
+  /** Regional art direction (defaults to Scotland). */
+  profile?: WorldArtProfile;
+}
+
+/** Landmark props whose 2D texture already names a specific silhouette. */
+const LANDMARK_BY_TEX: Record<string, Exclude<LandmarkMesh, "none">> = {
+  lm_castle: "castle",
+  lm_bigben: "big_ben",
+  lm_westminster: "big_ben",
+  lm_burj: "burj",
+  lm_mosque: "mosque",
+  lm_colosseum: "colosseum",
+};
+
+/**
+ * Which landmark mesh an `lm_*` prop becomes: the silhouette its texture
+ * names, else the region's `profile.landmarkMesh`, else a generic civic
+ * building ("none"). Returns the AssetManager key + variant.
+ */
+export function landmarkPiece(tex: string, profile: WorldArtProfile, w: number, d: number): { key: string; variant: string } {
+  const kind: LandmarkMesh = LANDMARK_BY_TEX[tex] ?? profile.landmarkMesh;
+  switch (kind) {
+    case "castle":
+      return { key: "castle", variant: `w=${w},d=${d}` };
+    case "mosque":
+    case "big_ben":
+    case "burj":
+    case "colosseum":
+      return { key: "landmark", variant: `t=${kind},w=${w},d=${d}` };
+    default:
+      return { key: "landmark", variant: `t=civic,w=${w},d=${d}` };
+  }
 }
 
 export interface PlacedBuilding {
@@ -245,6 +278,7 @@ export function reservedTiles(world: WorldData, locationId: string) {
 export function buildWorld(ctx: BuildContext): BuiltWorld {
   const world = cloneWorld(ctx.world);
   const { collider, env, def } = ctx;
+  const profile = ctx.profile ?? SCOTLAND_PROFILE;
   const reserved = reservedTiles(world, def.id);
   const placer = new Placer();
   const instances: PieceInstance[] = [];
@@ -346,7 +380,11 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
     const y = groundUnder(env, bx0, by0, bx1 - bx0 + 1, by1 - by0 + 1);
     const id = `bld:${p.tex}:${left(tx)},${ty}`;
     // static buildings go through the thin-instance batcher (one draw per variant + reliable shadows)
-    if (isCastle) placer.add("castle", `w=${w},d=${d}`, { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
+    if (isCastle) {
+      // landmark silhouette chosen by the regional profile (Edinburgh: the castle)
+      const lm = landmarkPiece(p.tex, profile, w, d);
+      placer.add(lm.key, lm.variant, { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
+    }
     else if (hero) placer.add(hero.key, "", { x: cx + hx, y, z: cz + hero.dz, scale: hero.scale }, { id, solid: true, occluder: true, src: "worldgen-hero", fp: { w: bx1 - bx0 + 1, d: by1 - by0 + 1 } });
     else placer.add("building", buildingVariant(spec!), { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
     const name = world.labels.find((l) => Math.abs(l.x - p.x) < 1 && !l.big)?.text;
