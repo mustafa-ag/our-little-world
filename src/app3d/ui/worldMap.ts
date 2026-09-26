@@ -17,6 +17,8 @@ import { QUESTS } from "../../game/data/quests";
 import { CITIES, LOCATIONS, districtsOf, type LocationDef } from "../../game/data/locations";
 import { PORTED_LOCATIONS } from "../systems/worldController";
 import { mapFeed } from "../systems/mapFeed";
+import { current as currentCompanion } from "../../game/systems/companions";
+import { NPCS } from "../../game/data/npcs";
 import { button, el, type Disposer } from "./dom";
 
 /** Display order + labels for the city groups. */
@@ -76,6 +78,30 @@ export function accessOf(loc: LocationDef): Access {
 /** The grouped, scrollable world map list. `travel(id)` is called for unlocked destinations. */
 export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLElement {
   const wrap = el("div", { class: "olw-world" });
+  /** Destination awaiting "Travel with [Name]?" confirmation (only with a companion along). */
+  let confirming: string | undefined;
+  const travelButton = (loc: LocationDef): HTMLElement => {
+    const buddy = currentCompanion();
+    const name = buddy ? (NPCS.find((n) => n.id === buddy)?.name ?? buddy) : undefined;
+    if (!name) return button(md, "Travel here", "olw-btn olw-btn--rose olw-world-go", () => travel(loc.id));
+    if (confirming !== loc.id) {
+      return button(md, `Travel here with ${name}`, "olw-btn olw-btn--rose olw-world-go", () => {
+        confirming = loc.id;
+        render();
+      });
+    }
+    return el("div", { class: "olw-world-confirm", attrs: { role: "group", "aria-label": `Travel with ${name}?` } }, [
+      el("span", { class: "olw-world-confirm-text", text: `Travel with ${name}?` }),
+      button(md, "Let's go", "olw-btn olw-btn--rose olw-btn--small", () => {
+        confirming = undefined;
+        travel(loc.id);
+      }),
+      button(md, "Not now", "olw-btn olw-btn--ghost olw-btn--small", () => {
+        confirming = undefined;
+        render();
+      }),
+    ]);
+  };
   const render = () => {
     const here = hereId();
     const hereCity = LOCATIONS[here]?.cityId;
@@ -92,10 +118,7 @@ export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLEl
         const chip =
           a.state === "here" ? "You're here" : a.state === "open" ? (a.quest ? "Quest" : "Unlocked") : "Locked";
         const detail = a.state === "locked" ? a.reason : a.state === "open" && a.quest ? `Quest: ${a.quest}` : loc.subtitle;
-        const go =
-          a.state === "open"
-            ? button(md, "Travel here", "olw-btn olw-btn--rose olw-world-go", () => travel(loc.id))
-            : null;
+        const go = a.state === "open" ? travelButton(loc) : null;
         return el("li", { class: `olw-world-loc olw-world-loc--${a.state}` }, [
           el("div", { class: "olw-world-loc-head" }, [
             el("span", { class: "olw-world-loc-name", text: loc.name }),
@@ -120,5 +143,9 @@ export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLEl
   render();
   md.on(store, "questUpdated", render);
   md.on(mapFeed, "location", render);
+  md.on(store, "companion", () => {
+    confirming = undefined;
+    render();
+  });
   return wrap;
 }

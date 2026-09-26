@@ -308,6 +308,21 @@
   flex: none;
 }
 
+/* world map: "Travel with [Name]?" (worldMap.ts, companion along) */
+.olw-world-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.olw-world-confirm-text {
+  flex: 1 1 100%;
+  font-weight: 800;
+  color: var(--olw-ink);
+}
+
 .olw-rest {
   min-height: 36px;
   padding: 6px 16px;

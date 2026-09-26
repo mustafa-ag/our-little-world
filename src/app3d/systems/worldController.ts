@@ -9,13 +9,15 @@ import { secretsFor } from "../../game/data/secrets";
 import { store } from "../../game/systems/store";
 import { controls, uiEvents } from "../../game/systems/controls";
 import * as quests from "../../game/systems/quests";
-import { getNpcsAtLocation, npcWorldPos, linesFor, homeComment } from "../../game/systems/life";
+import * as companions from "../../game/systems/companions";
+import { npcInLocation, getNpcsAtLocation, npcWorldPos, linesFor, homeComment } from "../../game/systems/life";
 import { tryDeliverMessages } from "../../game/systems/phone";
 import { pickEncounter, applyEncounter } from "../../game/systems/encounters";
 import { outfitReaction } from "../../game/systems/outfitReactions";
 import type { WorldData, ZoneSpec } from "../../game/worldgen";
 import { pxToXZ, pxToUnits, xzToPx } from "../world/coords";
 import type { InteractionSystem } from "./interaction";
+import { WorldEvents3D } from "./worldEvents3d";
 
 export type PickupKind = "flower_pink" | "flower_yellow" | "heart" | "coins" | "note" | "postcard" | "cat" | "star" | "card";
 
@@ -32,7 +34,12 @@ export interface WorldViewHooks {
   spawnJeep(x: number, z: number): void;
   petalBurst(x: number, z: number): void;
   requestTravel(to: string, from: Cardinal): void;
-  playerPos(): { x: number; z: number };
+  playerPos(): { x: number; z: number; yaw: number };
+  /** Companion (Phase 6B): an NpcView that trails the player (game3d moves it each frame). */
+  spawnCompanion(def: NpcDef, x: number, z: number): void;
+  removeCompanion(): void;
+  companionPos(): { x: number; z: number } | null;
+  companionFacePlayer(): void;
   setTimeout(ms: number, fn: () => void): void;
 }
 
@@ -75,11 +82,16 @@ const HEIST_HOUSE_TARGETS = ["house_lock", "enter_fadwa_house", "reach_fadwa_roo
 /** Moomoo's romance / wedding chapters (RomanceScene + WeddingScene). */
 const ROMANCE_TARGETS = ["romance_us", "romance_future", "romance_proposal", "wedding_planning_one", "wedding_planning_two", "desert_wedding"];
 
+/** Interaction id of the travelling companion's talk zone. */
+const COMPANION_INTERACT = "companion";
+
 /** Same shape as ui/storyScenes.ts StoryRequest (kept local: systems never import the UI). */
 type StoryRequest = { scene: "romance" | "wedding" | "tigor" | "heist" | "pirate" | "questActivity"; activity?: string };
 
 export class WorldController {
   private lastInteract = 0;
+  /** Ambient world events (Phase 6A): rolled once per arrival. */
+  private worldEvents: WorldEvents3D | null = null;
   private transitioning = false;
   /** Inside a house interior: exterior rules, prompts and time ticks pause. */
   private indoors = false;
@@ -137,15 +149,20 @@ export class WorldController {
     this.placeHeistHouse();
     this.placeSecrets();
     this.placeJeep();
+    this.spawnCompanion();
 
     // "openMap" is handled by the UI layer (map panel); the world only emits it.
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("uiClosed", this.onUiClosed, this);
+    uiEvents.on("companionChanged", this.refreshCompanion, this);
     // schedules move people between districts as the clock advances
     store.on("time", this.refreshNpcs, this);
 
     quests.onVisit(def.id);
     quests.onVisit(def.cityId);
+    // WorldScene: arriving somewhere with a companion counts as driving with them
+    const buddy = companions.current();
+    if (buddy) quests.onDriveWith(buddy);
     tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
     uiEvents.emit("locationTitle", def.name, def.subtitle);
     // WorldScene.create: resume the heist's pirate idea, and sail when London is the destination
@@ -171,11 +188,31 @@ export class WorldController {
       if (this.transitioning) return;
       this.maybeEncounter();
     });
+    // WorldScene.create: the day's ambient world event rolls shortly after arriving
+    this.worldEvents = new WorldEvents3D({
+      locationId: def.id,
+      worldW: this.world.w * TILE,
+      worldH: this.world.h * TILE,
+      interaction: this.interaction,
+      hooks: this.hooks,
+      canRun: () => !this.transitioning && !this.indoors,
+    });
+    this.worldEvents.start();
+    // after onVisit: arriving at Yas is q_yas_showdown's first step
+    this.placeYasShowdown();
+    // WorldScene.maybeCompanionComment: one remark per companion + place per day
+    this.hooks.setTimeout(1250, () => {
+      if (this.transitioning || controls.locked) return;
+      this.maybeCompanionComment();
+    });
   }
 
   dispose() {
+    this.worldEvents?.dispose();
+    this.worldEvents = null;
     uiEvents.off("action", this.tryInteract, this);
     uiEvents.off("uiClosed", this.onUiClosed, this);
+    uiEvents.off("companionChanged", this.refreshCompanion, this);
     store.off("time", this.refreshNpcs, this);
     this.interaction.clear();
   }
@@ -278,6 +315,59 @@ export class WorldController {
     });
   }
 
+  // ------------------------------------------------------------ companion
+  /**
+   * WorldScene.spawnActiveCompanion: the companion appears beside Juju and
+   * trails her. Someone already standing here (their own spot) isn't doubled.
+   */
+  private spawnCompanion() {
+    const id = companions.current();
+    if (!id || this.interaction.get(`npc:${id}`)) return;
+    const def = NPCS.find((n) => n.id === id);
+    if (!def) return;
+    const p = this.hooks.playerPos();
+    // ~1.5 units behind-left of where Juju faces
+    const x = p.x - Math.sin(p.yaw) * 1.2 - Math.cos(p.yaw) * 0.8;
+    const z = p.z - Math.cos(p.yaw) * 1.2 + Math.sin(p.yaw) * 0.8;
+    this.hooks.spawnCompanion(def, x, z);
+    this.interaction.add({
+      id: COMPANION_INTERACT,
+      x,
+      z,
+      radius: pxToUnits(26),
+      prompt: `Talk to ${def.name}`,
+      kind: "npc",
+      trigger: () => this.talkToCompanion(def),
+    });
+  }
+
+  private talkToCompanion(def: NpcDef) {
+    this.hooks.companionFacePlayer();
+    store.state.lastPassenger = def.id;
+    store.save();
+    if (def.id === "moomoo" && this.startRomanceIfReady()) return;
+    quests.onInteract(`companion_${def.id}`);
+    const styleNote = outfitReaction(def.id);
+    const res = quests.onTalk(def.id, [...linesFor(def.id, def.dialogue), ...(styleNote ? [styleNote] : [])]);
+    uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
+  }
+
+  /** Invited / dropped off (phone People tab, HUD chip) while this location is loaded. */
+  private refreshCompanion() {
+    this.interaction.remove(COMPANION_INTERACT);
+    this.hooks.removeCompanion();
+    if (this.transitioning) return;
+    this.spawnCompanion();
+  }
+
+  private maybeCompanionComment() {
+    const id = companions.current();
+    if (!id || !this.interaction.get(COMPANION_INTERACT)) return;
+    const def = NPCS.find((n) => n.id === id);
+    const line = def ? companions.companionComment(id, this.locationId) : null;
+    if (def && line) uiEvents.emit("dialogue", def.name, [line], { npcId: def.id });
+  }
+
   /** WorldScene: "FADWA'S HOUSE · EXTREMELY NORMAL ENTRANCE" in the West End while the heist is on. */
   private placeHeistHouse() {
     const heistOn = () => HEIST_HOUSE_TARGETS.includes(quests.currentStep("q_family_jewel_heist")?.target ?? "");
@@ -334,6 +424,60 @@ export class WorldController {
         store.addItem("baba_card");
         quests.onInteract("take_baba_card");
         uiEvents.emit("dialogue", "Juju", ["No reason. Completely normal mall errand incoming."]);
+      },
+    });
+  }
+
+  /**
+   * q_yas_showdown: WorldScene opens the sibling tap race when Juju talks to
+   * Jad / Shan at Yas. In 3D a hotspot by Baba's spot starts it whenever the
+   * quest waits on its "sibling_showdown" minigame step.
+   */
+  private placeYasShowdown() {
+    const ready = () => this.locationId === "abudhabi_yas" && quests.currentStep("q_yas_showdown")?.target === "sibling_showdown" && !store.hasDaily("yas_sibling_showdown");
+    if (!ready()) return;
+    const baba = NPCS.find((npc) => npc.id === "baba");
+    if (!baba) return;
+    const pos = npcWorldPos(baba);
+    const p = pxToXZ(pos.x - 30, pos.y + 18);
+    this.hooks.spawnPickup("q:yas_showdown", "star", p.x, p.z);
+    this.interaction.add({
+      id: "q:yas_showdown",
+      x: p.x,
+      z: p.z,
+      radius: pxToUnits(28),
+      prompt: "Challenge your brother to a showdown",
+      kind: "quest",
+      enabled: ready,
+      trigger: () => this.openSiblingShowdown(),
+    });
+  }
+
+  /** WorldScene.openSiblingShowdown: best-of-3 family tap race. */
+  private openSiblingShowdown() {
+    const here = npcInLocation(this.locationId).find((n) => n.id === "jad" || n.id === "shan");
+    const sibling = here ?? NPCS.find((n) => n.id === (store.state.currentDay % 2 ? "shan" : "jad"));
+    const name = sibling?.name ?? "Jad";
+    uiEvents.emit("prompt", null);
+    uiEvents.emit("minigame", {
+      kind: "showdown",
+      title: `Juju vs ${name}`,
+      hint: "First to the target wins the Family Chaos Championship.",
+      taps: 16,
+      skipLabel: "Let them win",
+      onDone: (jujuWon?: boolean) => {
+        // the step reads "Win or play": a loss still counts (WorldScene parity)
+        store.setDaily("yas_sibling_showdown");
+        quests.onMinigame("sibling_showdown");
+        if (sibling) store.addRelationship(sibling.id, 2);
+        this.hooks.removePickup("q:yas_showdown");
+        this.interaction.remove("q:yas_showdown");
+        const p = this.hooks.playerPos();
+        this.hooks.petalBurst(p.x, p.z);
+        uiEvents.emit("dialogue", "Family chaos", [
+          jujuWon ? `Juju wins. ${name} has to wear the blue-and-white cap with the pink heart.` : `${name} wins. Juju wears the blue-and-white cap with the pink heart.`,
+          "The bragging rights will definitely last until tomorrow.",
+        ]);
       },
     });
   }
@@ -633,6 +777,13 @@ export class WorldController {
     this.now = nowMs;
     if (this.transitioning || this.indoors) return;
     const p = this.hooks.playerPos();
+    // the companion's talk zone rides along with them
+    const buddy = this.interaction.get(COMPANION_INTERACT);
+    const bp = buddy ? this.hooks.companionPos() : null;
+    if (buddy && bp) {
+      buddy.x = bp.x;
+      buddy.z = bp.z;
+    }
     this.interaction.update(p.x, p.z);
     if (!controls.locked) {
       this.timeAcc += dtMs;

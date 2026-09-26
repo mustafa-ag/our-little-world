@@ -50,6 +50,8 @@ interface Loaded {
   player: PlayerController;
   playerView: PlayerView;
   npcs: Map<string, NpcView>;
+  /** The travelling companion (Phase 6B), trailing the player. */
+  companion: NpcView | null;
   pickups: Map<string, PickupView>;
   labels: Label[];
   cat: PickupView | null;
@@ -293,7 +295,17 @@ export class Game3D {
           const t = window.setTimeout(() => void this.loadLocation(to, { from }), 120);
           loaded.timers.push(t);
         },
-        playerPos: () => ({ x: player.state.x, z: player.state.z }),
+        playerPos: () => ({ x: player.state.x, z: player.state.z, yaw: player.state.yaw }),
+        spawnCompanion: (ndef: NpcDef, x, z) => {
+          loaded.companion?.dispose();
+          loaded.companion = new NpcView(this.kit, ndef, x, z, groundY(x, z));
+        },
+        removeCompanion: () => {
+          loaded.companion?.dispose();
+          loaded.companion = null;
+        },
+        companionPos: () => (loaded.companion ? { x: loaded.companion.x, z: loaded.companion.z } : null),
+        companionFacePlayer: () => loaded.companion?.faceTowards(player.state.x, player.state.z),
         setTimeout: (ms, fn) => {
           const t = window.setTimeout(() => {
             if (this.loaded === loaded) fn();
@@ -311,6 +323,7 @@ export class Game3D {
         player,
         playerView,
         npcs: new Map(),
+        companion: null,
         pickups: new Map(),
         labels: [],
         cat: null,
@@ -504,6 +517,7 @@ export class Game3D {
     l.player.detach();
     l.playerView.dispose();
     for (const n of l.npcs.values()) n.dispose();
+    l.companion?.dispose();
     for (const p of l.pickups.values()) p.dispose();
     for (const lab of l.labels) lab.dispose();
     l.cat?.dispose();
@@ -559,6 +573,15 @@ export class Game3D {
     l.backdrop.update(cam);
     this.occlusion.update(dt, cam, this.playerPos.set(s.x, gy, s.z));
     for (const n of l.npcs.values()) n.update(dt, s.x, s.z);
+    if (l.companion) {
+      const env = l.env;
+      l.companion.follow(
+        dt,
+        s,
+        (x, z) => env.heightAt(Math.floor(x), Math.floor(-z)),
+        (x, z, dx, dz) => l.collider.move(x, z, dx, dz, 0.3),
+      );
+    }
     for (const p of l.pickups.values()) p.update(dt);
     if (l.cat) {
       const c = l.cat.root.position;
