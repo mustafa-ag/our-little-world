@@ -231,8 +231,11 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       const a = p.points[i];
       const b = p.points[i + 1];
       const half = Math.floor(p.width / 2);
-      if (a.y === b.y) segs.push({ horizontal: true, at: a.y, from: Math.min(a.x, b.x), to: Math.max(a.x, b.x), half });
-      else if (a.x === b.x) segs.push({ horizontal: false, at: a.x, from: Math.min(a.y, b.y), to: Math.max(a.y, b.y), half });
+      // curved promenades have fractional points: snap to tiles (the dressing
+      // indexes the collision grid with these)
+      const r = Math.round;
+      if (a.y === b.y) segs.push({ horizontal: true, at: r(a.y), from: r(Math.min(a.x, b.x)), to: r(Math.max(a.x, b.x)), half });
+      else if (a.x === b.x) segs.push({ horizontal: false, at: r(a.x), from: r(Math.min(a.y, b.y)), to: r(Math.max(a.y, b.y)), half });
     }
   };
   for (const p of (city as CityDef | undefined)?.paths ?? []) addPath(p);

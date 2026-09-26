@@ -12,6 +12,7 @@ import * as quests from "../../game/systems/quests";
 import { npcInLocation, npcWorldPos, linesFor, homeComment } from "../../game/systems/life";
 import { tryDeliverMessages } from "../../game/systems/phone";
 import { pickEncounter, applyEncounter } from "../../game/systems/encounters";
+import { outfitReaction } from "../../game/systems/outfitReactions";
 import type { WorldData, ZoneSpec } from "../../game/worldgen";
 import { pxToXZ, pxToUnits, xzToPx } from "../world/coords";
 import type { InteractionSystem } from "./interaction";
@@ -50,6 +51,8 @@ export const TIME_TICK_MS = 90_000;
 export class WorldController {
   private lastInteract = 0;
   private transitioning = false;
+  /** Inside a house interior: exterior rules, prompts and time ticks pause. */
+  private indoors = false;
   private timeAcc = 0;
   private arriveAt = 0;
   private now = 0;
@@ -179,7 +182,9 @@ export class WorldController {
           store.save();
           const lines = linesFor(def.id, def.dialogue);
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
-          const res = quests.onTalk(def.id, extra ? [...lines, extra] : lines);
+          // once-a-day outfit acknowledgement (WorldScene's styleNote)
+          const styleNote = outfitReaction(def.id);
+          const res = quests.onTalk(def.id, [...lines, ...(styleNote ? [styleNote] : []), ...(extra ? [extra] : [])]);
           uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
           if (res.acceptedQuest?.id === "q_family_jewel_heist") this.startPirateIdea();
         },
@@ -475,7 +480,7 @@ export class WorldController {
     uiEvents.emit("dialogue", "ADNOC HQ", [`${title}. The petrol station is for refuelling; this is where the big ideas happen.`]);
   }
 
-  /** HouseScene isn't ported: hand it to the UI layer, or toast. */
+  /** Hand off to the UI layer (ui/house.ts fades into the 3D interior); toast if nothing listens. */
   private enterHouse(title: string, interior: "cream" | "brown") {
     if (!uiEvents.emit("enterHouse", { title, interior })) store.toast(`${title} — interiors aren't in 3D yet`, "#f4a6c0");
   }
@@ -534,8 +539,15 @@ export class WorldController {
     this.lastInteract = performance.now();
   }
 
+  /** Entering / leaving a house interior (the exterior stays loaded underneath). */
+  setIndoors(on: boolean) {
+    this.indoors = on;
+    this.interaction.setSuspended(on);
+    if (!on) this.lastInteract = performance.now();
+  }
+
   private tryInteract() {
-    if (controls.locked || this.transitioning) return;
+    if (controls.locked || this.transitioning || this.indoors) return;
     const t = performance.now();
     if (t - this.lastInteract < 250) return;
     if (this.interaction.currentPrompt) {
@@ -546,7 +558,7 @@ export class WorldController {
 
   update(dtMs: number, nowMs: number) {
     this.now = nowMs;
-    if (this.transitioning) return;
+    if (this.transitioning || this.indoors) return;
     const p = this.hooks.playerPos();
     this.interaction.update(p.x, p.z);
     if (!controls.locked) {

@@ -3057,3 +3057,191 @@
   border-color: #fff;
   box-shadow: 0 0 0 1px #ff3d7f;
 }
+
+/* house interior: wardrobe, homes, rest, photo wall ------------------------------ */
+.olw-wardrobe-modal,
+.olw-photos-modal {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.olw-ward-count,
+.olw-home-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--olw-ink-soft);
+}
+
+.olw-ward-grid,
+.olw-homes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.olw-ward-item,
+.olw-home {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--olw-brown-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.olw-ward-item--on,
+.olw-home--on {
+  border-color: var(--olw-rose);
+  background: #fdecef;
+  box-shadow: inset 0 0 0 1.5px var(--olw-pink);
+}
+
+.olw-ward-item--locked {
+  opacity: 0.6;
+}
+
+.olw-ward-swatch {
+  flex: none;
+  width: 34px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1.5px solid var(--olw-brown-soft);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+
+.olw-ward-swatch--emoji {
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  background: var(--olw-cream-2);
+}
+
+.olw-ward-text,
+.olw-home-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.olw-ward-name,
+.olw-home-name {
+  font-weight: 800;
+}
+
+.olw-ward-status,
+.olw-home-meta {
+  font-size: 13px;
+  color: var(--olw-ink-soft);
+}
+
+.olw-ward-item--on .olw-ward-status {
+  color: var(--olw-rose-deep);
+  font-weight: 800;
+}
+
+.olw-ward-btn,
+.olw-home-btn {
+  flex: none;
+}
+
+.olw-home-badge {
+  flex: none;
+  font-weight: 800;
+  color: var(--olw-rose-deep);
+}
+
+.olw-homes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.olw-rest-modal {
+  width: min(380px, calc(100vw - 32px));
+}
+
+.olw-rest-line {
+  margin: 0 0 12px;
+  font-family: var(--olw-serif);
+  font-style: italic;
+  color: var(--olw-ink-soft);
+}
+
+.olw-photos-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-family: var(--olw-serif);
+  font-style: italic;
+  font-size: 18px;
+}
+
+.olw-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.olw-photo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 8px 10px;
+  background: #fffaf0;
+  border-radius: 4px;
+  box-shadow: var(--olw-shadow);
+}
+
+.olw-photo:nth-child(odd) {
+  transform: rotate(-1.2deg);
+}
+
+.olw-photo:nth-child(even) {
+  transform: rotate(1deg);
+}
+
+.olw-photo-pic {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  font-size: 28px;
+  color: #fff;
+  background: linear-gradient(160deg, #a8cbe8, #d49a9a);
+}
+
+.olw-photo--hearts .olw-photo-pic {
+  background: linear-gradient(160deg, #f4a6c0, #e46d94);
+}
+
+.olw-photo--city .olw-photo-pic {
+  background: linear-gradient(160deg, #8ecae6, #66707c);
+}
+
+.olw-photo--chaos .olw-photo-pic {
+  background: linear-gradient(160deg, #e6c96a, #b59bd1);
+}
+
+.olw-photo-title {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.olw-photo-caption,
+.olw-photo-meta {
+  font-size: 12px;
+  color: var(--olw-ink-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .olw-photo {
+    transform: none !important;
+  }
+}

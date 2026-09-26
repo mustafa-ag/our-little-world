@@ -1,4 +1,5 @@
-// Phone panel — trimmed DOM port of ui/PhoneOverlay.ts (texts, quests, bag, memories, world map).
+// Phone panel — trimmed DOM port of ui/PhoneOverlay.ts (texts, quests, bag,
+// wardrobe, homes, memories, world map).
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { markRead } from "../../game/systems/phone";
@@ -8,14 +9,19 @@ import { NPCS } from "../../game/data/npcs";
 import { ITEMS } from "../../game/data/items";
 import { MEMORIES } from "../../game/data/memories";
 import { CITIES } from "../../game/data/locations";
+import { PROPERTIES } from "../../game/data/properties";
+import { setPrimaryHome } from "../../game/systems/properties";
 import { button, el, type Disposer } from "./dom";
 import { worldMapView } from "./worldMap";
+import { wardrobeView } from "./wardrobe";
 
-type Tab = "messages" | "quests" | "bag" | "memories" | "map";
+type Tab = "messages" | "quests" | "bag" | "wardrobe" | "homes" | "memories" | "map";
 const TABS: { id: Tab; label: string }[] = [
   { id: "messages", label: "Texts" },
   { id: "quests", label: "Quests" },
   { id: "bag", label: "Bag" },
+  { id: "wardrobe", label: "Wardrobe" },
+  { id: "homes", label: "Homes" },
   { id: "memories", label: "Memories" },
   { id: "map", label: "Map" },
 ];
@@ -127,6 +133,42 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
     return ul;
   };
 
+  // Homes: owned properties; the chosen one is where Juju lives (primary +
+  // active home, HouseScene / systems/properties.setPrimaryHome)
+  const homes = () => {
+    const owned = PROPERTIES.filter((p) => store.state.properties[p.id]?.owned);
+    if (!owned.length) {
+      const quest = QUESTS.find((q) => q.id === "q_first_property");
+      return el("div", { class: "olw-homes-empty" }, [
+        el("p", { class: "olw-empty", text: "You don't own a home yet." }),
+        button(md, quest ? `Estate agent: ${quest.title}` : "See quests", "olw-btn olw-btn--ghost olw-btn--small", () => {
+          lastTab = "quests";
+          render();
+        }),
+      ]);
+    }
+    const ul = el("ul", { class: "olw-homes" });
+    for (const p of owned) {
+      const home = store.state.primaryHomeId === p.id;
+      const set = home
+        ? el("span", { class: "olw-home-badge", text: "Home ♡" })
+        : button(md, "Live here", "olw-btn olw-btn--rose olw-btn--small olw-home-btn", () => {
+            if (setPrimaryHome(p.id)) store.toast(`${p.name} is home now`, "#f4a6c0");
+            render();
+          });
+      ul.append(
+        el("li", { class: `olw-home${home ? " olw-home--on" : ""}` }, [
+          el("span", { class: "olw-home-text" }, [
+            el("span", { class: "olw-home-name", text: p.name }),
+            el("span", { class: "olw-home-meta", text: `${p.location} · ${p.type} · ${p.bedrooms} bed` }),
+          ]),
+          set,
+        ]),
+      );
+    }
+    return el("div", {}, [el("p", { class: "olw-home-hint", text: "Your home is where you wake up and where the front door leads." }), ul]);
+  };
+
   const memories = () => {
     const wrap = el("div", { class: "olw-memories" });
     for (const city of CITIES) {
@@ -163,21 +205,18 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
       }),
     ]);
 
+  let tabD: Disposer | null = null;
   const render = () => {
     for (const [id, b] of tabBtns) {
       b.classList.toggle("olw-tab--on", id === lastTab);
       b.setAttribute("aria-selected", `${id === lastTab}`);
     }
-    const view =
-      lastTab === "messages"
-        ? messages()
-        : lastTab === "quests"
-          ? questList()
-          : lastTab === "bag"
-            ? bag()
-            : lastTab === "memories"
-              ? memories()
-              : map();
+    // the wardrobe listens to store events: scope them to the tab being shown
+    tabD?.dispose();
+    tabD = md.child();
+    const scoped = tabD;
+    const views: Record<Tab, () => Node> = { messages, quests: questList, bag, wardrobe: () => wardrobeView(scoped), homes, memories, map };
+    const view = views[lastTab]();
     pane.replaceChildren(view);
   };
 

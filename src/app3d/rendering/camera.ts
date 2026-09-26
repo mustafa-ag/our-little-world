@@ -39,6 +39,10 @@ export interface FollowCamera {
   setDistance(d: number, snap?: boolean): void;
   /** Override composition numbers (debug / screenshots); returns the active tuning. */
   tune(t: Partial<CameraTuning>): CameraTuning;
+  /** Drop every tune() override (back to the device's default composition). */
+  clearTune(): void;
+  /** Current target follow distance (wheel / pinch / setDistance). */
+  getDistance(): number;
   /** The player point the camera frames (feet), for occlusion tests. */
   readonly focus: Vector3;
   update(dt: number): void;
@@ -141,6 +145,13 @@ export function createFollowCamera(scene: Scene, canvas: HTMLCanvasElement, isMo
       override = { ...override, ...t };
       place();
       return tuningFor(scene.getEngine().getAspectRatio(camera) < 0.9);
+    },
+    clearTune() {
+      override = {};
+      place();
+    },
+    getDistance() {
+      return targetDistance;
     },
     update(dt) {
       if (dt <= 0) return;

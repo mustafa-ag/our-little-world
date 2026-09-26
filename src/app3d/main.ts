@@ -54,6 +54,18 @@ function boot() {
     );
   });
 
+  // house interior (ui/house.ts fades around these; `done` reports the outcome)
+  uiEvents.on("interiorEnter", (opts: { title: string; interior?: "cream" | "brown" }, done?: (ok: boolean) => void) => {
+    let ok = false;
+    try {
+      ok = started && game.enterInterior(opts);
+    } catch (err) {
+      console.error("interior failed", err);
+    }
+    done?.(ok);
+  });
+  uiEvents.on("interiorExit", (done?: (ok: boolean) => void) => done?.(game.exitInterior()));
+
   if (import.meta.env.DEV) {
     const w = window as unknown as Record<string, unknown>;
     w.__game = game;

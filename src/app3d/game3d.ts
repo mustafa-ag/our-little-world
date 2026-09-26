@@ -36,6 +36,8 @@ import { PlayerView } from "./entities/PlayerView";
 import { NpcView } from "./entities/NpcView";
 import { PickupView, petalBurst } from "./entities/Pickup";
 import { createLabel, type Label } from "./entities/Label";
+import { InteriorScene, type InteriorStyle } from "./scenes/interiorScene";
+import { uiEvents } from "../game/systems/controls";
 
 interface Loaded {
   id: string;
@@ -71,6 +73,17 @@ export interface LoadOptions {
 
 export const DEFAULT_LOCATION = "edinburgh_oldtown";
 
+/** Closer, higher framing for the small interior room (see rendering/camera.ts). */
+const INDOOR_CAMERA = { elev: 50, lookY: 0.6, lookAhead: 0.9, lead: 0.4 };
+const INDOOR_DISTANCE = 8;
+
+interface Indoors {
+  scene: InteriorScene;
+  player: PlayerController;
+  /** Exterior follow distance to restore on the way out. */
+  distance: number;
+}
+
 export class Game3D {
   host: RenderHost;
   mats: Materials;
@@ -90,6 +103,8 @@ export class Game3D {
   private stopUpdate: (() => void) | null = null;
   /** Last time (ms) the player position went out to the map feed. */
   private feedAt = 0;
+  /** The house interior, while the player is inside (the exterior stays loaded). */
+  private indoors: Indoors | null = null;
 
   constructor(root: HTMLElement) {
     this.host = createRenderHost(root);
@@ -329,7 +344,77 @@ export class Game3D {
     return this.loaded?.id === id;
   }
 
+  get isIndoors() {
+    return this.indoors !== null;
+  }
+
+  /**
+   * Enter the house interior (HouseScene port): builds the procedural room far
+   * from the map, moves Juju + the camera in and pauses the exterior rules.
+   * The UI fades around this call. Returns false when there's no live world.
+   */
+  enterInterior(opts: { title: string; interior?: InteriorStyle }): boolean {
+    const l = this.loaded;
+    if (!l || l.setupPending || this.indoors || this.loading) return false;
+    const propertyId = store.state.primaryHomeId ?? "starter_yas";
+    const scene = new InteriorScene(this.host.scene, {
+      title: opts.title,
+      interior: opts.interior ?? "cream",
+      propertyId,
+      windowHex: l.profile.skyHorizonColor,
+      night: store.state.timeOfDay === "night" || store.state.timeOfDay === "evening",
+      shadows: !this.host.isMobile,
+    });
+    if ((opts.interior ?? "cream") === "cream") {
+      // HouseScene: entering a home makes it the active one
+      store.state.activeHomeId = propertyId;
+      store.save();
+    }
+    l.controller.setIndoors(true);
+    l.player.detach();
+    const player = new PlayerController(scene.collider, scene.spawn.x, scene.spawn.z);
+    player.state.yaw = 0; // facing into the room
+    player.attach();
+    scene.addShadowCasters(l.playerView.rig.root.getChildMeshes());
+    this.indoors = { scene, player, distance: this.camera.getDistance() };
+    // Juju is lit by the shared hemi/sun: keep her in soft daylight indoors
+    this.lighting.apply("afternoon", true);
+    this.camera.tune(INDOOR_CAMERA);
+    this.camera.setDistance(INDOOR_DISTANCE, true);
+    this.camera.setTarget(scene.spawn.x, scene.spawn.z, true);
+    l.playerView.update(0, player.state, 0);
+    return true;
+  }
+
+  /** Leave the interior: back to where Juju stood outside the door. */
+  exitInterior(): boolean {
+    const ind = this.indoors;
+    if (!ind) return false;
+    this.indoors = null;
+    ind.player.detach();
+    ind.scene.dispose();
+    this.camera.clearTune();
+    this.camera.setDistance(ind.distance, true);
+    this.lighting.apply(store.state.timeOfDay, true);
+    const l = this.loaded;
+    if (l) {
+      const s = l.player.state;
+      s.vx = 0;
+      s.vz = 0;
+      s.yaw = Math.PI; // stepping out toward the camera
+      l.player.attach();
+      l.controller.setIndoors(false);
+      this.camera.setTarget(s.x, s.z, true);
+      this.lighting.follow(s.x, s.z);
+      l.playerView.update(0, s, l.env.heightAt(Math.floor(s.x), Math.floor(-s.z)));
+    }
+    uiEvents.emit("interiorClosed");
+    return true;
+  }
+
   unload() {
+    // travelling from inside a house: drop the interior first
+    if (this.indoors) this.exitInterior();
     const l = this.loaded;
     if (!l) return;
     this.loaded = null;
@@ -359,6 +444,18 @@ export class Game3D {
       return;
     }
     const dtMs = dt * 1000;
+    if (this.indoors) {
+      const ind = this.indoors;
+      ind.player.update(dt);
+      const s = ind.player.state;
+      l.playerView.update(dt, s, 0);
+      ind.scene.update(s.x, s.z);
+      this.camera.setTarget(s.x, s.z);
+      this.camera.update(dt);
+      this.sky.update(dt, this.camera.camera.position);
+      if (l.effects.length) l.effects = l.effects.filter((fx) => !fx(dt));
+      return;
+    }
     l.player.update(dt);
     const s = l.player.state;
     const gy = l.env.heightAt(Math.floor(s.x), Math.floor(-s.z));

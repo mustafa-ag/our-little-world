@@ -24,18 +24,22 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
   );
   ctx.layer.append(hud);
 
-  // ---- Rest / sleep (HouseScene's bed isn't ported, so the HUD offers it) ----
+  // ---- Rest / sleep ----
   // Mirrors HouseScene.sleep(): +1 heart, new day at morning, wake-up texts, save.
+  // Outdoors the HUD offers it in the evening; at home the bed is the canonical
+  // place (ui/house.ts calls sleep({ fromBed: true }) any time of day).
   const fade = d.node(el("div", { class: "olw-sleep-fade", attrs: { "aria-hidden": "true" } }));
   ctx.layer.append(fade);
   let sleeping = false;
-  const canRest = () => {
+  const canRest = (fromBed = false) => {
     const t = store.state.timeOfDay;
-    return ctx.started && !sleeping && !ctx.anyModal() && !store.isQuestReplay && (t === "evening" || t === "night");
+    if (!ctx.started || sleeping || ctx.anyModal() || store.isQuestReplay) return false;
+    return fromBed || (!ctx.indoors && (t === "evening" || t === "night"));
   };
   const refreshRest = () => rest.classList.toggle("olw-hidden", !canRest());
-  const sleep = () => {
-    if (!canRest()) return;
+  const sleep = (opts: { fromBed?: boolean } = {}) => {
+    const fromBed = !!opts.fromBed;
+    if (!canRest(fromBed)) return;
     sleeping = true;
     refreshRest();
     ctx.lock();
@@ -53,7 +57,10 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
           sleeping = false;
           ctx.unlockIfIdle();
           store.toast("A cozy new day together", "#ff8fae");
-          uiEvents.emit("dialogue", "Home", ["You sleep. The world keeps your things exactly where you left them.", store.clockLabel()]);
+          uiEvents.emit("dialogue", "Home", [
+            fromBed ? "You sleep. The house keeps your things exactly where you left them." : "You sleep. The world keeps your things exactly where you left them.",
+            store.clockLabel(),
+          ]);
           refreshRest();
         }, ms);
       }, ms ? 500 : 0);
@@ -127,5 +134,5 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
     d.timeout(() => h.remove(), 800);
   });
 
-  return { refreshAll, el: hud };
+  return { refreshAll, el: hud, sleep };
 }

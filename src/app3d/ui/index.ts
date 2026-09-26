@@ -16,6 +16,7 @@ import { mountButtons } from "./buttons";
 import { mountModals } from "./modals";
 import { MINIGAME_KEYS } from "./minigames";
 import { mountMinimap } from "./minimap";
+import { mountHouse } from "./house";
 
 const FONT_HREF =
   "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Nunito:wght@500;700;800&display=swap";
@@ -59,6 +60,7 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
   const modals = mountModals(ctx);
   hud.el.append(mountMinimap(ctx, modals.openLocalMap));
   mountButtons(ctx, modals.openPhone);
+  mountHouse(ctx, modals.host, hud.sleep);
   const dialogue = mountDialogue(ctx, (npcId) => {
     if (npcId) modals.openGift(npcId);
   });

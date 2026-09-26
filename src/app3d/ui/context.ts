@@ -3,7 +3,7 @@ import { EventEmitter } from "../../core/events";
 import { controls, uiEvents } from "../../game/systems/controls";
 import type { Disposer } from "./dom";
 
-export type ModalKind = "shop" | "phone" | "map" | "localMap" | "minigame" | "gift";
+export type ModalKind = "shop" | "phone" | "map" | "localMap" | "minigame" | "gift" | "wardrobe" | "rest" | "photoWall";
 
 export class UIContext {
   /** Internal bus: "change" fires whenever open/closed/started state flips. */
@@ -11,6 +11,8 @@ export class UIContext {
   started = false;
   dialogueOpen = false;
   modal: ModalKind | null = null;
+  /** Inside a house interior (the bed replaces the HUD Rest button). */
+  indoors = false;
   touch: boolean;
 
   constructor(
