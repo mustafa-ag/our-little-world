@@ -46,7 +46,7 @@ const NO_GROUND_CHECK = new Set(["lamp-glow", "ivy-card", "flower-bed", "grass-t
 /** Small decorative pieces that may overlap anything. */
 const SOFT = new Set(["lamp-glow", "ivy-card", "flower-bed", "grass-tuft", "flower-cluster", "flower-cluster-a", "flower-cluster-b", "flower-cluster-c", "heather", "curb", "drain", "manhole"]);
 
-const isBuilding = (r: PlacedRecord) => r.key === "building" || r.key === "castle" || r.key.includes("hero");
+const isBuilding = (r: PlacedRecord) => r.key === "building" || r.key === "castle" || r.key === "landmark" || r.key.includes("hero");
 
 export function validateWorld(built: BuiltWorld, ctx: BuildContext, opts: ValidateOptions = {}): ValidateResult {
   const { env, collider } = ctx;

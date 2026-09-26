@@ -1023,7 +1023,7 @@ function settTexture(scene: Scene): DynamicTexture {
   return t;
 }
 
-/** Road surface for non-sett regions: painted asphalt (fine aggregate, soft patches, faint lane dashes). */
+/** Road surface for non-sett regions: painted asphalt (fine aggregate, soft repair patches). */
 const ASPHALT_CACHE = new WeakMap<Scene, Map<string, DynamicTexture>>();
 
 function asphaltTexture(scene: Scene, base: string): DynamicTexture {

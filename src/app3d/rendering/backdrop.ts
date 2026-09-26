@@ -22,6 +22,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Atmosphere } from "./lighting";
 import { meshFromArrays, unlitMaterial } from "./sky";
+import type { BackdropStyle } from "../world/artProfile";
 
 export interface BackdropOptions {
   /** Map size in tiles (x east, -z south). */
@@ -30,6 +31,11 @@ export interface BackdropOptions {
   /** Draw the castle-on-its-rock silhouette in the skyline. */
   castle?: boolean;
   seed?: number;
+  /**
+   * Regional panorama (from the art profile). "edinburgh" (default) is the
+   * hand-built Old Town skyline; the others are simple placeholder horizons.
+   */
+  style?: BackdropStyle;
 }
 
 export interface Backdrop {
@@ -224,9 +230,75 @@ function skyline(seed: number, castle: boolean): [number, number][] {
   return pts;
 }
 
+/** Generic block skyline (towers / terraces), optionally with a clock tower. */
+function cityBlocks(seed: number, o: { minH: number; maxH: number; minW: number; maxW: number; towerChance: number; towerH: number; centreBoost: number; clockTowerX?: number }): [number, number][] {
+  const pts: [number, number][] = [];
+  let x = -HALF;
+  let i = 0;
+  pts.push([x, 2]);
+  while (x < HALF) {
+    const r = hash(i, seed);
+    const r2 = hash(i, seed + 3);
+    if (o.clockTowerX !== undefined && Math.abs(x - o.clockTowerX) < 8) {
+      // a Big-Ben-like clock tower with a spire
+      const b = o.minH + 2;
+      pts.push([x, b], [x, 26], [x - 0.6, 26], [x - 0.6, 29], [x + 2, 36], [x + 4.6, 29], [x + 4, 29], [x + 4, 26], [x + 4, b]);
+      x += 4;
+      i++;
+      continue;
+    }
+    const centre = Math.max(0, 1 - Math.abs(x) / 200) * o.centreBoost;
+    const w = o.minW + r * (o.maxW - o.minW);
+    const h = r > 1 - o.towerChance ? o.maxH + r2 * o.towerH + centre : o.minH + r2 * (o.maxH - o.minH) + centre * 0.4;
+    pts.push([x, h], [x + w, h]);
+    x += w;
+    i++;
+  }
+  return pts;
+}
+
+/** Placeholder layer recipes for the non-Edinburgh backdrop styles. */
+function regionalLayers(style: Exclude<BackdropStyle, "edinburgh">, seed: number) {
+  type L = { name: string; pts: [number, number][]; base: string; haze: number; dist: number; follow: number };
+  const out: L[] = [];
+  switch (style) {
+    case "uae_skyline":
+      out.push({ name: "bdFar", pts: sample((x) => 3 + fbm(x / 120, seed) * 5, 10), base: "#c9b48e", haze: 0.7, dist: 400, follow: 0.93 });
+      out.push({ name: "bdTown", pts: cityBlocks(seed, { minH: 4, maxH: 14, minW: 6, maxW: 14, towerChance: 0.28, towerH: 26, centreBoost: 10 }), base: "#8e9aa6", haze: 0.42, dist: 280, follow: 0.82 });
+      out.push({ name: "bdTrees", pts: sample((x) => 1.5 + fbm(x / 14, seed + 9, 3) * 3 + (hash(Math.floor(x / 9), seed) > 0.8 ? 4 : 0), 3), base: "#b09a72", haze: 0.3, dist: 185, follow: 0.72 });
+      break;
+    case "london":
+      out.push({ name: "bdFar", pts: sample((x) => 6 + fbm(x / 80, seed) * 8, 8), base: "#7f8a96", haze: 0.62, dist: 400, follow: 0.93 });
+      out.push({ name: "bdTown", pts: cityBlocks(seed, { minH: 5, maxH: 11, minW: 5, maxW: 12, towerChance: 0.08, towerH: 12, centreBoost: 3, clockTowerX: -90 }), base: "#7a7672", haze: 0.36, dist: 260, follow: 0.8 });
+      // the river: a flat low band in front of the town
+      out.push({ name: "bdRiver", pts: sample(() => 0.8, 40), base: "#6f8594", haze: 0.3, dist: 205, follow: 0.76 });
+      out.push({ name: "bdTrees", pts: sample((x) => 2 + fbm(x / 9, seed + 9, 3) * 5, 2.5), base: "#56704a", haze: 0.26, dist: 185, follow: 0.72 });
+      break;
+    case "coastal":
+      out.push({ name: "bdFar", pts: sample((x) => 4 + fbm(x / 60, seed) * 16 * Math.max(0, Math.sin(x / 160 + 0.8)), 8), base: "#8a9aa2", haze: 0.66, dist: 400, follow: 0.93 });
+      out.push({ name: "bdSea", pts: sample(() => 1.2, 40), base: "#4f8fb8", haze: 0.3, dist: 260, follow: 0.85 });
+      out.push({ name: "bdTrees", pts: sample((x) => 1 + fbm(x / 12, seed + 9, 3) * 3, 3), base: "#b8a47e", haze: 0.26, dist: 190, follow: 0.74 });
+      break;
+    case "hills":
+      out.push({ name: "bdFar", pts: sample((x) => 14 + fbm(x / 70, seed) * 22, 8), base: "#a4957a", haze: 0.6, dist: 400, follow: 0.93 });
+      out.push({ name: "bdHills", pts: sample((x) => 8 + fbm(x / 40, seed + 5) * 14, 5), base: "#b8a584", haze: 0.42, dist: 320, follow: 0.88 });
+      out.push({ name: "bdTown", pts: cityBlocks(seed, { minH: 5, maxH: 9, minW: 3, maxW: 7, towerChance: 0.04, towerH: 6, centreBoost: 2 }), base: "#cdbf9f", haze: 0.34, dist: 250, follow: 0.8 });
+      out.push({ name: "bdTrees", pts: sample((x) => 2 + fbm(x / 9, seed + 9, 3) * 4, 2.5), base: "#6f7a4c", haze: 0.26, dist: 185, follow: 0.72 });
+      break;
+    default:
+      // city_generic
+      out.push({ name: "bdFar", pts: sample((x) => 12 + fbm(x / 70, seed) * 18, 8), base: "#7488a0", haze: 0.62, dist: 400, follow: 0.93 });
+      out.push({ name: "bdHills", pts: sample((x) => 6 + fbm(x / 45, seed + 5) * 10, 5), base: "#6d8a66", haze: 0.44, dist: 330, follow: 0.88 });
+      out.push({ name: "bdTown", pts: cityBlocks(seed, { minH: 5, maxH: 12, minW: 5, maxW: 11, towerChance: 0.1, towerH: 14, centreBoost: 4 }), base: "#7d7a80", haze: 0.34, dist: 250, follow: 0.8 });
+      out.push({ name: "bdTrees", pts: sample((x) => 2 + fbm(x / 9, seed + 9, 3) * 6, 2.5), base: "#56704a", haze: 0.26, dist: 185, follow: 0.72 });
+  }
+  return out;
+}
+
 export function createBackdrop(scene: Scene, opts: BackdropOptions): Backdrop {
   const seed = opts.seed ?? 7;
   const layers: Layer[] = [];
+  const style = opts.style ?? "edinburgh";
   const add = (mesh: Mesh, base: string, haze: number, dist: number, follow: number, mist = false) => {
     const mat = unlitMaterial(scene, `${mesh.name}Mat`);
     if (mist) {
@@ -240,6 +312,10 @@ export function createBackdrop(scene: Scene, opts: BackdropOptions): Backdrop {
     layers.push({ mesh, mat, base: Color3.FromHexString(base), haze, dist, follow, mist });
   };
 
+  if (style !== "edinburgh") {
+    for (const l of regionalLayers(style, seed)) add(ribbon(scene, l.name, l.pts, 1, 0.94), l.base, l.haze, l.dist, l.follow);
+    add(ribbon(scene, "bdMist1", sample(() => 8, 40), 1, 1, true), "#ffffff", 1, 245, 0.8, true);
+  } else {
   // 1. far ridges (Highlands / Pentlands, blue and soft)
   add(
     ribbon(
@@ -284,6 +360,7 @@ export function createBackdrop(scene: Scene, opts: BackdropOptions): Backdrop {
   // mist ribbons in front of the town and the near fringe
   add(ribbon(scene, "bdMist1", sample(() => 10, 40), 1, 1, true), "#ffffff", 1, 245, 0.8, true);
   add(ribbon(scene, "bdMist2", sample(() => 5, 40), 1, 1, true), "#ffffff", 1, 180, 0.72, true);
+  }
 
   // anchor: the map's north edge (z = 0) and its centre x
   const anchorX = opts.mapW / 2;

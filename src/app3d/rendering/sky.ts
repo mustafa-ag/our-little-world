@@ -21,7 +21,23 @@ export interface Sky {
   setAtmosphere(a: Atmosphere): void;
   /** Per frame: follow the camera, drift the clouds. */
   update(dt: number, cam: Vector3): void;
+  /**
+   * Regional tint (from the art profile): pulls the dome's horizon / zenith
+   * and the scene fog toward the region's colours by `strength` (0 = the
+   * time-of-day presets untouched, as in Scotland). Applied on the next
+   * setAtmosphere (and immediately if one was already received).
+   */
+  setRegion(region: SkyRegion | null): void;
   dispose(): void;
+}
+
+export interface SkyRegion {
+  horizon: string;
+  zenith: string;
+  fog: string;
+  fogDensity: number;
+  /** 0..1 */
+  strength: number;
 }
 
 export const SKY_RADIUS = 470;
@@ -125,6 +141,21 @@ export function createSky(scene: Scene): Sky {
   const c = new Color3();
   let glowDir = new Vector3(-1, 0, 0);
   let atmo: Atmosphere | null = null;
+  let region: { horizon: Color3; zenith: Color3; fog: Color3; fogDensity: number; strength: number } | null = null;
+  const rh = new Color3();
+  const rz = new Color3();
+  /** the preset fog as the lighting last pushed it (before any regional blend) */
+  const baseFog = { color: new Color3(), density: 0, known: false };
+  const applyFog = (a: Atmosphere) => {
+    if (!baseFog.known) return;
+    if (!region) {
+      scene.fogColor = baseFog.color.clone();
+      scene.fogDensity = baseFog.density;
+      return;
+    }
+    scene.fogColor = Color3.Lerp(baseFog.color, region.fog.multiply(a.light), region.strength);
+    scene.fogDensity = baseFog.density + (region.fogDensity - baseFog.density) * region.strength;
+  };
 
   const recolourDome = (a: Atmosphere) => {
     // the glow sits where the sun is: opposite the light's travel direction
@@ -136,7 +167,12 @@ export function createSky(scene: Scene): Sky {
       // horizon band is tight, the zenith colour takes over by ~35 deg
       const t = Math.max(0, Math.min(1, (y + 0.02) / 0.5));
       const k = Math.pow(t, 0.55);
-      Color3.LerpToRef(a.horizon, a.zenith, k, c);
+      if (region) {
+        // regional sky: blend the preset toward the region, keeping its time-of-day mood
+        Color3.LerpToRef(a.horizon, region.horizon.multiply(a.light), region.strength, rh);
+        Color3.LerpToRef(a.zenith, region.zenith.multiply(a.light), region.strength, rz);
+        Color3.LerpToRef(rh, rz, k, c);
+      } else Color3.LerpToRef(a.horizon, a.zenith, k, c);
       // below the horizon: melt into the ground haze
       if (y < 0) Color3.LerpToRef(c, a.haze, Math.min(1, -y * 8), c);
       // warm sun glow around the sun's azimuth, strongest low in the sky
@@ -156,6 +192,11 @@ export function createSky(scene: Scene): Sky {
     setAtmosphere(a) {
       atmo = a;
       recolourDome(a);
+      // the lighting pushes the preset fog just before notifying: remember it, then blend
+      baseFog.color.copyFrom(scene.fogColor);
+      baseFog.density = scene.fogDensity;
+      baseFog.known = true;
+      if (region) applyFog(a);
       cloudMat.emissiveColor = a.cloudLit.clone();
       moon.setEnabled(a.night > 0.6);
     },
@@ -176,6 +217,13 @@ export function createSky(scene: Scene): Sky {
       cloud.thinInstanceBufferUpdated("matrix");
       if (moon.isEnabled()) moon.position.set(cam.x + 120, cam.y + 55, cam.z + 360);
       void atmo;
+    },
+    setRegion(r) {
+      region = r && r.strength > 0 ? { horizon: Color3.FromHexString(r.horizon), zenith: Color3.FromHexString(r.zenith), fog: Color3.FromHexString(r.fog), fogDensity: r.fogDensity, strength: Math.min(1, r.strength) } : null;
+      if (atmo) {
+        recolourDome(atmo);
+        applyFog(atmo);
+      }
     },
     dispose() {
       dome.dispose();

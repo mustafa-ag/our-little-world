@@ -164,6 +164,46 @@ function buildCypress(ctx: HeroCtx): Mesh {
   return heroMerge("tree-cypress", parts);
 }
 
+// ---------------------------------------------------------------- palm (procedural)
+
+/**
+ * Date palm: a gently leaning ringed trunk (stacked tapering segments) and a
+ * crown of drooping fronds. Vertex-coloured on shared flat materials.
+ */
+function buildPalm(k: KitContext): Mesh {
+  const s = k.scene;
+  const bark = k.mats.textured("bark", "#9a7b58", 1.5);
+  const leaf = k.mats.flat("#ffffff");
+  const parts: Mesh[] = [];
+  const segs = 7;
+  const h = 3.6;
+  let x = 0;
+  for (let i = 0; i < segs; i++) {
+    const t = i / segs;
+    const seg = kitCyl(s, 0.26 - t * 0.08, 0.3 - t * 0.08, h / segs + 0.02, bark, x, (i * h) / segs, 0, 8);
+    parts.push(seg);
+    x += 0.035 + t * 0.03; // lean
+  }
+  const top = h;
+  const fronds = 9;
+  for (let i = 0; i < fronds; i++) {
+    const a = (i / fronds) * Math.PI * 2;
+    const len = 1.5 + (i % 3) * 0.2;
+    const f = box(s, 0.34, 0.04, len, leaf, 0, 0, 0);
+    tintVertices(f, i % 2 ? "#5f8a3e" : "#6f9a48");
+    // pivot at the crown: shift the frond out along its length, droop and spin
+    f.position.set(x + Math.sin(a) * len * 0.45, top + 0.05 - 0.28, Math.cos(a) * len * 0.45);
+    f.rotation.set(0.45, a, 0);
+    parts.push(f);
+  }
+  const heart = blob(s, 0.5, leaf, x, top, 0, 0.8, 6);
+  tintVertices(heart, "#557a36");
+  parts.push(heart);
+  // bark segments carry no vertex colour: paint them white so the texture shows
+  for (const p of parts.slice(0, segs)) tintVertices(p, "#ffffff");
+  return merge("tree-palm", parts);
+}
+
 // ---------------------------------------------------------------- flower bed / heather / grass (procedural)
 
 /**
@@ -323,6 +363,8 @@ export function registerFoliage(am: AssetManager) {
   am.registerHero("bush-b");
   am.registerHero("ivy-card");
   am.registerHero("tree-cypress", heroFactory(buildCypress));
+  // regional: a date palm (procedural only), used when the art profile has palms
+  am.register("tree-palm", buildPalm, { shadow: true });
   // flower clusters (Blender GLB + procedural twin); `c=#hex` pulls the petals toward a colour
   for (const key of FLOWER_CLUSTER_KEYS) {
     const fallback: PieceFactory = heroFactory(buildFlowerCluster(key));

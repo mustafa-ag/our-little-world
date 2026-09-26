@@ -15,7 +15,8 @@ import { createBackdrop, type Backdrop } from "./rendering/backdrop";
 import { createOcclusion, occludersFromThinMeshes, type Occlusion } from "./rendering/occlusion";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { TimeOfDay } from "../game/systems/save";
-import { Materials } from "./rendering/materials";
+import { Materials, applyRegionPalette } from "./rendering/materials";
+import { getArtProfile, type WorldArtProfile } from "./world/artProfile";
 import { buildEnvironment, type Environment } from "./rendering/environment";
 import { AssetManager, HERO_PRELOAD_KEYS, remapSlots, type KitContext } from "./assets/AssetManager";
 import * as architecture from "./assets/kit/architecture";
@@ -55,6 +56,7 @@ interface Loaded {
   travelled: boolean;
   unregisterGlow: (() => void) | null;
   backdrop: Backdrop;
+  profile: WorldArtProfile;
 }
 
 export interface LoadOptions {
@@ -153,10 +155,14 @@ export class Game3D {
       this.unload();
       await this.heroReady;
       const def = getLocation(id);
+      // regional art direction: palette, ground, vegetation, landmark, backdrop, sky
+      const profile = getArtProfile(id);
+      applyRegionPalette(profile);
+      this.sky.setRegion({ horizon: profile.skyHorizonColor, zenith: profile.skyZenithColor, fog: profile.fogColor, fogDensity: profile.fogDensity, strength: profile.atmosphereStrength });
       const world = generateWorld(def);
       const collider = createGridCollider(world.blocked.map((r) => r.slice()));
-      const env = buildEnvironment(this.host.scene, this.mats, this.lighting, world);
-      const bctx = { am: this.am, collider, env, def, world };
+      const env = buildEnvironment(this.host.scene, this.mats, this.lighting, world, profile);
+      const bctx = { am: this.am, collider, env, def, world, profile };
       const built = buildWorld(bctx);
       dressWorld(bctx, built);
       built.placer.flush(this.am);
@@ -174,13 +180,13 @@ export class Game3D {
       // distant skyline beyond the map; the castle-on-its-rock silhouette only
       // when the location has no castle of its own
       const hasCastle = built.buildings.some((b) => b.kind === "castle");
-      const backdrop = createBackdrop(this.host.scene, { mapW: world.w, mapH: world.h, castle: !hasCastle });
+      const backdrop = createBackdrop(this.host.scene, { mapW: world.w, mapH: world.h, castle: !hasCastle, style: profile.backdropStyle });
       this.backdrop = backdrop;
       backdrop.setAtmosphere(this.lighting.atmosphere());
 
       // buildings that fade when they hide the player (filled by placer.flush()
       // above; the thin-instance scan is a fallback for an empty list)
-      const occluders = built.occluders.length ? built.occluders : occludersFromThinMeshes(this.host.scene.meshes, (m) => /^(building|castle)#/.test(m.name));
+      const occluders = built.occluders.length ? built.occluders : occludersFromThinMeshes(this.host.scene.meshes, (m) => /^(building|castle|landmark)#/.test(m.name));
       this.occlusion.setOccluders(occluders);
 
       // spawn (WorldScene.create semantics)
@@ -275,6 +281,7 @@ export class Game3D {
         travelled: !!opts.from,
         unregisterGlow,
         backdrop,
+        profile,
       };
 
       // building / district labels (building names float above their roof)
