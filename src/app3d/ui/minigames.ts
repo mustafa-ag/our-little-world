@@ -32,7 +32,11 @@ export const MINIGAME_KEYS = new Set([
   ...Array.from({ length: 9 }, (_, i) => `Numpad${i + 1}`),
 ]);
 
-const INTRO_MS = 1500;
+/** 3-2-1 countdown before play (1s per number). */
+const COUNTDOWN_S = 3;
+/** How long the win / lose banner shows before the game settles. */
+const RESULT_MS = 1200;
+const CONFETTI_COLOURS = ["#e46d94", "#f4a6c0", "#e6b65c", "#7be0a3", "#5b8fd6", "#a98bc7", "#ffd166"];
 
 // ---- small helpers ---------------------------------------------------------
 
@@ -63,6 +67,71 @@ function pulse(node: Element, cls: string) {
   node.classList.add(cls);
 }
 
+/** Set a progress bar's width; it pulses/glows once it's in the last 20%. */
+function setBar(node: HTMLElement, frac: number) {
+  const f = clamp(frac, 0, 1);
+  node.style.width = `${f * 100}%`;
+  node.classList.toggle("is-near", f >= 0.8);
+}
+
+/** A burst of 20 confetti bits that fly up, spin, and remove themselves. */
+function confetti(host: HTMLElement) {
+  const box = el("div", { class: "olw-mg-confetti", attrs: { "aria-hidden": "true" } });
+  for (let i = 0; i < 20; i++) {
+    const bit = el("span", { class: "olw-mg-confetti-bit" });
+    bit.style.left = `${rand(20, 80)}%`;
+    bit.style.background = CONFETTI_COLOURS[i % CONFETTI_COLOURS.length];
+    bit.style.setProperty("--dx", `${rand(-140, 140).toFixed(0)}px`);
+    bit.style.setProperty("--dy", `${rand(-260, -140).toFixed(0)}px`);
+    bit.style.setProperty("--rot", `${rand(-720, 720).toFixed(0)}deg`);
+    bit.style.animationDelay = `${rand(0, 120).toFixed(0)}ms`;
+    if (i % 3 === 0) bit.style.borderRadius = "50%";
+    box.append(bit);
+  }
+  host.append(box);
+  window.setTimeout(() => box.remove(), 1500);
+}
+
+// ---- tiny Web Audio synth (no asset files) ---------------------------------
+
+let audioCtx: AudioContext | null = null;
+function audio(): AudioContext | null {
+  try {
+    if (!audioCtx) {
+      const Ctor: typeof AudioContext | undefined =
+        window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return null;
+      audioCtx = new Ctor();
+    }
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    return audioCtx;
+  } catch {
+    return null;
+  }
+}
+
+/** Short 80 Hz sine thump (~50 ms) — a footstep. */
+function footstep() {
+  const ctx = audio();
+  if (!ctx) return;
+  try {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(80, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.45, t + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  } catch {
+    /* audio is a nicety */
+  }
+}
+
 // ---- game kit --------------------------------------------------------------
 
 class Game {
@@ -73,11 +142,15 @@ class Game {
   private readonly hudEl: HTMLDivElement;
   private readonly msgEl: HTMLParagraphElement;
   private readonly cleanups: Array<() => void> = [];
+  /** The main "fast" button; keyboard presses pop it too. */
+  private primary: HTMLButtonElement | null = null;
 
   constructor(
     readonly spec: ExtSpec,
     root: HTMLElement,
     private readonly end: (ok: boolean, msg: string) => void,
+    /** 1 on the first try, 2+ after "Try again". */
+    readonly attempt = 1,
   ) {
     this.difficulty = clamp(Math.round(spec.difficulty ?? 1), 1, 3);
     this.hudEl = el("div", { class: "olw-mg-hud" });
@@ -140,10 +213,24 @@ class Game {
 
   /** Space / Enter / E (no repeats) and the A button. */
   press(fn: () => void) {
+    const go = () => {
+      if (this.primary) pulse(this.primary, "is-tap");
+      fn();
+    };
     this.onKey((code, down, repeat) => {
-      if (down && !repeat && PRESS_KEYS.has(code)) fn();
+      if (down && !repeat && PRESS_KEYS.has(code)) go();
     });
-    this.onAction(fn);
+    this.onAction(go);
+  }
+
+  /** Satisfying press feedback: scale down while pressed, spring back on release. */
+  pressFx(b: HTMLElement) {
+    b.classList.add("olw-mg-tap");
+    const off = () => b.classList.remove("is-pressed");
+    this.listen(b, "pointerdown", () => b.classList.add("is-pressed"));
+    this.listen(b, "pointerup", off);
+    this.listen(b, "pointerleave", off);
+    this.listen(b, "pointercancel", off);
   }
 
   /** Press-and-hold on a target element or Space/Enter/E. The A button toggles. */
@@ -168,6 +255,7 @@ class Game {
       } else up();
     });
     this.onAction(() => (held ? up() : down()));
+    target.classList.add("olw-mg-tap");
     this.listen(target, "pointerdown", (e) => {
       e.preventDefault();
       down();
@@ -189,7 +277,9 @@ class Game {
   /** A button. `fast` fires on pointerdown (timing games) instead of click. */
   button(label: string, cls: string, fn: () => void, fast = false): HTMLButtonElement {
     const b = el("button", { class: cls, text: label, attrs: { type: "button" } });
+    this.pressFx(b);
     if (fast) {
+      if (!this.primary && cls.includes("olw-btn--big")) this.primary = b;
       this.listen(b, "pointerdown", (e) => {
         e.preventDefault();
         if (!this.over) fn();
@@ -265,38 +355,78 @@ function meter(extra = "") {
 function timingGame(g: Game) {
   const need = clamp(Math.round(g.spec.taps ?? 3), 2, 5);
   const maxMiss = 3;
-  const width = 0.17 - 0.02 * g.difficulty;
+  // Perfect = 18% of the bar (gold), near-miss band = 30% (amber), rest = miss (red).
+  const PERFECT = 0.18;
+  const NEAR = 0.3;
   let hits = 0;
   let misses = 0;
+  let score = 0;
+  let mult = 1;
   let pos = 0;
   let dir = 1;
   let lock = 0;
-  let speed = 0.5 + 0.12 * g.difficulty;
+  let speed = 0.62 + 0.14 * g.difficulty;
   let center = rand(0.2, 0.8);
-  const m = meter("olw-mg-track--big");
-  m.setZone(center, width);
-  g.stage.append(el("div", { class: "olw-mg-pad" }, [m.track]));
-  const hud = () => g.hud([["Hits", `${hits}/${need}`], ["Misses", `${misses}/${maxMiss}`]]);
+
+  const near = el("div", { class: "olw-mg-zone olw-mg-zone--near" });
+  const perfect = el("div", { class: "olw-mg-zone olw-mg-zone--perfect" });
+  const marker = el("div", { class: "olw-mg-marker olw-mg-marker--trail" });
+  const track = el("div", { class: "olw-mg-track olw-mg-track--big olw-mg-track--timing" }, [near, perfect, marker]);
+  const burst = el("div", { class: "olw-mg-perfect", attrs: { "aria-hidden": "true" } });
+  const place = () => {
+    near.style.left = `${(center - NEAR / 2) * 100}%`;
+    near.style.width = `${NEAR * 100}%`;
+    perfect.style.left = `${(center - PERFECT / 2) * 100}%`;
+    perfect.style.width = `${PERFECT * 100}%`;
+  };
+  place();
+  g.stage.append(el("div", { class: "olw-mg-pad olw-mg-timing" }, [track, burst]));
+  const hud = () =>
+    g.hud([
+      ["Hits", `${hits}/${need}`],
+      ["Score", `${score}`],
+      ["Combo", `×${mult}`],
+      ["Misses", `${misses}/${maxMiss}`],
+    ]);
   hud();
-  g.say("Tap when the marker is inside the glow.");
+  g.say("Tap when the marker is in the gold. Amber still counts.");
+  const flash = (text: string, cls: string) => {
+    burst.textContent = text;
+    burst.className = `olw-mg-perfect ${cls}`;
+    pulse(burst, "is-show");
+  };
   const act = () => {
     if (lock > 0) return;
     lock = 0.18;
-    if (Math.abs(pos - center) <= width / 2 + 0.015) {
+    const off = Math.abs(pos - center);
+    if (off <= NEAR / 2 + 0.01) {
+      const isPerfect = off <= PERFECT / 2 + 0.01;
       hits++;
+      if (isPerfect) {
+        score += 100 * mult;
+        flash(`PERFECT! ×${mult}`, "is-gold");
+        mult = Math.min(mult + 1, 5);
+        pulse(track, "is-perfect");
+      } else {
+        score += 50;
+        mult = 1;
+        flash("Good", "is-amber");
+        pulse(track, "is-good");
+      }
       hud();
-      pulse(m.track, "is-good");
-      if (hits >= need) return g.win("Perfect timing!");
-      g.say(["Got it!", "Lovely.", "Right on the beat."][hits % 3], "good");
+      if (hits >= need) return g.win(isPerfect ? "Perfect timing!" : "Right on time!");
+      g.say(isPerfect ? ["Golden!", "Spot on!", "Flawless."][hits % 3] : "Close enough — aim for the gold.", "good");
       speed += 0.1;
       let next = center;
-      while (Math.abs(next - center) < 0.2) next = rand(0.15, 0.85);
+      while (Math.abs(next - center) < 0.2) next = rand(0.18, 0.82);
       center = next;
-      m.setZone(center, width);
+      place();
     } else {
       misses++;
+      mult = 1;
       hud();
-      pulse(m.track, "is-bad");
+      flash("Miss", "is-red");
+      pulse(track, "is-bad");
       if (misses >= maxMiss) return g.lose("Three misses — the moment slipped away.");
       g.say("Almost! Wait for the glow.", "bad");
     }
@@ -313,7 +443,8 @@ function timingGame(g: Game) {
       pos = 0;
       dir = 1;
     }
-    m.setMarker(pos);
+    marker.style.left = `${pos * 100}%`;
+    marker.classList.toggle("is-left", dir < 0);
   });
 }
 
@@ -322,15 +453,20 @@ function stairsGame(g: Game) {
   const need = 8;
   const maxMiss = 3;
   const LINE = 0.72;
-  const WIN = 0.08;
+  /** Forgiveness: a tap within 150 ms of a step crossing the line counts. */
+  const GRACE_S = 0.15;
   let hits = 0;
   let misses = 0;
   let lock = 0;
   let spawnIn = 0.25;
   let speed = 0.4 + 0.06 * g.difficulty;
+  // steady beat so the rhythm guide means something
+  const beat = 0.92 - 0.06 * g.difficulty;
   const steps: { y: number; node: HTMLDivElement; live: boolean }[] = [];
+  const win = () => speed * GRACE_S;
 
-  const lane = el("div", { class: "olw-mg-stairs-lane" }, [el("div", { class: "olw-mg-stairs-line" })]);
+  const beatDot = el("div", { class: "olw-mg-beat", attrs: { "aria-hidden": "true" } }, [el("span", { class: "olw-mg-beat-dot" })]);
+  const lane = el("div", { class: "olw-mg-stairs-lane" }, [el("div", { class: "olw-mg-stairs-line" }), beatDot]);
   const climber = el("div", { class: "olw-mg-stairs-climber", text: "👟" });
   const ladder = el("div", { class: "olw-mg-stairs-ladder" }, [
     ...Array.from({ length: need }, (_, i) => el("span", { class: "olw-mg-stairs-rung", style: { bottom: `${(i / (need - 1)) * 100}%` } })),
@@ -343,21 +479,30 @@ function stairsGame(g: Game) {
   hud();
   g.say("Tap as each step reaches the glowing line.");
 
-  const miss = (text: string) => {
+  const miss = (text: string, step?: HTMLDivElement) => {
     misses++;
     hud();
-    pulse(lane, "is-bad");
+    if (step) pulse(step, "is-wrong");
+    else pulse(lane, "is-bad");
     if (misses >= maxMiss) return g.lose("Three stumbles. The stairs win this round.");
     g.say(text, "bad");
   };
   const act = () => {
     if (lock > 0) return;
-    lock = 0.15;
+    lock = 0.12;
     let best: (typeof steps)[number] | undefined;
-    for (const s of steps) if (s.live && Math.abs(s.y - LINE) <= WIN && (!best || Math.abs(s.y - LINE) < Math.abs(best.y - LINE))) best = s;
-    if (!best) return miss("Too early — wait for the step.");
+    let nearest: (typeof steps)[number] | undefined;
+    for (const s of steps) {
+      if (!s.live) continue;
+      const d = Math.abs(s.y - LINE);
+      if (!nearest || d < Math.abs(nearest.y - LINE)) nearest = s;
+      if (d <= win() && (!best || d < Math.abs(best.y - LINE))) best = s;
+    }
+    if (!best) return miss("Too early — wait for the step.", nearest?.node);
     best.live = false;
     best.node.classList.add("is-hit");
+    pulse(best.node, "is-lit");
+    footstep();
     hits++;
     hud();
     climber.style.bottom = `${(hits / need) * 100}%`;
@@ -376,16 +521,23 @@ function stairsGame(g: Game) {
       const node = el("div", { class: "olw-mg-step" });
       lane.append(node);
       steps.push({ y: -0.08, node, live: true });
-      spawnIn = rand(0.72, 1.05) - 0.05 * g.difficulty;
+      spawnIn += beat;
     }
+    let closest = Infinity;
     for (let i = steps.length - 1; i >= 0; i--) {
       const s = steps[i];
+      const prev = s.y;
       s.y += speed * dt;
       s.node.style.bottom = `${s.y * 100}%`;
-      if (s.live && s.y > LINE + WIN) {
+      if (s.live) {
+        closest = Math.min(closest, Math.abs(s.y - LINE));
+        // the rhythm guide beats exactly as a step meets the line
+        if (prev < LINE && s.y >= LINE) pulse(beatDot, "is-beat");
+      }
+      if (s.live && s.y > LINE + win()) {
         s.live = false;
         s.node.classList.add("is-miss");
-        miss("Missed a step!");
+        miss("Missed a step!", s.node);
         if (g.over) return;
       }
       if (s.y > 1.1) {
@@ -393,6 +545,8 @@ function stairsGame(g: Game) {
         steps.splice(i, 1);
       }
     }
+    // the guide swells as the next step approaches the line
+    beatDot.style.setProperty("--near", `${clamp(1 - closest / 0.25, 0, 1).toFixed(3)}`);
   });
 }
 
@@ -501,86 +655,262 @@ function salonGame(g: Game) {
   });
 }
 
-/** Hold to pour; release in the green band. */
+const COFFEE_BITS = {
+  cup: { e: "🥤", n: "Cup" },
+  espresso: { e: "☕", n: "Espresso" },
+  milk: { e: "🥛", n: "Milk" },
+  sugar: { e: "🍬", n: "Sugar" },
+  cinnamon: { e: "🌰", n: "Cinnamon" },
+  ice: { e: "🧊", n: "Ice" },
+  lid: { e: "🔘", n: "Lid" },
+} as const;
+type CoffeeBit = keyof typeof COFFEE_BITS;
+/** Ingredients with their own tap button (espresso is pulled with the hold button). */
+const COFFEE_SHELF: CoffeeBit[] = ["cup", "milk", "sugar", "cinnamon", "ice", "lid"];
+const COFFEE_RECIPES: { name: string; steps: CoffeeBit[] }[] = [
+  { name: "Latte", steps: ["cup", "espresso", "milk", "lid"] },
+  { name: "Sweet latte", steps: ["cup", "espresso", "milk", "sugar", "lid"] },
+  { name: "Iced latte", steps: ["cup", "ice", "espresso", "milk", "lid"] },
+  { name: "Cinnamon cappuccino", steps: ["cup", "espresso", "cinnamon", "milk", "lid"] },
+];
+
+/** Espresso bar: build each drink in recipe order; pull the espresso shot into the green band. */
 function coffeeGame(g: Game) {
   const text = `${g.spec.title} ${g.spec.hint}`.toLowerCase();
   const need = /\btwo\b|\bpair\b|yours too|2 cups/.test(text) ? 2 : 1;
   const maxLives = 3;
   const rate = 0.4 + 0.05 * g.difficulty;
+  // at least 8 seconds per step; more on easier settings
+  const stepTime = 8 + (3 - g.difficulty);
+  const relaxed = g.attempt <= 1; // no rush penalty on the first attempt
   let lives = maxLives;
   let cups = 0;
+  let recipe = COFFEE_RECIPES[0];
+  let step = 0;
+  let timeLeft = stepTime;
   let fill = 0;
   let pouring = false;
-  let resolving = false;
+  let busy = false;
   let lo = 0;
   let hi = 0;
 
+  // -- the counter: machine, stream, cup (+ lid and steam)
   const liquid = el("div", { class: "olw-mg-liquid" });
   const band = el("div", { class: "olw-mg-band" });
   const stream = el("div", { class: "olw-mg-stream" });
-  const cup = el("div", { class: "olw-mg-cup" }, [band, liquid, el("div", { class: "olw-mg-cup-handle" })]);
+  const extras = el("div", { class: "olw-mg-cup-extras" });
+  const lid = el("div", { class: "olw-mg-lid" });
+  const steam = el("div", { class: "olw-mg-steam", attrs: { "aria-hidden": "true" } }, [el("span"), el("span"), el("span")]);
+  const cup = el("div", { class: "olw-mg-cup" }, [band, liquid, extras, el("div", { class: "olw-mg-cup-handle" }), lid, steam]);
   const done = el("div", { class: "olw-mg-cups-done" });
-  g.stage.append(el("div", { class: "olw-mg-coffee" }, [el("div", { class: "olw-mg-machine", text: "☕" }), stream, cup, done]));
+  const counter = el("div", { class: "olw-mg-coffee-bar" }, [el("div", { class: "olw-mg-machine", text: "☕" }), stream, cup, done]);
+
+  // -- the recipe card
+  const recipeTitle = el("p", { class: "olw-mg-recipe-title" });
+  const recipeList = el("ol", { class: "olw-mg-recipe-list" });
+  const stepTimer = el("div", { class: "olw-mg-step-timer-fill" });
+  const card = el("div", { class: "olw-mg-recipe" }, [recipeTitle, recipeList, el("div", { class: "olw-mg-step-timer" }, [stepTimer])]);
+  g.stage.append(el("div", { class: "olw-mg-coffee" }, [counter, card]));
+
+  let rows: HTMLLIElement[] = [];
+  const renderRecipe = () => {
+    recipeTitle.textContent = need > 1 ? `${recipe.name} · cup ${cups + 1}/${need}` : recipe.name;
+    rows = recipe.steps.map((s, i) =>
+      el("li", { class: "olw-mg-recipe-step" }, [
+        el("span", { class: "olw-mg-recipe-e", text: COFFEE_BITS[s].e }),
+        el("span", { class: "olw-mg-recipe-n", text: s === "espresso" ? "Espresso (hold)" : `${COFFEE_SHELF.indexOf(s) + 1}. ${COFFEE_BITS[s].n}` }),
+        el("span", { class: "olw-mg-recipe-check", text: "✓" }),
+      ]),
+    );
+    rows.forEach((r, i) => r.classList.toggle("is-done", i < step));
+    recipeList.replaceChildren(...rows);
+    markActive();
+  };
+  const markActive = () => rows.forEach((r, i) => r.classList.toggle("is-active", i === step));
+
+  const hud = () =>
+    g.hud([
+      ["Cups", `${cups}/${need}`],
+      ["Mistakes", hearts(lives, maxLives)],
+      ["Step", `${Math.min(step + 1, recipe.steps.length)}/${recipe.steps.length}`],
+    ]);
+  const renderTimer = () => {
+    const f = timeLeft / stepTime;
+    stepTimer.style.width = `${clamp(f, 0, 1) * 100}%`;
+    stepTimer.classList.toggle("is-low", f <= 0.25);
+  };
 
   const newCup = () => {
+    recipe = COFFEE_RECIPES[randInt(0, COFFEE_RECIPES.length - 1)];
+    step = 0;
     fill = 0;
-    lo = rand(0.6, 0.74);
-    hi = lo + 0.14 - 0.02 * (g.difficulty - 1);
-    band.style.bottom = `${lo * 100}%`;
-    band.style.height = `${(hi - lo) * 100}%`;
+    timeLeft = stepTime;
+    busy = false;
     liquid.style.height = "0%";
-    cup.classList.remove("is-spill", "is-good");
-    resolving = false;
+    liquid.classList.remove("has-milk");
+    extras.replaceChildren();
+    cup.classList.remove("is-good", "is-spill", "is-placed");
+    lid.classList.remove("is-on");
+    steam.classList.remove("is-on");
+    band.classList.remove("is-on");
+    renderRecipe();
+    hud();
+    renderTimer();
+    prompt();
   };
-  const hud = () => g.hud([["Cups", `${cups}/${need}`], ["Attempts", hearts(lives, maxLives)]]);
-  const judge = (spilled: boolean) => {
+  const prompt = () => {
+    const s = recipe.steps[step];
+    if (!s) return;
+    g.say(s === "espresso" ? "Hold to pull the espresso — release in the green." : `Next: ${COFFEE_BITS[s].n}.`);
+    if (s === "espresso") {
+      fill = 0;
+      liquid.style.height = "0%";
+      lo = rand(0.46, 0.58);
+      hi = lo + 0.16 - 0.02 * (g.difficulty - 1);
+      band.style.bottom = `${lo * 100}%`;
+      band.style.height = `${(hi - lo) * 100}%`;
+      band.classList.add("is-on");
+    }
+  };
+
+  const mistake = (why: string, spill = false) => {
+    lives--;
+    hud();
+    const row = rows[step];
+    if (row) pulse(row, "is-wrong");
+    if (spill) pulse(cup, "is-spill");
+    if (lives <= 0) return g.lose(`${why} The barista takes over.`);
+    g.say(why, "bad");
+  };
+
+  const advance = () => {
+    const row = rows[step];
+    if (row) row.classList.add("is-done");
+    step++;
+    timeLeft = stepTime;
+    renderTimer();
+    hud();
+    if (step < recipe.steps.length) {
+      markActive();
+      prompt();
+      return;
+    }
+    // drink complete
+    markActive();
+    busy = true;
+    cups++;
+    cup.classList.add("is-good");
+    done.append(el("span", { text: "☕" }));
+    hud();
+    if (cups >= need) {
+      g.say(need > 1 ? "Two perfect coffees. Two sugars each." : "Lid on, steam rising. Perfect.", "good");
+      g.after(900, () => g.win(need > 1 ? "Two perfect coffees. Two sugars each." : "A perfect cup."));
+    } else {
+      g.say("One down! Next order…", "good");
+      g.after(1200, newCup);
+    }
+  };
+
+  const applyVisual = (s: CoffeeBit) => {
+    if (s === "cup") cup.classList.add("is-placed");
+    else if (s === "milk") {
+      liquid.classList.add("has-milk");
+      liquid.style.height = `${clamp(Math.max(fill, 0.3) + 0.14, 0, 0.95) * 100}%`;
+    } else if (s === "lid") {
+      lid.classList.add("is-on");
+      g.after(380, () => steam.classList.add("is-on"));
+    } else {
+      const bit = el("span", { class: "olw-mg-cup-bit", text: COFFEE_BITS[s].e });
+      extras.append(bit);
+    }
+  };
+
+  const useIngredient = (s: CoffeeBit) => {
+    if (busy || pouring) return;
+    const want = recipe.steps[step];
+    const btn = shelf[COFFEE_SHELF.indexOf(s)];
+    if (s !== want) {
+      if (btn) pulse(btn, "is-shake");
+      return mistake(want === "espresso" ? "Wrong order — the espresso comes next." : `Not yet — ${COFFEE_BITS[want].n} comes next.`);
+    }
+    if (btn) pulse(btn, "is-right");
+    applyVisual(s);
+    advance();
+  };
+
+  const shelf = COFFEE_SHELF.map((s, i) => {
+    const b = g.button("", "olw-mg-ingredient", () => useIngredient(s));
+    b.append(el("span", { class: "olw-mg-ingredient-e", text: COFFEE_BITS[s].e }), el("span", { class: "olw-mg-ingredient-n", text: `${i + 1} ${COFFEE_BITS[s].n}` }));
+    b.setAttribute("aria-label", COFFEE_BITS[s].n);
+    return b;
+  });
+
+  const judgePour = (spilled: boolean) => {
     pouring = false;
     stream.classList.remove("is-on");
     if (fill < 0.04 && !spilled) return; // accidental tap: ignore
-    resolving = true;
     if (!spilled && fill >= lo && fill <= hi) {
-      cups++;
-      cup.classList.add("is-good");
-      done.append(el("span", { text: "☕" }));
-      hud();
-      if (cups >= need) return g.win(need > 1 ? "Two perfect coffees. Two sugars each." : "A perfect pour.");
-      g.say("Perfect! Next cup…", "good");
-    } else {
-      lives--;
-      hud();
-      if (spilled) cup.classList.add("is-spill");
-      const why = spilled || fill > hi ? "Overfilled — splash!" : "Underfilled — a bit sad.";
-      if (lives <= 0) return g.lose(`${why} Out of attempts.`);
-      g.say(`${why} Try again.`, "bad");
+      band.classList.remove("is-on");
+      advance();
+      return;
     }
-    g.after(900, () => {
-      newCup();
-      g.say("Hold to pour, release in the green.");
+    const why = spilled || fill > hi ? "Overpoured — splash!" : "Too short a shot.";
+    mistake(`${why} Pull it again.`, spilled || fill > hi);
+    if (g.over) return;
+    busy = true;
+    g.after(700, () => {
+      busy = false;
+      fill = 0;
+      liquid.style.height = "0%";
     });
   };
-  const pourBtn = el("button", { class: "olw-btn olw-btn--big olw-mg-hold", text: "Hold to pour", attrs: { type: "button" } });
+  const pourBtn = el("button", { class: "olw-btn olw-btn--big olw-mg-hold", text: "Hold: pull espresso", attrs: { type: "button" } });
   const h = g.hold(
     pourBtn,
     () => {
-      if (resolving) return;
+      if (busy) return;
+      if (recipe.steps[step] !== "espresso") {
+        h.drop();
+        mistake(`Not yet — ${COFFEE_BITS[recipe.steps[step]].n} comes first.`);
+        return;
+      }
       pouring = true;
       stream.classList.add("is-on");
     },
     () => {
-      if (pouring) judge(false);
+      if (pouring) judgePour(false);
     },
   );
-  g.controls.append(pourBtn);
+  g.controls.append(el("div", { class: "olw-mg-ingredients" }, shelf), pourBtn);
+
+  g.onKey((code, down) => {
+    if (!down) return;
+    const n = digitOf(code);
+    if (n >= 1 && n <= COFFEE_SHELF.length) useIngredient(COFFEE_SHELF[n - 1]);
+  });
+
   newCup();
-  hud();
-  g.say(need > 1 ? "Two cups. Hold to pour, release in the green." : "Hold to pour, release in the green.");
+  if (need > 1) g.say("Two orders. Follow each recipe — tap ingredients, hold for espresso.");
   g.loop((dt) => {
-    if (!pouring) return;
-    fill += rate * dt * (0.8 + fill * 0.5);
-    liquid.style.height = `${clamp(fill, 0, 1) * 100}%`;
-    if (fill >= 1.02) {
-      h.drop();
-      judge(true);
+    if (pouring) {
+      fill += rate * dt * (0.8 + fill * 0.5);
+      liquid.style.height = `${clamp(fill, 0, 1) * 100}%`;
+      if (fill >= 1.02) {
+        h.drop();
+        judgePour(true);
+      }
+      return;
+    }
+    if (busy) return;
+    timeLeft -= dt;
+    renderTimer();
+    if (timeLeft <= 0) {
+      timeLeft = stepTime;
+      if (relaxed) {
+        g.say(`No rush — ${COFFEE_BITS[recipe.steps[step]].n} is next.`);
+        const row = rows[step];
+        if (row) pulse(row, "is-nudge");
+      } else mistake("Too slow — the customer is tapping the counter.");
     }
   });
 }
@@ -605,6 +935,7 @@ function bouquetGame(g: Game) {
   const placed: (number | null)[] = Array(SLOTS).fill(null);
   let time = 20;
   let cursor = 0;
+  let complete = false;
 
   const card = el(
     "div",
@@ -639,11 +970,12 @@ function bouquetGame(g: Game) {
     options.forEach((o, j) => o.classList.toggle("is-cursor", j === cursor));
   };
   const add = (k: number) => {
+    if (complete) return;
     setCursor(k);
     const want = needed.get(k) ?? 0;
     if (count(k) >= want) {
       time -= 2;
-      pulse(options[k], "is-shake");
+      pulse(options[k], "is-wrong");
       g.say(want ? `Enough ${FLOWERS[k].n}s already. −2s` : `No ${FLOWERS[k].n}s on the card. −2s`, "bad");
       hud();
       return;
@@ -652,12 +984,23 @@ function bouquetGame(g: Game) {
     if (slot < 0) return;
     placed[slot] = k;
     render();
-    pulse(slotEls[slot], "is-pop");
-    if (filled() >= SLOTS) return g.win("A bouquet Mama will love.");
+    pulse(options[k], "is-right");
+    pulse(slotEls[slot], "is-spring");
+    if (filled() >= SLOTS) {
+      // a little wave from the whole bouquet before the win card
+      complete = true;
+      slotEls.forEach((s, i) => {
+        s.style.animationDelay = `${i * 70}ms`;
+        pulse(s, "is-wave");
+      });
+      g.say("Perfect bouquet!", "good");
+      g.after(800, () => g.win("A bouquet Mama will love."));
+      return;
+    }
     g.say(`${FLOWERS[k].e} in!`, "good");
   };
   const remove = (i: number) => {
-    if (placed[i] === null) return;
+    if (complete || placed[i] === null) return;
     placed[i] = null;
     render();
     g.say("Took one out.");
@@ -682,6 +1025,7 @@ function bouquetGame(g: Game) {
   });
   g.onAction(() => add(cursor));
   g.loop((dt) => {
+    if (complete) return;
     const before = Math.ceil(time);
     time -= dt;
     if (Math.ceil(time) !== before) hud();
@@ -708,8 +1052,15 @@ function photoGame(g: Game) {
     node.classList.add(i % 2 ? "is-ground" : "is-sky");
     return { x: i * 22, node, speed: i % 2 ? 14 : 5 };
   });
-  const subject = el("div", { class: "olw-mg-photo-subject" }, [el("span", { text: landmark }), el("span", { text: "👫" })]);
-  const frame = el("div", { class: "olw-mg-photo-frame" });
+  const subject = el("div", { class: "olw-mg-photo-subject" }, [
+    el("span", { class: "olw-mg-photo-landmark", text: landmark }),
+    el("span", { class: "olw-mg-photo-couple", text: "👫" }),
+  ]);
+  const frame = el(
+    "div",
+    { class: "olw-mg-photo-frame" },
+    ["tl", "tr", "bl", "br"].map((c) => el("span", { class: `olw-mg-photo-corner is-${c}` })),
+  );
   const flash = el("div", { class: "olw-mg-photo-flash" });
   const view = el("div", { class: "olw-mg-photo" }, [...decor.map((d) => d.node), subject, frame, flash]);
   const strip = el("div", { class: "olw-mg-film" }, Array.from({ length: shots }, () => el("span", { class: "olw-mg-film-cell" })));
@@ -766,6 +1117,8 @@ function photoGame(g: Game) {
     x -= speed * dt;
     subject.style.left = `${x}%`;
     subject.style.transform = `translate(-50%, ${Math.sin(bob) * 3}px)`;
+    // focus assist: brackets pull in while the subject is centred
+    frame.classList.toggle("is-focus", Math.abs(x - 50) <= 8);
     if (pigeon) {
       pigeon.x += 30 * dt;
       pigeon.node.style.left = `${pigeon.x}%`;
@@ -786,29 +1139,49 @@ function showdownGame(g: Game) {
   let goElapsed = 0;
   let rivalTime = 0.6;
   let token = 0;
+  // best of 3: first to 2 round wins; each lost round costs half a health bar
+  const ROUNDS_TO_WIN = 2;
+  const vs = /\bvs\.?\s+(.+)$/i.exec(g.spec.title);
+  const rivalName = vs ? vs[1].trim() : "Rival";
+  const sibling = /^(jad|shan)$/i.test(rivalName);
 
+  const fighter = (name: string, face: string, cls: string) => {
+    const hp = el("div", { class: `olw-mg-hp-fill ${cls}` });
+    const hpBar = el("div", { class: "olw-mg-hp" }, [hp]);
+    const avatar = el("div", { class: "olw-mg-fighter-avatar", text: face });
+    const wrap = el("div", { class: `olw-mg-fighter ${cls}` }, [avatar, el("div", { class: "olw-mg-fighter-name", text: name }), hpBar]);
+    return { wrap, hp, hpBar, avatar };
+  };
+  const juju = fighter("Juju", "👧", "is-you");
+  const foe = fighter(rivalName, sibling ? "🧒" : "😼", "is-rival");
   const prompt = el("div", { class: "olw-mg-duel-prompt", text: "…" });
   const youBar = el("div", { class: "olw-mg-duel-fill" });
   const rivalBar = el("div", { class: "olw-mg-duel-fill olw-mg-duel-fill--rival" });
   g.stage.append(
+    el("div", { class: "olw-mg-fighters" }, [juju.wrap, el("span", { class: "olw-mg-vs", text: "VS" }), foe.wrap]),
     el("p", { class: "olw-mg-duel-rule", text: `Tap the moment you see ${target}. Anything else is a trick!` }),
     prompt,
     el("div", { class: "olw-mg-duel-bars" }, [
-      el("span", { text: "You" }),
+      el("span", { text: "Juju" }),
       el("div", { class: "olw-mg-duel-bar" }, [youBar]),
-      el("span", { text: "Rival" }),
+      el("span", { text: rivalName }),
       el("div", { class: "olw-mg-duel-bar" }, [rivalBar]),
     ]),
   );
-  const hud = () => g.hud([["Round", `${Math.min(round, 3)}/3`], ["You", `${you}`], ["Rival", `${rival}`]]);
+  const renderHp = () => {
+    juju.hp.style.width = `${clamp(1 - rival / ROUNDS_TO_WIN, 0, 1) * 100}%`;
+    foe.hp.style.width = `${clamp(1 - you / ROUNDS_TO_WIN, 0, 1) * 100}%`;
+  };
+  renderHp();
+  const hud = () => g.hud([["Round", `${Math.min(round, 3)}/3`], ["Juju", `${you}`], [rivalName, `${rival}`]]);
 
   const startRound = () => {
     round++;
     hud();
     phase = "wait";
     const my = ++token;
-    youBar.style.width = "0%";
-    rivalBar.style.width = "0%";
+    setBar(youBar, 0);
+    setBar(rivalBar, 0);
     prompt.className = "olw-mg-duel-prompt";
     prompt.textContent = "…";
     g.say(`Round ${round}. Wait for ${target}…`);
@@ -840,8 +1213,19 @@ function showdownGame(g: Game) {
     if (youWon) you++;
     else rival++;
     hud();
-    if (you >= 2) return g.win(`You win ${you}–${rival}! ${msg}`);
-    if (rival >= 2) return g.lose(`Rival wins ${rival}–${you}. ${msg}`);
+    renderHp();
+    const winner = youWon ? juju : foe;
+    const loser = youWon ? foe : juju;
+    pulse(winner.hpBar, "is-glow");
+    pulse(loser.hpBar, "is-shake");
+    if (you >= ROUNDS_TO_WIN || rival >= ROUNDS_TO_WIN) {
+      // final: the champion does a little victory wiggle before the card
+      phase = "done";
+      winner.avatar.classList.add("is-victory");
+      g.say(youWon ? `Juju takes it ${you}–${rival}!` : `${rivalName} takes it ${rival}–${you}.`, youWon ? "good" : "bad");
+      g.after(900, () => (youWon ? g.win(`You win ${you}–${rival}! ${msg}`) : g.lose(`${rivalName} wins ${rival}–${you}. ${msg}`)));
+      return;
+    }
     g.say(msg, youWon ? "good" : "bad");
     g.after(1100, startRound);
   };
@@ -850,7 +1234,7 @@ function showdownGame(g: Game) {
       prompt.classList.add("is-foul");
       endRound(false, "False start — that wasn't it!");
     } else if (phase === "go") {
-      youBar.style.width = "100%";
+      setBar(youBar, 1);
       endRound(true, `${Math.round(goElapsed * 1000)} ms. Lightning!`);
     }
   };
@@ -859,8 +1243,8 @@ function showdownGame(g: Game) {
   g.loop((dt) => {
     if (phase !== "go") return;
     goElapsed += dt;
-    rivalBar.style.width = `${clamp(goElapsed / rivalTime, 0, 1) * 100}%`;
-    if (goElapsed >= rivalTime) endRound(false, "Too slow — the rival got there first.");
+    setBar(rivalBar, goElapsed / rivalTime);
+    if (goElapsed >= rivalTime) endRound(false, `Too slow — ${rivalName} got there first.`);
   });
   hud();
   startRound();
@@ -926,7 +1310,7 @@ function shoppingGame(g: Game) {
       r.classList.toggle("is-cursor", i === cursor);
       r.setAttribute("aria-pressed", chosen.has(i) ? "true" : "false");
     });
-    fill.style.width = `${clamp(tot / budget, 0, 1) * 100}%`;
+    setBar(fill, tot / budget);
     fill.classList.toggle("is-over", tot > budget);
     label.textContent = `${tot} / ${budget} coins`;
     confirm.disabled = tot > budget || chosen.size === 0;
@@ -1013,7 +1397,7 @@ function safeGame(g: Game) {
     });
     const dist = slot < 3 ? Math.min(Math.abs(dial - code[slot]), 10 - Math.abs(dial - code[slot])) : 5;
     const heat = [1, 0.7, 0.45, 0.25, 0.1, 0.05][dist];
-    warmth.style.width = `${heat * 100}%`;
+    setBar(warmth, heat);
     warmth.classList.toggle("is-hot", dist === 0);
     warmthLabel.textContent = dist === 0 ? "*click*" : dist <= 2 ? "warm" : "cold";
   };
@@ -1276,7 +1660,7 @@ function lockpickGame(g: Game) {
     dir = 1;
     tension = 0;
     m.setMarker(0);
-    tensionFill.style.width = "0%";
+    setBar(tensionFill, 0);
   };
   const slip = (msg: string) => {
     slips++;
@@ -1329,7 +1713,7 @@ function lockpickGame(g: Game) {
       dir = 1;
     }
     m.setMarker(pos);
-    tensionFill.style.width = `${clamp(tension / maxTension, 0, 1) * 100}%`;
+    setBar(tensionFill, tension / maxTension);
     tensionFill.classList.toggle("is-hot", tension > maxTension * 0.7);
     if (tension >= maxTension) {
       h.drop();
@@ -1427,7 +1811,7 @@ const GAMES: Record<Kind, (g: Game) => void> = {
 const INFO: Record<Kind, { icon: string; how: string; keys: string }> = {
   stairs: { icon: "🪜", how: "Tap as each step crosses the line. 8 steps to the top; 3 stumbles and you're out.", keys: "Space / Enter or tap" },
   salon: { icon: "💇‍♀️", how: "Memorise her look, then pick its 3 colours in order. 3 lives.", keys: "1–6, arrows + Enter, or tap" },
-  coffee: { icon: "☕", how: "Hold to pour and release in the green band. 3 attempts.", keys: "Hold Space / Enter or the button" },
+  coffee: { icon: "☕", how: "Follow the recipe in order. Tap ingredients; hold to pull the espresso and release in the green. 3 mistakes allowed.", keys: "1–6 for ingredients, hold Space / Enter for espresso" },
   bouquet: { icon: "💐", how: "Fill 5 slots with exactly the flowers on the card. 20 seconds.", keys: "1–8, arrows + Enter, Backspace, or tap" },
   photo: { icon: "📸", how: "Capture when you're both inside the frame. 3 good shots from 5.", keys: "Space / Enter or tap" },
   showdown: { icon: "⚡", how: "Tap the instant the target appears — before the rival. Best of 3.", keys: "Space / Enter or tap" },
@@ -1437,15 +1821,16 @@ const INFO: Record<Kind, { icon: string; how: string; keys: string }> = {
   pitch: { icon: "📊", how: "Advance each slide while confidence is in the green. 5 slides.", keys: "Space / Enter or tap" },
   lockpick: { icon: "🗝️", how: "Hold for tension, release when the pick is on the green. 3 pins.", keys: "Hold Space / Enter or the button" },
   badge_photo: { icon: "🪪", how: "Choose the most professional pose for your badge.", keys: "1–4, arrows + Enter, or tap" },
-  timing: { icon: "✨", how: "Tap when the marker is in the glow. 3 misses and it's over.", keys: "Space / Enter or tap" },
+  timing: { icon: "✨", how: "Tap when the marker is in the gold for a PERFECT (amber still counts). 3 misses and it's over.", keys: "Space / Enter or tap" },
 };
 
 // ---- runner ----------------------------------------------------------------
 
 /**
- * Run a minigame inside `container`. Shows the intro for 1.5s, then plays.
- * Success calls onDone(true) after a short celebration; failure offers a
- * retry, and leaving calls onDone(false). Returns a cleanup function.
+ * Run a minigame inside `container`. Shows the intro with a 3-2-1 countdown,
+ * then plays. Success shows "Nailed it!" + confetti for 1.2s, then calls
+ * onDone(true); failure shows "So close!" for 1.2s, then offers a retry, and
+ * leaving calls onDone(false). Returns a cleanup function.
  */
 export function runMinigame(spec: MiniGameSpec, container: HTMLElement, onDone: (success: boolean) => void): () => void {
   const kind: Kind = spec.kind in GAMES ? spec.kind : "timing";
@@ -1468,26 +1853,35 @@ export function runMinigame(spec: MiniGameSpec, container: HTMLElement, onDone: 
     game = null;
   };
 
+  let attempt = 0;
   const intro = () => {
     stopGame();
     resultKeys = null;
+    attempt++;
     const info = INFO[kind];
-    const bar = el("div", { class: "olw-mg-ready-fill" });
+    const num = el("div", { class: "olw-mg-count-num", attrs: { "aria-live": "assertive" } });
     wrap.replaceChildren(
       el("div", { class: "olw-mg-intro" }, [
         el("div", { class: "olw-mg-intro-icon", text: info.icon }),
         el("p", { class: "olw-mg-intro-hint", text: spec.hint }),
         el("p", { class: "olw-mg-intro-how", text: info.how }),
         el("p", { class: "olw-mg-intro-keys", text: info.keys }),
-        el("div", { class: "olw-mg-ready" }, [bar]),
       ]),
+      el("div", { class: "olw-mg-countdown", attrs: { "aria-hidden": "false" } }, [num]),
     );
-    bar.style.animationDuration = `${INTRO_MS}ms`;
-    later(() => {
-      wrap.replaceChildren();
-      game = new Game(spec, wrap, finish);
-      GAMES[kind](game);
-    }, INTRO_MS);
+    // 3 - 2 - 1, one second each, then play
+    const tick = (n: number) => {
+      if (n <= 0) {
+        wrap.replaceChildren();
+        game = new Game(spec, wrap, finish, attempt);
+        GAMES[kind](game);
+        return;
+      }
+      num.textContent = `${n}`;
+      pulse(num, "is-count");
+      later(() => tick(n - 1), 1000);
+    };
+    tick(COUNTDOWN_S);
   };
 
   const done = (ok: boolean) => {
@@ -1502,27 +1896,28 @@ export function runMinigame(spec: MiniGameSpec, container: HTMLElement, onDone: 
     game = null;
     queueMicrotask(() => g?.dispose());
     const card = el("div", { class: `olw-mg-result olw-mg-result--${ok ? "win" : "lose"}`, attrs: { role: "status" } }, [
-      el("div", { class: "olw-mg-result-icon", text: ok ? "🎉" : "💫" }),
-      el("p", { class: "olw-mg-result-title", text: ok ? "Success!" : "Not this time" }),
+      el("div", { class: "olw-mg-result-icon", text: ok ? "✓" : "✗" }),
+      el("p", { class: "olw-mg-result-title", text: ok ? "Nailed it!" : "So close!" }),
       el("p", { class: "olw-mg-result-msg", text: msg }),
     ]);
+    wrap.append(card);
     if (ok) {
-      later(() => done(true), 1200);
-    } else {
-      const retry = el("button", { class: "olw-btn olw-btn--rose", text: "Try again", attrs: { type: "button" } });
-      const leave = el("button", { class: "olw-btn olw-btn--ghost", text: "Leave", attrs: { type: "button" } });
+      confetti(wrap);
+      later(() => done(true), RESULT_MS);
+      return;
+    }
+    // hold the "So close!" beat, then offer a retry (a mashed key can't skip it)
+    later(() => {
+      const retry = el("button", { class: "olw-btn olw-btn--rose olw-mg-tap", text: "Try again", attrs: { type: "button" } });
+      const leave = el("button", { class: "olw-btn olw-btn--ghost olw-mg-tap", text: "Leave", attrs: { type: "button" } });
       retry.addEventListener("click", intro);
       leave.addEventListener("click", () => done(false));
       card.append(el("div", { class: "olw-mg-result-actions" }, [retry, leave]));
-      // a short grace period so a mashed key doesn't instantly retry
-      later(() => {
-        resultKeys = (code) => {
-          if (PRESS_KEYS.has(code)) intro();
-          else if (code === "Backspace") done(false);
-        };
-      }, 450);
-    }
-    wrap.append(card);
+      resultKeys = (code) => {
+        if (PRESS_KEYS.has(code)) intro();
+        else if (code === "Backspace") done(false);
+      };
+    }, RESULT_MS);
   };
 
   const onKey = (code: string, down: boolean) => {
