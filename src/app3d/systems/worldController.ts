@@ -58,6 +58,14 @@ export const PORTED_LOCATIONS = new Set([
 
 export const TIME_TICK_MS = 90_000;
 
+/** q_family_jewel_heist steps played inside Fadwa's house (ui/storyScenes.ts heist scene). */
+const HEIST_HOUSE_TARGETS = ["house_lock", "enter_fadwa_house", "reach_fadwa_room", "drawer_lock", "family_safe", "escape_fadwa_house"];
+/** Moomoo's romance / wedding chapters (RomanceScene + WeddingScene). */
+const ROMANCE_TARGETS = ["romance_us", "romance_future", "romance_proposal", "wedding_planning_one", "wedding_planning_two", "desert_wedding"];
+
+/** Same shape as ui/storyScenes.ts StoryRequest (kept local: systems never import the UI). */
+type StoryRequest = { scene: "romance" | "wedding" | "tigor" | "heist" | "pirate" | "questActivity"; activity?: string };
+
 export class WorldController {
   private lastInteract = 0;
   private transitioning = false;
@@ -112,6 +120,7 @@ export class WorldController {
     this.buildCollectibles();
     this.buildNpcs();
     this.placeQuestObjects();
+    this.placeHeistHouse();
     this.placeSecrets();
     this.placeJeep();
 
@@ -123,6 +132,19 @@ export class WorldController {
     quests.onVisit(def.cityId);
     tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
     uiEvents.emit("locationTitle", def.name, def.subtitle);
+    // WorldScene.create: resume the heist's pirate idea, and sail when London is the destination
+    const heistResume = quests.currentStep("q_family_jewel_heist")?.target;
+    if (heistResume === "pirate_idea" && !store.hasFlag("pirate_disguise")) {
+      this.hooks.setTimeout(850, () => {
+        if (this.transitioning || controls.locked) return;
+        this.startPirateIdea();
+        uiEvents.emit("dialogue", "Juju", ["Mama specifically said not to get ideas.", "Unfortunately, I remembered my idea."]);
+      });
+    } else if (def.cityId === "london" && store.hasFlag("pirate_disguise") && (heistResume === "pirate_voyage" || heistResume === "great_white_boss")) {
+      this.hooks.setTimeout(650, () => {
+        if (!this.transitioning) this.startStory({ scene: "pirate" });
+      });
+    }
     if (store.hasFlag("heist_victory_pending")) {
       store.setFlag("heist_victory_pending", false);
       this.hooks.setTimeout(350, () =>
@@ -190,6 +212,14 @@ export class WorldController {
           this.hooks.npcFacePlayer(def.id);
           store.state.lastPassenger = def.id;
           store.save();
+          // story hand-offs (WorldScene: companion Moomoo → Romance/Wedding, Nour/Chloe → QuestActivity)
+          if (def.id === "moomoo" && this.startRomanceIfReady()) return;
+          if (def.id === "nour" && ["nour", "nour_snacks"].includes(quests.currentStep("q_nour")?.target ?? "")) {
+            if (this.startStory({ scene: "questActivity", activity: "nour_visit" })) return;
+          }
+          if (def.id === "chloe" && ["chloe", "chloe_thesis"].includes(quests.currentStep("q_chloe")?.target ?? "")) {
+            if (this.startStory({ scene: "questActivity", activity: "chloe_thesis" })) return;
+          }
           const lines = linesFor(def.id, def.dialogue);
           const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
           // once-a-day outfit acknowledgement (WorldScene's styleNote)
@@ -210,27 +240,42 @@ export class WorldController {
       const p = npcWorldPos(def);
       place(def, p.x, p.y);
     }
-    if (this.locationId === "edinburgh_oldtown" && quests.currentStep("q_family_jewel_heist")?.target === "sister_room") {
-      const fadwa = NPCS.find((n) => n.id === "fadwa");
-      if (fadwa && !placed.has(fadwa.id)) {
-        const p = pxToXZ(52 * TILE + TILE / 2, 54 * TILE);
-        this.hooks.spawnNpc(fadwa, p.x, p.z);
-        this.interaction.add({
-          id: "npc:fadwa:heist",
-          x: p.x,
-          z: p.z,
-          radius: pxToUnits(28),
-          prompt: "Talk to Fadwa (very normally)",
-          kind: "npc",
-          trigger: () => {
-            quests.onInteract("sister_room");
-            uiEvents.emit("sceneReset");
-            // SisterHeistScene is not ported; the quest step still advances.
-            if (!uiEvents.emit("enterScene", "SisterHeist")) store.toast("The heist scene isn't in 3D yet", "#ffe08a");
-          },
-        });
-      }
-    }
+  }
+
+  /** WorldScene: "FADWA'S HOUSE · EXTREMELY NORMAL ENTRANCE" in the West End while the heist is on. */
+  private placeHeistHouse() {
+    const heistOn = () => HEIST_HOUSE_TARGETS.includes(quests.currentStep("q_family_jewel_heist")?.target ?? "");
+    if (this.locationId !== "london_westend" || !heistOn()) return;
+    const worldW = this.world.w * TILE;
+    const worldH = this.world.h * TILE;
+    const p = pxToXZ(worldW * 0.56, Math.min(worldH - 80, worldH * 0.48));
+    this.hooks.spawnPickup("q:fadwa_house", "star", p.x, p.z);
+    this.interaction.add({
+      id: "q:fadwa_house",
+      x: p.x,
+      z: p.z,
+      radius: pxToUnits(34),
+      prompt: "Approach Fadwa's house",
+      kind: "quest",
+      enabled: heistOn,
+      trigger: () => this.startStory({ scene: "heist" }),
+    });
+  }
+
+  /** Open a ui/storyScenes.ts scene; false (with a toast) if no UI is listening. */
+  private startStory(req: StoryRequest): boolean {
+    uiEvents.emit("prompt", null);
+    if (uiEvents.emit("storyScene", req)) return true;
+    store.toast("That story isn't available right now", "#ffe08a");
+    return false;
+  }
+
+  /** WorldScene.startRomanceActivityIfReady — Moomoo's next romance / wedding chapter. */
+  private startRomanceIfReady(): boolean {
+    const active = quests.activeQuests().find((q) => q.step.type === "playMinigame" && ROMANCE_TARGETS.includes(q.step.target));
+    if (!active) return false;
+    const target = active.step.target;
+    return this.startStory(target === "desert_wedding" ? { scene: "wedding" } : { scene: "romance", activity: target });
   }
 
   private placeQuestObjects() {
@@ -264,6 +309,12 @@ export class WorldController {
       store.setFlag("pirate_disguise");
       quests.onInteract("pirate_idea");
       controls.locked = false;
+      store.toast("PIRATE JUJU · Master of Extremely Legal Family Retrieval", "#f4c95d");
+      // WorldScene.transformPirate → PirateVoyageScene
+      this.hooks.setTimeout(1800, () => {
+        if (this.transitioning || quests.currentStep("q_family_jewel_heist")?.target !== "pirate_voyage") return;
+        this.startStory({ scene: "pirate" });
+      });
     });
   }
 
@@ -345,6 +396,8 @@ export class WorldController {
         if (z.tag === "hudayriyat_trucks") {
           quests.onInteract("cafe");
           quests.onInteract(z.tag);
+          // the seagull ambush (QuestActivityScene fry_thief) opens with the "Order up" lines
+          if (quests.currentStep("q_hudayriyat")?.target === "fry_thief" && this.startStory({ scene: "questActivity", activity: "fry_thief" })) return;
           uiEvents.emit("dialogue", "Hudayriyat", ["Food trucks by the water. You drove out for this."]);
           return;
         }
@@ -383,6 +436,11 @@ export class WorldController {
       case "stairs": {
         const d = (z.data as { name?: string; tag?: string }) ?? {};
         const brown = d.tag === "well_court";
+        const residences = quests.currentStep("q_residences")?.target;
+        if (z.tag === "residences_t8" && (residences === "residences_t8" || residences === "apartment_1701_package")) {
+          if (residences === "residences_t8") quests.onInteract("residences_t8");
+          if (this.startStory({ scene: "questActivity", activity: "apartment_1701" })) return;
+        }
         uiEvents.emit("minigame", {
           kind: "stairs",
           title: d.name ?? "Stairs",

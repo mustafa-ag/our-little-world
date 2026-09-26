@@ -17,6 +17,7 @@ import { mountModals } from "./modals";
 import { MINIGAME_KEYS } from "./minigames";
 import { mountMinimap } from "./minimap";
 import { mountHouse } from "./house";
+import { mountStoryScenes } from "./storyScenes";
 import { mountMall } from "./mall";
 import { mountBabaShopping } from "./babaShopping";
 import { mountAdnoc } from "./adnoc";
@@ -25,6 +26,8 @@ const FONT_HREF =
   "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Nunito:wght@500;700;800&display=swap";
 
 const ADVANCE_KEYS = new Set(["Space", "KeyE", "Enter", "NumpadEnter"]);
+/** Keys a story scene (ui/storyScenes.ts) receives as "storyKey" events. */
+const STORY_KEYS = new Set([...ADVANCE_KEYS, "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"]);
 
 function injectHead(d: Disposer) {
   const style = d.node(el("style", { attrs: { "data-olw-ui": "" } }));
@@ -64,6 +67,7 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
   hud.el.append(mountMinimap(ctx, modals.openLocalMap));
   mountButtons(ctx, modals.openPhone);
   mountHouse(ctx, modals.host, hud.sleep);
+  mountStoryScenes(ctx, modals.host, modals.travelTo);
   mountMall(ctx, modals.host);
   mountBabaShopping(ctx, modals.host);
   mountAdnoc(ctx, modals.host);
@@ -89,6 +93,7 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
     // action while a dialogue is open advances it; otherwise gameplay handles it
     if (ctx.dialogueOpen) dialogue.advance();
     else if (ctx.modal === "minigame") uiEvents.emit("minigameAction");
+    else if (ctx.modal === "story") uiEvents.emit("storyKey", "Action");
   });
   d.on(uiEvents, "sceneReset", () => {
     dialogue.reset();
@@ -144,6 +149,20 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
       }
       if (e.code === "Escape") {
         if (modals.host.escape()) consume(e);
+        return;
+      }
+      if (ctx.modal === "story") {
+        // typing in a story scene's text field (Tigor's legal-name check)
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        const onButton = e.target instanceof HTMLButtonElement && layer.contains(e.target);
+        if (onButton && (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter")) {
+          e.stopImmediatePropagation(); // the focused button activates itself
+          return;
+        }
+        if (STORY_KEYS.has(e.code)) {
+          consume(e);
+          if (!e.repeat || !ADVANCE_KEYS.has(e.code)) uiEvents.emit("storyKey", e.code);
+        }
         return;
       }
       if (ctx.modal === "minigame" && MINIGAME_KEYS.has(e.code)) {

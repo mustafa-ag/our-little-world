@@ -14,6 +14,7 @@ import { setPrimaryHome } from "../../game/systems/properties";
 import { button, el, type Disposer } from "./dom";
 import { worldMapView } from "./worldMap";
 import { wardrobeView } from "./wardrobe";
+import { storyRequestForStep, type StorySceneId } from "./storyScenes";
 
 type Tab = "messages" | "quests" | "bag" | "wardrobe" | "homes" | "memories" | "map";
 const TABS: { id: Tab; label: string }[] = [
@@ -27,6 +28,9 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 let lastTab: Tab = "messages";
+
+/** Story scenes that can start from the quest card (the rest are place-bound). */
+const PHONE_STORIES = new Set<StorySceneId>(["romance", "wedding", "tigor", "pirate"]);
 
 const npcName = (id: string) => NPCS.find((n) => n.id === id)?.name ?? id;
 
@@ -85,7 +89,16 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
         let hint = step?.hint ?? "Ready";
         if (step?.type === "collect" && step.count) hint = `${hint} (${p?.progress ?? 0}/${step.count})`;
         const n = p ? Math.min(p.step + 1, q.steps.length) : 1;
-        ul.append(card("olw-quest--active", q.title, `Step ${n}/${q.steps.length} · ${hint}`));
+        // story steps that play from the phone (legacy: Phone › Quests launched Retrieve Tigor)
+        const story = storyRequestForStep(step?.target);
+        const play =
+          story && PHONE_STORIES.has(story.scene)
+            ? button(md, "Play", "olw-btn olw-btn--rose olw-quest-btn", () => {
+                close();
+                uiEvents.emit("storyScene", story);
+              })
+            : null;
+        ul.append(card("olw-quest--active", q.title, `Step ${n}/${q.steps.length} · ${hint}`, play));
       }
       wrap.append(ul);
     }
