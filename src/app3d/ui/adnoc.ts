@@ -559,8 +559,11 @@ export function mountAdnoc(ctx: UIContext, host: ModalHost) {
     // talk / interact steps resolve right here
     const kind = questById(cur.questId)?.steps.find((s) => s.target === cur.target)?.type;
     if (kind === "talk") {
-      const res = quests.onTalk(cur.target, []);
-      settle(true, res.completedQuest ? [] : []);
+      // these "talk" targets are HQ desks, not real NPCs: pre-mark the daily
+      // talk so onTalk doesn't hand out a relationship point to a desk
+      store.setDaily(`talk_${cur.target}`);
+      quests.onTalk(cur.target, []);
+      settle(true);
     } else {
       quests.onInteract(cur.target);
       settle(true);

@@ -449,48 +449,13 @@ export class WorldController {
     }
   }
 
+  /** ADNOC HQ: the whole career (first day, story missions, workdays,
+   * control room, boardroom) runs in the ui/adnoc.ts career-centre modal. */
   private useOffice(tag?: string) {
     if (tag !== "adnoc_hq") return;
-    const engineerStep = quests.currentStep("q_adnoc_engineer")?.target;
-    if (engineerStep === "adnoc_lab") {
-      uiEvents.emit("minigame", {
-        kind: "lab",
-        title: "ADNOC HQ · SAMPLE CHECK",
-        hint: "Balance the tiny blue samples. Calm hands, clear notes, chemical-engineer energy.",
-        taps: 12,
-        skipLabel: "Not yet",
-        onDone: (ok?: boolean) => {
-          if (!ok) return;
-          quests.onInteract("adnoc_lab");
-          store.advanceTime();
-          uiEvents.emit("dialogue", "Alya", ["Clean results. Take these to the recruiter."]);
-        },
-      });
-      return;
+    if (!uiEvents.emit("enterAdnoc")) {
+      uiEvents.emit("dialogue", "ADNOC HQ", ["The career centre is closed for a quick coffee break. Try again in a moment."]);
     }
-    const ceoStep = quests.currentStep("q_adnoc_ceo")?.target;
-    if (ceoStep === "adnoc_boardroom") {
-      uiEvents.emit("minigame", {
-        kind: "pitch",
-        title: "BLUE BOARDROOM PITCH",
-        hint: "Tap through the slides: safer systems, smarter labs, and a very compelling snack budget.",
-        taps: 14,
-        skipLabel: "Not yet",
-        onDone: (ok?: boolean) => {
-          if (!ok) return;
-          quests.onInteract("adnoc_boardroom");
-          uiEvents.emit("dialogue", "Boardroom", ["The board has never seen a slide about snacks this persuasive."]);
-        },
-      });
-      return;
-    }
-    if (ceoStep === "adnoc_rooftop") {
-      const done = quests.onInteract("adnoc_rooftop");
-      uiEvents.emit("dialogue", "ADNOC HQ rooftop", ["The city looks very blue from up here.", done?.complete ?? "One more big step."]);
-      return;
-    }
-    const title = store.state.career === "ceo" ? "CEO Juju" : store.state.career === "chemical_engineer" ? "Chemical Engineer Juju" : "Future Chemical Engineer Juju";
-    uiEvents.emit("dialogue", "ADNOC HQ", [`${title}. The petrol station is for refuelling; this is where the big ideas happen.`]);
   }
 
   /** Hand off to the UI layer (ui/house.ts fades into the 3D interior); toast if nothing listens. */
