@@ -1,0 +1,281 @@
+/* Jeep road trip (ui/drive.ts): destination picker + driving HUD. */
+
+.olw-drive-list {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.olw-drive-list .olw-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.olw-drive-quest {
+  font-size: 0.72em;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--olw-gold);
+  color: var(--olw-ink);
+}
+
+/* while driving: the walking controls and district minimap step aside */
+.olw-ui.olw-driving .olw-joyzone,
+.olw-ui.olw-driving .olw-buttons,
+.olw-ui.olw-driving .olw-minimap,
+.olw-ui.olw-driving .olw-prompt {
+  display: none !important;
+}
+
+.olw-drive-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  font-family: var(--olw-sans);
+  color: var(--olw-ink);
+}
+
+.olw-drive-hud.olw-hidden {
+  display: none;
+}
+
+.olw-drive-hud--bump .olw-drive-top {
+  animation: olw-drive-shake 0.28s ease;
+}
+
+@keyframes olw-drive-shake {
+  0%,
+  100% {
+    transform: translateX(-50%);
+  }
+  25% {
+    transform: translateX(calc(-50% - 5px));
+  }
+  75% {
+    transform: translateX(calc(-50% + 5px));
+  }
+}
+
+.olw-drive-top {
+  position: absolute;
+  top: calc(var(--olw-safe-t) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, calc(100% - 32px));
+  padding: 10px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.olw-drive-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.olw-drive-dest {
+  font-family: var(--olw-serif);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.olw-drive-left {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--olw-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.olw-drive-bar {
+  position: relative;
+  display: block;
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--olw-cream-3);
+  overflow: hidden;
+}
+
+.olw-drive-bar--trip {
+  height: 10px;
+}
+
+.olw-drive-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--olw-rose-deep);
+  transition: width 0.12s linear;
+}
+
+.olw-drive-fill--fuel {
+  background: var(--olw-sage-deep);
+}
+
+.olw-drive-fill--low {
+  background: #c9553f;
+}
+
+.olw-drive-fill--boost {
+  background: var(--olw-gold);
+}
+
+.olw-drive-fill--hot {
+  background: var(--olw-gold-deep);
+}
+
+.olw-drive-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.olw-drive-meter-label {
+  width: 3.4em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--olw-ink-soft);
+}
+
+.olw-drive-val {
+  width: 2.8em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.olw-drive-composure,
+.olw-drive-radio {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.olw-drive-composure {
+  color: var(--olw-rose-deep);
+}
+
+.olw-drive-radio {
+  color: var(--olw-ink-soft);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.olw-drive-composure.olw-hidden,
+.olw-drive-chat.olw-hidden {
+  display: none;
+}
+
+.olw-drive-chat {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--olw-safe-b) + 128px);
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100% - 32px));
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: 14px;
+  background: rgba(58, 43, 58, 0.78);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.olw-drive-end {
+  position: absolute;
+  top: calc(var(--olw-safe-t) + 10px);
+  right: calc(var(--olw-safe-r) + 12px);
+  pointer-events: auto;
+}
+
+.olw-drive-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--olw-safe-b) + 14px);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(251, 243, 228, 0.82);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.olw-ui.olw-touch .olw-drive-hint {
+  display: none;
+}
+
+.olw-drive-pad {
+  position: absolute;
+  left: calc(var(--olw-safe-l, 0px) + 16px);
+  right: calc(var(--olw-safe-r) + 16px);
+  bottom: calc(var(--olw-safe-b) + 18px);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.olw-drive-pad-side {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.olw-drive-pedal {
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 2px solid var(--olw-brown-soft);
+  border-radius: 18px;
+  background: rgba(251, 243, 228, 0.9);
+  color: var(--olw-ink);
+  font: 800 1rem var(--olw-sans);
+  box-shadow: var(--olw-shadow);
+}
+
+.olw-drive-pedal--steer {
+  width: 72px;
+  height: 72px;
+  font-size: 1.6rem;
+}
+
+.olw-drive-pedal--boost,
+.olw-drive-pedal--honk {
+  width: 68px;
+  height: 56px;
+  font-size: 0.85rem;
+}
+
+.olw-drive-pedal--boost {
+  background: var(--olw-gold);
+}
+
+.olw-drive-pedal--on {
+  transform: scale(0.94);
+  background: var(--olw-cream-3);
+}
+
+.olw-drive-pedal--boost.olw-drive-pedal--on {
+  background: var(--olw-gold-deep);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .olw-drive-hud--bump .olw-drive-top {
+    animation: none;
+  }
+}

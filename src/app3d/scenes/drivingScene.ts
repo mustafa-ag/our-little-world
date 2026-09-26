@@ -91,6 +91,8 @@ interface Prop {
   rot: number;
   scale: number;
   active: boolean;
+  /** already counted as a near miss on this pass */
+  seen?: boolean;
 }
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -226,7 +228,7 @@ export class DrivingScene {
 
   constructor(
     private k: KitContext,
-    private am: AssetManager,
+    am: AssetManager,
     private opts: DriveOptions,
     private events: { onArrive(): void },
   ) {
@@ -365,6 +367,7 @@ export class DrivingScene {
     if (!r) return;
     const lane = Math.floor(Math.random() * 3) - 1;
     r.active = true;
+    r.seen = false;
     r.x = lane * LANE;
     r.z = FAR - 5;
     // some tumble slowly across the lanes
@@ -377,13 +380,14 @@ export class DrivingScene {
     const t = this.traffic.find((c) => !c.p.active);
     if (!t) return;
     t.p.active = true;
+    t.p.seen = false;
     t.p.x = (Math.floor(Math.random() * 3) - 1) * LANE;
     t.p.z = FAR;
     t.p.vx = 0;
   }
 
   private maybeSpawnHitcher() {
-    if (this.hitcher || this.hitcherDone || this.passenger && Math.random() < 0.6) {
+    if (this.hitcher || this.hitcherDone || (this.passenger && Math.random() < 0.6)) {
       this.hitcherDone = true;
       return;
     }
@@ -394,7 +398,7 @@ export class DrivingScene {
     if (!def) return;
     const z = FAR - 10;
     const x = ROAD_HALF + 0.9;
-    const view = new NpcView(this.k, { ...def, facing: "left" }, DRIVE_ORIGIN.x + x, DRIVE_ORIGIN.z + z, 0, this.am);
+    const view = new NpcView(this.k, { ...def, facing: "left" }, DRIVE_ORIGIN.x + x, DRIVE_ORIGIN.z + z, 0);
     view.rig.gesture("wave");
     this.hitcher = { view, id, z };
     uiEvents.emit("driveChat", `${def.name} is waving from the roadside! Keep right to pick them up.`);
@@ -509,7 +513,10 @@ export class DrivingScene {
         if (!this.finished && Math.abs(r.z) < 1.3 * r.scale + 0.2 && dx < 0.55 + 0.6 * r.scale) {
           this.bump();
           r.active = false;
-        } else if (!this.finished && Math.abs(r.z) < 0.4 && dx < 1.7) this.near += 1;
+        } else if (!this.finished && !r.seen && Math.abs(r.z) < 0.4 && dx < 1.7) {
+          r.seen = true;
+          this.near += 1;
+        }
         if (r.z < NEAR) r.active = false;
       }
 
@@ -521,7 +528,10 @@ export class DrivingScene {
         if (!this.finished && Math.abs(p.z) < 2.1 && Math.abs(p.x - this.carX) < 1.05) {
           this.bump();
           p.active = false;
-        } else if (!this.finished && Math.abs(p.z) < 0.5 && Math.abs(p.x - this.carX) < 2) this.near += 1;
+        } else if (!this.finished && !p.seen && Math.abs(p.z) < 0.5 && Math.abs(p.x - this.carX) < 2) {
+          p.seen = true;
+          this.near += 1;
+        }
         if (p.z < NEAR) p.active = false;
       }
 
