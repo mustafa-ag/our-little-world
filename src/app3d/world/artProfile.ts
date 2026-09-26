@@ -10,7 +10,7 @@
 import { PALETTE } from "../rendering/materials";
 
 export type RegionKind = "scotland" | "uae_modern" | "uae_coastal" | "london" | "amman" | "italy" | "greece" | "germany";
-export type BackdropStyle = "edinburgh" | "uae_skyline" | "london" | "coastal" | "hills" | "city_generic";
+export type BackdropStyle = "edinburgh" | "uae_skyline" | "london" | "coastal" | "hills" | "city_generic" | "amman" | "santorini" | "positano";
 export type WallMaterial = "stone" | "render_white" | "render_cream" | "brick_london" | "limestone" | "marble";
 export type RoofStyle = "slate" | "flat_parapet" | "terracotta" | "lead_flat" | "glass";
 export type TreePrimary = "broadleaf" | "palm" | "mediterranean" | "bare_urban";
@@ -119,12 +119,12 @@ const SCOTLAND: WorldArtProfile = {
 
 const UAE_MODERN: WorldArtProfile = {
   region: "uae_modern",
-  groundColor: "#94ad5c", // irrigated lawn
+  groundColor: "#c8b87a", // sun-baked sand-grass
   pathColor: "#d9c9a6",
   roadColor: "#6e6c69",
   sidewalkColor: "#e4dac8",
   hasSand: true,
-  sandColor: "#e3cc98",
+  sandColor: "#dfc48a", // richer desert sand
   skyHorizonColor: "#f2e7d0",
   skyZenithColor: "#6aa3d9",
   backdropStyle: "uae_skyline",
@@ -143,11 +143,11 @@ const UAE_MODERN: WorldArtProfile = {
   fogColor: "#eee2c8",
   fogDensity: 0.006,
   landmarkMesh: "mosque",
-  groundTones: { light: "#a7bd6c", olive: "#8a9a52", dark: "#6f8a44" },
+  groundTones: { light: "#d2c48c", olive: "#a9a262", dark: "#8c8a50" }, // dry sand-grass, a hint of irrigated green
   underColor: "#dcc592",
   roadSurface: "asphalt",
   flowerPalette: ["#d9467e", "#f3e9d6", "#f0b04a", "#e87aa6", "#c23a64"],
-  foliageTint: "#7f9a4a",
+  foliageTint: "#8a9e50",
   atmosphereStrength: 0.55,
 };
 
@@ -163,7 +163,7 @@ const UAE_DUBAI: WorldArtProfile = {
 const UAE_COASTAL: WorldArtProfile = {
   ...UAE_MODERN,
   region: "uae_coastal",
-  groundColor: "#9bb164",
+  groundColor: "#bfad78", // sandier near the coast
   sandColor: "#ead7a8",
   skyHorizonColor: "#eef0e4",
   skyZenithColor: "#5fa2dc",
@@ -220,7 +220,7 @@ const ENGLAND_TOWN: WorldArtProfile = {
 
 const AMMAN: WorldArtProfile = {
   region: "amman",
-  groundColor: "#a7a672",
+  groundColor: "#b5a870", // warm limestone
   pathColor: "#d6c7a8",
   roadColor: "#716d68",
   sidewalkColor: "#e2d8c4",
@@ -228,7 +228,7 @@ const AMMAN: WorldArtProfile = {
   sandColor: "#d9c49a",
   skyHorizonColor: "#efe6d4",
   skyZenithColor: "#79a9d6",
-  backdropStyle: "hills",
+  backdropStyle: "amman",
   wallMaterial: "limestone",
   roofStyle: "flat_parapet",
   accentColor: "#6f8a5a",
@@ -240,7 +240,7 @@ const AMMAN: WorldArtProfile = {
   flowerColor: "#c9508a",
   lampStyle: "minimal",
   benchStyle: "stone",
-  ambientTint: "#fff4e4",
+  ambientTint: "#fff0da",
   fogColor: "#ebe1cf",
   fogDensity: 0.006,
   landmarkMesh: "none",
@@ -262,7 +262,7 @@ const ITALY: WorldArtProfile = {
   sandColor: "#dccaa2",
   skyHorizonColor: "#f1e8d6",
   skyZenithColor: "#5d9bd6",
-  backdropStyle: "coastal",
+  backdropStyle: "positano",
   wallMaterial: "render_cream",
   roofStyle: "terracotta",
   accentColor: "#3f7f8f",
@@ -295,6 +295,7 @@ const GREECE: WorldArtProfile = {
   sandColor: "#d8c7a4",
   skyHorizonColor: "#eef0ea",
   skyZenithColor: "#3f8ad6",
+  backdropStyle: "santorini",
   wallMaterial: "render_white",
   roofStyle: "flat_parapet",
   accentColor: "#2f64b0",

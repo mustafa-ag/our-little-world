@@ -66,6 +66,10 @@ export interface PlacedRecord {
  */
 const HEIGHT_TARGETS: Record<string, { h: number; mode: "uniform" | "y" }> = {
   "lamp-post": { h: LAMP_H, mode: "uniform" },
+  // regional lamp variants (artProfile lampStyle; only used once registered)
+  "lamp-modern": { h: LAMP_H, mode: "uniform" },
+  "lamp-ornate": { h: LAMP_H, mode: "uniform" },
+  "lamp-minimal": { h: LAMP_H, mode: "uniform" },
   signpost: { h: SIGNPOST_H, mode: "uniform" },
   "post-box": { h: POSTBOX_H, mode: "uniform" },
   "cafe-table": { h: CAFE_TABLE_H, mode: "uniform" },
@@ -75,7 +79,7 @@ const HEIGHT_TARGETS: Record<string, { h: number; mode: "uniform" | "y" }> = {
   car: { h: CAR_H, mode: "uniform" },
 };
 /** Pieces whose base must sit exactly on the ground (origin fix-up at flush). */
-const SNAP_KEYS = new Set(["lamp-post", "bench", "signpost", "post-box", "planter", "cafe-table", "cafe-chair", "barrel", "crate", "phone-box", "stone-wall", "fence", "wooden-fence", "fence-gate", "car", "chalkboard", "well", "fountain", "bollard", "curb", "bush", "bush-a", "bush-b"]);
+const SNAP_KEYS = new Set(["lamp-post", "lamp-modern", "lamp-ornate", "lamp-minimal", "bench", "bench-stone", "bench-modern", "signpost", "post-box", "planter", "cafe-table", "cafe-chair", "barrel", "crate", "phone-box", "stone-wall", "fence", "wooden-fence", "fence-gate", "car", "chalkboard", "well", "fountain", "bollard", "curb", "bush", "bush-a", "bush-b"]);
 
 interface Pending extends ThinPlacement {
   meta: PlaceMeta;

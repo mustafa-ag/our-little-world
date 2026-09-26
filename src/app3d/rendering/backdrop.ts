@@ -55,6 +55,9 @@ interface Layer {
   follow: number;
   /** Mist layers: alpha-blended haze ribbons. */
   mist?: boolean;
+  /** Mist only: a colour blended into the haze (warm horizon glow). */
+  tint?: Color3;
+  tintAmt?: number;
 }
 
 function hash(i: number, s: number) {
@@ -257,11 +260,173 @@ function cityBlocks(seed: number, o: { minH: number; maxH: number; minW: number;
   return pts;
 }
 
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/** Below the sea / ground band: where a silhouette has nothing to show. */
+const SUNK = -3;
+
+/**
+ * Houses sitting on a terrain profile: flat-topped boxes `top(x) + h` wherever
+ * `where(x)`, sunk out of sight elsewhere. `extra` may add a feature (dome,
+ * minaret) at a box and return its points; otherwise the box is plain.
+ */
+function blocksOn(
+  seed: number,
+  top: (x: number) => number,
+  where: (x: number) => boolean,
+  o: { minW: number; maxW: number; minH: number; maxH: number; gapChance?: number },
+  extra?: (x: number, w: number, y: number, r: number) => [number, number][] | null,
+): [number, number][] {
+  const pts: [number, number][] = [[-HALF, SUNK]];
+  let x = -HALF;
+  let i = 0;
+  while (x < HALF) {
+    const r = hash(i, seed);
+    const r2 = hash(i, seed + 3);
+    const w = o.minW + r * (o.maxW - o.minW);
+    if (!where(x) || !where(x + w) || r2 < (o.gapChance ?? 0)) {
+      pts.push([x, SUNK], [x + w, SUNK]);
+    } else {
+      const y = top(x + w / 2) + o.minH + r2 * (o.maxH - o.minH);
+      const feat = extra?.(x, w, y, hash(i, seed + 7));
+      if (feat) pts.push(...feat);
+      else pts.push([x, y], [x + w, y]);
+    }
+    x += w;
+    i++;
+  }
+  return pts;
+}
+
+/** Layer recipe for the non-Edinburgh backdrop styles. */
+interface RegionalLayer {
+  name: string;
+  pts: [number, number][];
+  base: string;
+  haze: number;
+  dist: number;
+  follow: number;
+  /** alpha-ramped haze ribbon (pts are ignored except for height) */
+  mist?: boolean;
+  /** mist only: colour blended into the haze (e.g. a warm amber horizon) */
+  tint?: string;
+  tintAmt?: number;
+}
+
 /** Placeholder layer recipes for the non-Edinburgh backdrop styles. */
 function regionalLayers(style: Exclude<BackdropStyle, "edinburgh">, seed: number) {
-  type L = { name: string; pts: [number, number][]; base: string; haze: number; dist: number; follow: number };
-  const out: L[] = [];
+  const out: RegionalLayer[] = [];
   switch (style) {
+    case "amman": {
+      // Amman: rolling bare limestone hills (jabals) carpeted in pale cube
+      // houses with the odd minaret, under a warm amber horizon haze
+      out.push({ name: "bdFar", pts: sample((x) => 12 + fbm(x / 110, seed) * 14 + Math.sin(x / 70) * 3, 8), base: "#c7a47a", haze: 0.58, dist: 400, follow: 0.93 });
+      out.push({ name: "bdGlow", pts: sample(() => 22, 40), base: "#ffffff", haze: 1, dist: 380, follow: 0.92, mist: true, tint: "#f2a760", tintAmt: 0.55 });
+      const jabal = (x: number) => 6 + fbm(x / 55, seed + 5) * 13 + Math.max(0, Math.sin(x / 95 + 1.3)) * 5;
+      out.push({ name: "bdHills", pts: sample(jabal, 5), base: "#c6ad86", haze: 0.44, dist: 322, follow: 0.87 });
+      // the town rides the same hill profile, a little in front, so the houses climb the jabals
+      out.push({
+        name: "bdTown",
+        pts: blocksOn(seed + 11, (x) => jabal(x) * 0.78, () => true, { minW: 2, maxW: 5, minH: 0.5, maxH: 3, gapChance: 0.08 }, (x, w, y, r) =>
+          r > 0.95 ? [[x, y], [x + w * 0.4, y], [x + w * 0.4, y + 8], [x + w * 0.5, y + 9.5], [x + w * 0.6, y + 8], [x + w * 0.6, y], [x + w, y]] : null,
+        ),
+        base: "#e0d0ac",
+        haze: 0.34,
+        dist: 312,
+        follow: 0.87,
+      });
+      // sparse olive / pine scrub in the near fringe
+      out.push({ name: "bdTrees", pts: sample((x) => 0.8 + fbm(x / 10, seed + 9, 3) * 2 + (hash(Math.floor(x / 7), seed + 2) > 0.75 ? 2.5 : 0), 2.5), base: "#7f7d52", haze: 0.28, dist: 185, follow: 0.72 });
+      break;
+    }
+    case "santorini": {
+      // Santorini: the caldera. Dark volcanic cliffs wrap round both sides,
+      // crowned with whitewashed cubes and blue domes, over deep blue water
+      // with Therasia low on the horizon through the gap
+      out.push({ name: "bdFar", pts: sample((x) => 2 + fbm(x / 50, seed) * 7 * Math.max(0, 1 - Math.abs(x - 10) / 150), 6), base: "#8e9aae", haze: 0.66, dist: 400, follow: 0.93 });
+      out.push({ name: "bdSea", pts: sample(() => 1.4, 40), base: "#1d5796", haze: 0.22, dist: 300, follow: 0.86 });
+      const rim = (x: number) => smoothstep(60, 120, Math.abs(x - 10));
+      const cliff = (x: number) => {
+        const e = rim(x);
+        return e < 0.02 ? SUNK : e * (16 + fbm(x / 38, seed + 5) * 11);
+      };
+      const crowned = (x: number) => rim(x) > 0.85;
+      // behind the cliff (so only what rises above the rim shows): white village, then blue domes in front of it
+      out.push({ name: "bdVillage", pts: blocksOn(seed + 21, (x) => cliff(x) - 1.2, crowned, { minW: 1.6, maxW: 3.8, minH: 1.4, maxH: 4, gapChance: 0.12 }), base: "#f4f1ea", haze: 0.2, dist: 276, follow: 0.84 });
+      out.push({
+        name: "bdDomes",
+        pts: blocksOn(seed + 31, (x) => cliff(x) - 3, crowned, { minW: 3, maxW: 9, minH: 0, maxH: 0 }, (x, w, y, r) => {
+          if (r < 0.72) return [[x, y], [x + w, y]];
+          // a small blue dome on a drum
+          const cx = x + w / 2;
+          const pts: [number, number][] = [[x, y], [cx - 1.2, y], [cx - 1.2, y + 5]];
+          for (let a = 1; a < 8; a++) pts.push([cx - 1.2 * Math.cos((a / 8) * Math.PI), y + 5 + Math.sin((a / 8) * Math.PI) * 1.2]);
+          pts.push([cx + 1.2, y + 5], [cx + 1.2, y], [x + w, y]);
+          return pts;
+        }),
+        base: "#2f64b0",
+        haze: 0.24,
+        dist: 273,
+        follow: 0.84,
+      });
+      out.push({ name: "bdCliffs", pts: sample(cliff, 3), base: "#6e554a", haze: 0.3, dist: 270, follow: 0.84 });
+      break;
+    }
+    case "positano": {
+      // Positano / Amalfi: steep Lattari mountains, a warm turquoise sea with
+      // rock stacks (faraglioni), and a pastel town cascading down the headland
+      out.push({ name: "bdFar", pts: sample((x) => 22 + fbm(x / 55, seed) * 30 + Math.max(0, 1 - Math.abs(x + 180) / 140) * 12, 6), base: "#948b80", haze: 0.6, dist: 400, follow: 0.93 });
+      out.push({ name: "bdGlow", pts: sample(() => 14, 40), base: "#ffffff", haze: 1, dist: 385, follow: 0.92, mist: true, tint: "#f3c08a", tintAmt: 0.3 });
+      out.push({ name: "bdSea", pts: sample(() => 1.2, 40), base: "#2f93b4", haze: 0.24, dist: 300, follow: 0.86 });
+      // faraglioni: a few steep rock stacks standing in the sea through the bay
+      const stacks: [number, number, number][] = [
+        [-10, 5, 13],
+        [8, 3.5, 9],
+        [22, 2.5, 6],
+        [118, 4, 10],
+      ];
+      out.push({
+        name: "bdStacks",
+        pts: sample((x) => {
+          let h = SUNK;
+          for (const [sx, hw, sh] of stacks) {
+            const u = Math.abs(x - sx) / hw;
+            if (u < 1) h = Math.max(h, sh * (1 - u ** 6) + fbm(x / 3, seed + 3) * 1.5);
+          }
+          return h;
+        }, 1),
+        base: "#86705c",
+        haze: 0.34,
+        dist: 282,
+        follow: 0.85,
+      });
+      // headlands: a big one west (the town slope) and a lower one east
+      const slope = (x: number) => {
+        const west = x < -40 ? 30 * smoothstep(-40, -250, x) + fbm(x / 30, seed + 5) * 6 : 0;
+        const east = x > 150 ? 22 * smoothstep(150, 330, x) + fbm(x / 30, seed + 6) * 5 : 0;
+        const h = Math.max(west, east);
+        return h < 0.5 ? SUNK : h;
+      };
+      // pastel houses stacked down the west slope: each colour is its own
+      // ribbon in front of the headland, each house a tall strip from its roof
+      // down to the sea so the town reads as a cascade
+      const town = (x: number) => x > -230 && x < -55;
+      ["#e7a98c", "#e8bf66", "#f1e4c8"].forEach((c, k) =>
+        out.push({
+          name: `bdTown${k}`,
+          pts: blocksOn(seed + 41 + k * 5, (x) => slope(x) * (0.3 + hash(Math.floor(x / 3), seed + k) * 0.7), town, { minW: 1.8, maxW: 3.2, minH: 0, maxH: 1, gapChance: 0.62 }),
+          base: c,
+          haze: 0.3,
+          dist: 258 - k * 2,
+          follow: 0.8,
+        }),
+      );
+      out.push({ name: "bdHeadland", pts: sample(slope, 3), base: "#5d6f45", haze: 0.34, dist: 262, follow: 0.8 });
+      break;
+    }
     case "uae_skyline":
       out.push({ name: "bdFar", pts: sample((x) => 3 + fbm(x / 120, seed) * 5, 10), base: "#c9b48e", haze: 0.7, dist: 400, follow: 0.93 });
       out.push({ name: "bdTown", pts: cityBlocks(seed, { minH: 4, maxH: 14, minW: 6, maxW: 14, towerChance: 0.28, towerH: 26, centreBoost: 10 }), base: "#8e9aa6", haze: 0.42, dist: 280, follow: 0.82 });
@@ -299,7 +464,7 @@ export function createBackdrop(scene: Scene, opts: BackdropOptions): Backdrop {
   const seed = opts.seed ?? 7;
   const layers: Layer[] = [];
   const style = opts.style ?? "edinburgh";
-  const add = (mesh: Mesh, base: string, haze: number, dist: number, follow: number, mist = false) => {
+  const add = (mesh: Mesh, base: string, haze: number, dist: number, follow: number, mist = false, tint?: string, tintAmt = 0) => {
     const mat = unlitMaterial(scene, `${mesh.name}Mat`);
     if (mist) {
       mat.alpha = 0.999; // force the alpha pass (vertex alpha ramps the ribbon out)
@@ -309,11 +474,14 @@ export function createBackdrop(scene: Scene, opts: BackdropOptions): Backdrop {
     mat.backFaceCulling = false;
     mesh.material = mat;
     mesh.alwaysSelectAsActiveMesh = true;
-    layers.push({ mesh, mat, base: Color3.FromHexString(base), haze, dist, follow, mist });
+    layers.push({ mesh, mat, base: Color3.FromHexString(base), haze, dist, follow, mist, tint: tint ? Color3.FromHexString(tint) : undefined, tintAmt });
   };
 
   if (style !== "edinburgh") {
-    for (const l of regionalLayers(style, seed)) add(ribbon(scene, l.name, l.pts, 1, 0.94), l.base, l.haze, l.dist, l.follow);
+    for (const l of regionalLayers(style, seed)) {
+      if (l.mist) add(ribbon(scene, l.name, l.pts, 1, 1, true), l.base, l.haze, l.dist, l.follow, true, l.tint, l.tintAmt);
+      else add(ribbon(scene, l.name, l.pts, 1, 0.94), l.base, l.haze, l.dist, l.follow);
+    }
     add(ribbon(scene, "bdMist1", sample(() => 8, 40), 1, 1, true), "#ffffff", 1, 245, 0.8, true);
   } else {
   // 1. far ridges (Highlands / Pentlands, blue and soft)
@@ -371,7 +539,12 @@ export function createBackdrop(scene: Scene, opts: BackdropOptions): Backdrop {
     setAtmosphere(a) {
       for (const l of layers) {
         if (l.mist) {
-          l.mat.emissiveColor = a.haze.clone();
+          if (l.tint) {
+            // tinted haze follows the time of day: the tint is lit like the layers
+            c.copyFrom(l.tint).multiplyToRef(a.light, c);
+            Color3.LerpToRef(a.haze, c, l.tintAmt ?? 0, c);
+            l.mat.emissiveColor = c.clone();
+          } else l.mat.emissiveColor = a.haze.clone();
           continue;
         }
         c.copyFrom(l.base).multiplyToRef(a.light, c);

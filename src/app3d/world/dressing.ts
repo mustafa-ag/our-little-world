@@ -14,7 +14,8 @@ import { hash01 } from "../assets/kit/util";
 import { kitDoorX, presetVariant } from "../assets/kit/architecture";
 import type { BuildContext, BuiltWorld, PlaceMeta, PlacedBuilding } from "./worldBuilder";
 import { groundUnder, heroBuilding, isRoadTex, tileKey } from "./worldBuilder";
-import { SCOTLAND_PROFILE } from "./artProfile";
+import { PRESETS } from "../assets/kit/architecture/presets";
+import { SCOTLAND_PROFILE, type RegionKind, type WorldArtProfile } from "./artProfile";
 
 const isTree = (k: string) => k.startsWith("tree") || k === "bush" || k.startsWith("bush-");
 
@@ -24,21 +25,81 @@ const PINES = ["#5f7f4a", "#557344", "#6a8a52"];
 /** Palm key (procedural, registered by kit/foliage.ts). */
 const PALM = "tree-palm";
 
-/** Street-side cottage presets (name, footprint width in tiles); each is one thin-instance batch. */
-const EXTRA_PRESETS: [string, number][] = [
-  ["creamTerra", 4],
-  ["stoneCrow", 4],
-  ["greyDormer", 3],
-  ["creamCrow2", 4],
-  ["greyMoss", 3],
-  ["sandDormer2", 4],
-  ["rose2", 3],
-  ["bothy", 3],
-  ["whiteSlate", 4],
-  ["shop", 4],
-  ["creamTerra", 3],
-  ["greyDormer", 4],
-];
+/**
+ * Street-side infill presets per region (name, footprint width in tiles); each
+ * is one thin-instance batch. The kit only has Scottish cottage presets so far:
+ * the other regions list the presets they want, and `extraPresets` drops any
+ * name the kit doesn't define (an unknown name would silently render as a
+ * Scottish creamTerra cottage), so those regions get no infill until the kit
+ * grows matching presets.
+ */
+const EXTRA_PRESETS_BY_REGION: Partial<Record<RegionKind, [string, number][]>> = {
+  scotland: [
+    ["creamTerra", 4],
+    ["stoneCrow", 4],
+    ["greyDormer", 3],
+    ["creamCrow2", 4],
+    ["greyMoss", 3],
+    ["sandDormer2", 4],
+    ["rose2", 3],
+    ["bothy", 3],
+    ["whiteSlate", 4],
+    ["shop", 4],
+    ["creamTerra", 3],
+    ["greyDormer", 4],
+  ],
+  london: [
+    ["brick_terrace_a", 4],
+    ["brick_terrace_b", 4],
+  ],
+  amman: [
+    ["sandstone_shop", 4],
+    ["limestone_villa", 4],
+  ],
+  italy: [
+    ["render_cream_villa", 4],
+    ["terracotta_house", 3],
+  ],
+  greece: [["whitewash_cube", 3]],
+  uae_modern: [
+    ["render_villa", 4],
+    ["compound_wall", 4],
+  ],
+  uae_coastal: [["beachfront_villa", 4]],
+};
+
+/** The region's infill presets that the kit can actually build (may be empty). */
+function extraPresets(profile: WorldArtProfile): [string, number][] {
+  return (EXTRA_PRESETS_BY_REGION[profile.region] ?? []).filter(([name]) => name in PRESETS);
+}
+
+/** Street-lamp asset key for the region (the caller falls back to "lamp-post" when unregistered). */
+function lampKey(profile: WorldArtProfile): string {
+  switch (profile.lampStyle) {
+    case "modern_steel":
+      return "lamp-modern";
+    case "ornate_gold":
+      return "lamp-ornate";
+    case "minimal":
+      return "lamp-minimal";
+    case "victorian_iron":
+    default:
+      return "lamp-post";
+  }
+}
+
+/** Bench asset key for the region (the caller falls back to "bench" when unregistered). */
+function benchKey(profile: WorldArtProfile): string {
+  switch (profile.benchStyle) {
+    case "stone":
+      return "bench-stone";
+    case "metal_modern":
+      return "bench-modern";
+    case "wooden_slat":
+    default:
+      return "bench"; // the wooden slat bench is the registered hero "bench"
+  }
+}
 
 export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   const { collider, env, def, am } = ctx;
@@ -59,8 +120,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     pine: key("tree-pine", "tree-b"),
     bushA: key("bush-a", "bush"),
     bushB: key("bush-b", "bush"),
-    bench: key("bench", "bench"),
-    lamp: key("lamp-post", "lamp-post"),
+    bench: key(benchKey(profile), "bench"),
+    lamp: key(lampKey(profile), "lamp-post"),
     signpost: key("signpost", "signpost"),
     wall: key("stone-wall", "stone-wall"),
     fence: key("fence", "wooden-fence"),
@@ -390,7 +451,9 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   const gardenSeg = (sg: Seg) => def.id === "edinburgh_oldtown" && sg.horizontal && sg.at >= 40 && sg.at <= 56 && street(Math.floor((sg.from + sg.to) / 2), sg.at);
 
   // ---------------------------------------------------------- extra cottages
-  for (const s of segs) {
+  // (region-aware: no Scottish cottages in Dubai / Amman; empty = no infill)
+  const EXTRA_PRESETS = extraPresets(profile);
+  for (const s of EXTRA_PRESETS.length ? segs : []) {
     for (const side of [-1, 1]) {
       let pos = s.from + 3;
       while (pos < s.to - 4 && extra < MAX_EXTRA_BUILDINGS) {
