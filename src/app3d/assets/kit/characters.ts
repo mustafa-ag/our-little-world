@@ -112,6 +112,8 @@ export interface Appearance {
   face?: FaceKind;
   /** Hide every hair mesh (e.g. under a hijab). */
   hideHair?: boolean;
+  /** Jewellery / accessory metal (olw_accent); omitted = plain white. Juju only for now. */
+  accent?: string;
 }
 
 /** Juju's own look: warm dark olive skin, very long dark-brown wavy hair (vertex colours add darker roots / chestnut ends). */
@@ -158,9 +160,33 @@ export function jujuLook(outfit: string): JujuLook {
   };
 }
 
+/** Juju's jewellery metal per outfit (earrings / bracelet / clip: the olw_accent slot). */
+const ACCENT_BY_OUTFIT: Record<string, string> = {
+  casual: "#d4a843", // warm gold
+  cozy: "#e8b4c0", // rose gold
+  summer: "#f5d090", // pale gold
+  london_prep: "#c0bdb0", // silver
+  sparkle_night: "#e8d060", // bright gold
+};
+
+export function accentForOutfit(outfit: string): string {
+  return ACCENT_BY_OUTFIT[outfit] ?? "#d4a843";
+}
+
 export function jujuAppearance(outfit: string): Appearance {
   const l = jujuLook(outfit);
-  return { skin: JUJU_SKIN, hair: JUJU_HAIR, top: l.top, bottom: l.bottom, shoes: l.shoes, outer: l.outer, bottomKind: l.bottomKind, accessories: true, face: "juju" };
+  return {
+    skin: JUJU_SKIN,
+    hair: JUJU_HAIR,
+    top: l.top,
+    bottom: l.bottom,
+    shoes: l.shoes,
+    outer: l.outer,
+    bottomKind: l.bottomKind,
+    accessories: true,
+    face: "juju",
+    accent: accentForOutfit(outfit),
+  };
 }
 
 /** Hair styles for the people we know; everyone else hashes into the list. */
@@ -240,8 +266,22 @@ export function npcAppearance(c: CharColors, opts: CharacterOpts, id = ""): Appe
     bottomKind: opts.skirt === false ? "jeans" : "skirt",
     hairStyle: opts.hair ?? "long",
     hideHair: !!b.hijab,
-    face: isMaleNpc(id) ? "male" : "female",
+    face: isMaleNpc(id) ? "male" : npcFaceKind(id),
   };
+}
+
+/** Face variants for the women we know (everyone else: the default "female"). */
+const NPC_FACE_KINDS: Record<string, FaceKind> = {
+  mama: "female_soft",
+  fadwa: "female_soft",
+  hazel: "female_sharp",
+  rhiannon: "female_sharp",
+  nour: "female_young",
+  chloe: "female_young",
+};
+
+export function npcFaceKind(id: string): FaceKind {
+  return NPC_FACE_KINDS[id] ?? "female";
 }
 
 // ------------------------------------------------------------- skinned rig --
@@ -281,7 +321,8 @@ function dress(k: KitContext, ai: AnimatedInstance, a: Appearance) {
     olw_outer: a.outer ?? a.top,
     olw_bottom: a.bottom,
     olw_shoes: a.shoes,
-    olw_accent: "#ffffff",
+    // Juju's jewellery metal (set per outfit in jujuAppearance); NPCs keep plain white
+    olw_accent: a.accent ?? "#ffffff",
   };
   for (const m of ai.meshes) {
     const meta = (m.metadata ?? (m.metadata = {})) as SlotMeta;
