@@ -440,7 +440,7 @@ export class Game3D {
    * from the map, moves Juju + the camera in and pauses the exterior rules.
    * The UI fades around this call. Returns false when there's no live world.
    */
-  enterInterior(opts: { title: string; interior?: InteriorStyle }): boolean {
+  enterInterior(opts: { title: string; interior?: InteriorStyle; primaryHome?: boolean }): boolean {
     const l = this.loaded;
     if (!l || l.setupPending || this.indoors || this.loading) return false;
     const propertyId = store.state.primaryHomeId ?? "starter_yas";
@@ -448,11 +448,12 @@ export class Game3D {
       title: opts.title,
       interior: opts.interior ?? "cream",
       propertyId,
+      showFurniture: !!opts.primaryHome,
       windowHex: l.profile.skyHorizonColor,
       night: store.state.timeOfDay === "night" || store.state.timeOfDay === "evening",
       shadows: !this.host.isMobile,
     });
-    if ((opts.interior ?? "cream") === "cream") {
+    if (opts.primaryHome) {
       // HouseScene: entering a home makes it the active one
       store.state.activeHomeId = propertyId;
       store.save();

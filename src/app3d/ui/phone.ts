@@ -2,10 +2,8 @@
 // album, stats, people, notes, bag, wardrobe, homes, memories, world map).
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
-import { markRead } from "../../game/systems/phone";
-import { activateFromMessage, canStartQuest, onInteract, prerequisiteHint, startQuest, statusOf } from "../../game/systems/quests";
+import { canStartQuest, onInteract, prerequisiteHint, startQuest, statusOf } from "../../game/systems/quests";
 import { QUESTS } from "../../game/data/quests";
-import { NPCS } from "../../game/data/npcs";
 import { ITEMS } from "../../game/data/items";
 import { MEMORIES } from "../../game/data/memories";
 import { CITIES } from "../../game/data/locations";
@@ -15,7 +13,7 @@ import { button, el, type Disposer } from "./dom";
 import { worldMapView } from "./worldMap";
 import { wardrobeView } from "./wardrobe";
 import { storyRequestForStep, type StorySceneId } from "./storyScenes";
-import { albumView, cameraView, contactsView, notesView, resetPhoneTabs, statsView, type PhoneNav } from "./phoneTabs";
+import { albumView, cameraView, contactsView, messagesView, notesView, resetPhoneTabs, selectMessageThread, statsView, type PhoneNav } from "./phoneTabs";
 
 type Tab = "messages" | "quests" | "camera" | "album" | "stats" | "contacts" | "notes" | "bag" | "wardrobe" | "homes" | "memories" | "map";
 const TABS: { id: Tab; label: string }[] = [
@@ -34,51 +32,14 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 let lastTab: Tab = "messages";
-/** Texts tab filtered to one sender (set from People › Message). */
-let textsFrom: string | undefined;
 
 /** Story scenes that can start from the quest card (the rest are place-bound). */
 const PHONE_STORIES = new Set<StorySceneId>(["romance", "wedding", "tigor", "pirate"]);
-
-const npcName = (id: string) => NPCS.find((n) => n.id === id)?.name ?? id;
 
 export function phoneBody(md: Disposer, close: () => void, travel: (id: string, onArrive?: () => void) => void): Node {
   const tabs = el("div", { class: "olw-tabs", attrs: { role: "tablist" } });
   const pane = el("div", { class: "olw-tabpane" });
   const tabBtns = new Map<Tab, HTMLButtonElement>();
-
-  const messages = () => {
-    const from = textsFrom;
-    const list = from ? store.state.messages.filter((m) => m.sender === from) : store.state.messages;
-    const filterBar = from
-      ? el("div", { class: "olw-msg-filter" }, [
-          el("span", { text: `Texts with ${npcName(from)}` }),
-          button(md, "Show all", "olw-btn olw-btn--ghost olw-btn--small", () => {
-            textsFrom = undefined;
-            render();
-          }),
-        ])
-      : null;
-    if (!list.length)
-      return el("div", {}, [
-        filterBar,
-        el("p", { class: "olw-empty", text: from ? `No texts from ${npcName(from)} yet. Go say hi in person!` : "No texts yet. Sleep, travel, talk — they'll find you." }),
-      ]);
-    const ul = el("ul", { class: "olw-msgs" });
-    for (const m of list.slice(0, 30)) {
-      const row = button(md, "", `olw-msg ${m.read ? "" : "olw-msg--unread"}`, () => {
-        markRead(m.id);
-        if (m.questId) activateFromMessage(m.questId);
-        render();
-      });
-      row.append(
-        el("span", { class: "olw-msg-from" }, [npcName(m.sender), el("span", { class: "olw-msg-day", text: ` · day ${m.day}` })]),
-        el("span", { class: "olw-msg-body", text: m.body }),
-      );
-      ul.append(el("li", {}, [row]));
-    }
-    return filterBar ? el("div", {}, [filterBar, ul]) : ul;
-  };
 
   const questList = () => {
     const wrap = el("div", { class: "olw-phone-quests" });
@@ -325,7 +286,7 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string, 
   const nav: PhoneNav = {
     render: () => render(),
     messageContact: (npcId) => {
-      textsFrom = npcId;
+      selectMessageThread(npcId);
       lastTab = "messages";
       render();
     },
@@ -342,7 +303,7 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string, 
     tabD = md.child();
     const scoped = tabD;
     const views: Record<Tab, () => Node> = {
-      messages,
+      messages: () => messagesView(scoped, nav),
       quests: questList,
       camera: () => cameraView(scoped, nav, () => {
         lastTab = "album";
@@ -363,10 +324,9 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string, 
   };
 
   resetPhoneTabs();
-  textsFrom = undefined;
   for (const t of TABS) {
     const b = button(md, t.label, "olw-tab", () => {
-      if (t.id === "messages" && lastTab === "messages") textsFrom = undefined;
+      if (t.id === "messages" && lastTab === "messages") selectMessageThread();
       lastTab = t.id;
       render();
     });

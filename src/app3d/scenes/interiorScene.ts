@@ -32,6 +32,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { controls, uiEvents } from "../../game/systems/controls";
 import { store } from "../../game/systems/store";
 import { propertyById } from "../../game/data/properties";
+import { BUILD_CATALOG } from "../../game/data/furnitureCatalog";
 import { ACTIVE_REGION, PALETTE } from "../rendering/materials";
 import type { GridCollider } from "../world/gridCollider";
 import { InteractionSystem } from "../systems/interaction";
@@ -50,6 +51,8 @@ export interface InteriorOptions {
   title: string;
   interior: InteriorStyle;
   propertyId: string;
+  /** Only the player's owned primary home shows editable saved pieces. */
+  showFurniture: boolean;
   /** The outside region's backdrop / horizon colour, seen through the window. */
   windowHex: string;
   night: boolean;
@@ -142,6 +145,12 @@ export class InteriorScene {
   private lights: Light[] = [];
   private shadowGen: ShadowGenerator | null = null;
   private excludedFrom: Light[] = [];
+  private furnitureMeshes: Mesh[] = [];
+  private furnitureLabels: Label[] = [];
+  private propertyId: string;
+  private propertyWidth: number;
+  private propertyHeight: number;
+  private showFurniture: boolean;
   private lastInteract = 0;
   private disposed = false;
   /** Tigor curled up on the rug (only built once he's part of the family). */
@@ -157,6 +166,10 @@ export class InteriorScene {
     this.root.position.set(O.x, 0, O.z);
 
     const def = propertyById(opts.propertyId);
+    this.propertyId = opts.propertyId;
+    this.propertyWidth = def.width;
+    this.propertyHeight = def.height;
+    this.showFurniture = opts.showFurniture;
     const brown = opts.interior === "brown";
     this.title = opts.title;
     this.subtitle = brown ? "Inside · mind the stairs" : `${def.location} · ${def.type}`;
@@ -337,6 +350,11 @@ export class InteriorScene {
       store.on("petChanged", this.showTigor, this);
     }
 
+    // Player-chosen furniture shares the legacy per-property save data. The
+    // stored 2D room coordinates are projected into this room without changing
+    // the save format, so old homes immediately appear furnished in 3D.
+    this.renderFurniturePlacements();
+
     // ---- lights: warm ceiling + bedside + window (+ a soft warm hemi) ----
     const toWorld = (x: number, y: number, z: number) => new Vector3(O.x + x, y, O.z + z);
     const hemi = new HemisphericLight("int:hemi", new Vector3(0.1, 1, -0.2), scene);
@@ -423,6 +441,7 @@ export class InteriorScene {
 
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("uiClosed", this.onUiClosed, this);
+    uiEvents.on("furnitureChanged", this.onFurnitureChanged, this);
   }
 
   /** Tigor is only in the room while he's waiting at home (not out following Juju). */
@@ -455,6 +474,52 @@ export class InteriorScene {
       this.lastInteract = t;
       this.interaction.triggerCurrent();
     }
+  }
+
+  private onFurnitureChanged(propertyId?: string) {
+    if (!this.showFurniture) return;
+    if (propertyId && propertyId !== this.propertyId) return;
+    this.renderFurniturePlacements();
+  }
+
+  private renderFurniturePlacements() {
+    if (this.furnitureMeshes.length) {
+      const removing = new Set<AbstractMesh>(this.furnitureMeshes);
+      this.meshes = this.meshes.filter((mesh) => !removing.has(mesh));
+      for (const light of this.lights) light.includedOnlyMeshes = light.includedOnlyMeshes.filter((mesh) => !removing.has(mesh));
+      for (const light of this.excludedFrom) light.excludedMeshes = light.excludedMeshes.filter((mesh) => !removing.has(mesh));
+      for (const mesh of this.furnitureMeshes) mesh.dispose();
+    }
+    for (const label of this.furnitureLabels) label.dispose();
+    this.furnitureMeshes = [];
+    this.furnitureLabels = [];
+
+    const placements = this.showFurniture ? store.state.properties[this.propertyId]?.furniture ?? [] : [];
+    const palette = [PALETTE.dustyRose, PALETTE.sage, PALETTE.mutedYellow, PALETTE.sky, PALETTE.lavender, PALETTE.terracottaMuted];
+    placements.forEach((piece, index) => {
+      const nx = Math.max(0.08, Math.min(0.92, piece.x / (this.propertyWidth * 16)));
+      const ny = Math.max(0.12, Math.min(0.88, piece.y / (this.propertyHeight * 16)));
+      const x = (nx - 0.5) * 6.5;
+      const z = (0.5 - ny) * 4.25;
+      const isRug = piece.tex === "f_rug";
+      const isTall = piece.tex === "f_bookshelf" || piece.tex === "f_fridge" || piece.tex === "f_vanity";
+      let width = isRug ? 1.5 : piece.tex === "f_sofa" || piece.tex === "f_bed" ? 1.25 : 0.82;
+      let depth = isRug ? 1.05 : piece.tex === "f_sofa" || piece.tex === "f_bed" ? 0.72 : 0.66;
+      const height = isRug ? 0.04 : isTall ? 1.05 : piece.tex === "f_lamp" || piece.tex === "f_plant" ? 0.78 : 0.58;
+      if (piece.rot) [width, depth] = [depth, width];
+      const material = this.mat(`placed:${piece.tex}`, palette[index % palette.length]);
+      const mesh = this.box(`placed:${index}:${piece.tex}`, width, height, depth, material, x, height / 2 + 0.02, z);
+      mesh.receiveShadows = true;
+      this.furnitureMeshes.push(mesh);
+      for (const light of this.lights) if (!light.includedOnlyMeshes.includes(mesh)) light.includedOnlyMeshes.push(mesh);
+      for (const light of this.excludedFrom) if (!light.excludedMeshes.includes(mesh)) light.excludedMeshes.push(mesh);
+
+      const name = BUILD_CATALOG.find((item) => item.texture === piece.tex)?.name ?? piece.tex.replace(/^f_/, "").replace(/_/g, " ");
+      const label = createLabel(this.scene, name, { scale: 0.62 });
+      label.mesh.parent = this.root;
+      label.setPosition(x, height + 0.38, z);
+      this.furnitureLabels.push(label);
+    });
   }
 
   // ---- mesh helpers ----
@@ -515,6 +580,7 @@ export class InteriorScene {
     uiEvents.off("action", this.tryInteract, this);
     uiEvents.off("uiClosed", this.onUiClosed, this);
     store.off("petChanged", this.showTigor, this);
+    uiEvents.off("furnitureChanged", this.onFurnitureChanged, this);
     if (this.interaction.currentPrompt) uiEvents.emit("prompt", null);
     this.interaction.clear();
     const mine = new Set<AbstractMesh>(this.meshes);
@@ -528,6 +594,7 @@ export class InteriorScene {
     this.tigorLabel = null;
     this.tigor?.dispose();
     this.tigor = null;
+    for (const label of this.furnitureLabels) label.dispose();
     this.root.dispose();
     this.meshes = [];
   }

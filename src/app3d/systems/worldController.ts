@@ -611,7 +611,7 @@ export class WorldController {
       case "office":
         return this.useOffice(z.tag);
       case "home":
-        this.enterHouse(loc.homeName ?? "Home", "cream");
+        this.enterHouse(loc.homeName ?? "Home", "cream", true);
         return;
       case "stairs": {
         const d = (z.data as { name?: string; tag?: string }) ?? {};
@@ -633,7 +633,7 @@ export class WorldController {
             if (brown) quests.onMinigame("well_court_race");
             else if (z.tag) quests.onInteract(z.tag);
             if (brown) store.unlockMemory("mem_well_court");
-            this.enterHouse(d.name ?? "Inside", brown ? "brown" : "cream");
+            this.enterHouse(d.name ?? "Inside", brown ? "brown" : "cream", false);
           },
         });
         return;
@@ -701,8 +701,8 @@ export class WorldController {
   }
 
   /** Hand off to the UI layer (ui/house.ts fades into the 3D interior); toast if nothing listens. */
-  private enterHouse(title: string, interior: "cream" | "brown") {
-    uiEvents.emit("enterHouse", { title, interior });
+  private enterHouse(title: string, interior: "cream" | "brown", primaryHome: boolean) {
+    uiEvents.emit("enterHouse", { title, interior, primaryHome });
   }
 
   /** ui/mall.ts opens the store directory (and Baba Shopping from there). */

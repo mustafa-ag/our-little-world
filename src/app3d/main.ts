@@ -55,7 +55,7 @@ function boot() {
   });
 
   // house interior (ui/house.ts fades around these; `done` reports the outcome)
-  uiEvents.on("interiorEnter", (opts: { title: string; interior?: "cream" | "brown" }, done?: (ok: boolean) => void) => {
+  uiEvents.on("interiorEnter", (opts: { title: string; interior?: "cream" | "brown"; primaryHome?: boolean }, done?: (ok: boolean) => void) => {
     let ok = false;
     try {
       ok = started && game.enterInterior(opts);

@@ -12,12 +12,31 @@ import { getNpcsAtLocation, homeComment, npcWhere } from "../../game/systems/lif
 import * as quests from "../../game/systems/quests";
 import { LOCATIONS, getLocation } from "../../game/data/locations";
 import { NPCS, type NpcDef } from "../../game/data/npcs";
-import { button, el, prefersReducedMotion } from "./dom";
+import { BUILD_CATALOG, type BuildCatalogItem } from "../../game/data/furnitureCatalog";
+import { button, el, icon, prefersReducedMotion, type Disposer } from "./dom";
 import type { UIContext } from "./context";
 import type { ModalHost } from "./modal";
 import { wardrobeView } from "./wardrobe";
 
 type Sleep = (opts?: { fromBed?: boolean }) => void;
+
+const DECOR_SLOTS = [
+  { x: 40, y: 128 }, { x: 88, y: 152 }, { x: 144, y: 140 }, { x: 200, y: 152 }, { x: 248, y: 128 },
+  { x: 64, y: 96 }, { x: 112, y: 104 }, { x: 176, y: 104 }, { x: 224, y: 96 }, { x: 144, y: 176 },
+] as const;
+
+function decorItems() {
+  return BUILD_CATALOG.filter((item): item is BuildCatalogItem & { texture: string } =>
+    !!item.texture && (!item.special || store.state.flags.wedding_completed));
+}
+
+function propertyFurniture() {
+  return store.state.properties[store.state.primaryHomeId]?.furniture ?? [];
+}
+
+function storedCount(texture: string) {
+  return (store.state.properties[store.state.primaryHomeId]?.storedFurniture ?? []).filter((id) => id === texture).length;
+}
 
 export function mountHouse(ctx: UIContext, host: ModalHost, sleep: Sleep) {
   const { d } = ctx;
@@ -25,6 +44,101 @@ export function mountHouse(ctx: UIContext, host: ModalHost, sleep: Sleep) {
   const fade = d.node(el("div", { class: "olw-sleep-fade olw-travel-fade", attrs: { "aria-hidden": "true" } }, [label]));
   ctx.layer.append(fade);
   let busy = false;
+  let canDecorate = false;
+
+  const decorateButton = d.node(button(d, "Decorate", "olw-btn olw-btn--rose olw-decorate-button", () => openDecorate()));
+  decorateButton.prepend(icon("sparkle"));
+  decorateButton.hidden = true;
+  ctx.layer.append(decorateButton);
+
+  const refreshFurnitureScene = () => uiEvents.emit("furnitureChanged", store.state.primaryHomeId);
+
+  const placeItem = (item: BuildCatalogItem & { texture: string }) => {
+    const furniture = propertyFurniture();
+    if (furniture.length >= DECOR_SLOTS.length) {
+      store.toast("The room is delightfully full. Remove something first.", "#f4a6c0");
+      return false;
+    }
+    const usingStored = storedCount(item.texture) > 0;
+    if (usingStored) store.takeStoredFurniture(item.texture);
+    else if (item.price && !store.spendCoins(item.price)) {
+      store.toast(`Need ${item.price - store.state.coins} more coins.`, "#e46d94");
+      return false;
+    }
+    const slot = DECOR_SLOTS.find((candidate) => !furniture.some((piece) => piece.x === candidate.x && piece.y === candidate.y)) ?? DECOR_SLOTS[furniture.length];
+    store.placeFurniture({ tex: item.texture, x: slot.x, y: slot.y });
+    if (!usingStored) {
+      store.incrementStat("furniture_bought");
+      quests.onBuy(item.texture);
+    }
+    quests.onDecorate("home");
+    quests.onInteract("home_refresh");
+    store.incrementStat("rooms_redesigned");
+    store.toast(`${item.name} placed ♡`, "#7be0a3");
+    refreshFurnitureScene();
+    return true;
+  };
+
+  const removeItem = (item: BuildCatalogItem & { texture: string }) => {
+    const furniture = propertyFurniture();
+    const index = furniture.map((piece) => piece.tex).lastIndexOf(item.texture);
+    if (index < 0) return false;
+    const next = furniture.slice();
+    next.splice(index, 1);
+    store.storeFurniture(item.texture);
+    store.setFurniture(next);
+    store.toast(`${item.name} moved to storage.`, "#8ecae6");
+    refreshFurnitureScene();
+    return true;
+  };
+
+  const decorateView = (md: Disposer): Node => {
+    const root = el("div", { class: "olw-decorate" });
+    let renderD: Disposer | undefined;
+    const render = () => {
+      renderD?.dispose();
+      renderD = md.child();
+      const rd = renderD;
+      const property = store.state.properties[store.state.primaryHomeId];
+      const furniture = property?.furniture ?? [];
+      const wallet = el("p", { class: "olw-shop-wallet", text: `${store.state.coins} coins · ${furniture.length}/${DECOR_SLOTS.length} pieces placed` });
+      const grid = el("ul", { class: "olw-decor-grid" });
+      for (const item of decorItems()) {
+        const placed = furniture.filter((piece) => piece.tex === item.texture).length;
+        const stored = storedCount(item.texture);
+        const place = button(rd, stored ? "Place owned" : item.price ? `Buy & place · ${item.price}` : "Place reward", "olw-btn olw-btn--rose olw-btn--small", () => {
+          if (placeItem(item)) render();
+        });
+        place.disabled = furniture.length >= DECOR_SLOTS.length;
+        const remove = button(rd, "Remove", "olw-btn olw-btn--ghost olw-btn--small", () => {
+          if (removeItem(item)) render();
+        });
+        remove.disabled = placed === 0;
+        grid.append(el("li", { class: "olw-decor-item" }, [
+          el("span", { class: "olw-decor-glyph", text: item.name.charAt(0), attrs: { "aria-hidden": "true" } }),
+          el("span", { class: "olw-decor-copy" }, [
+            el("span", { class: "olw-shop-name", text: item.name }),
+            el("span", { class: "olw-shop-kind", text: `${placed} placed · ${stored} stored` }),
+          ]),
+          el("div", { class: "olw-decor-actions" }, [place, remove]),
+        ]));
+      }
+      root.replaceChildren(wallet, el("p", { class: "olw-home-hint", text: "Choose Place to add a piece to the room. Remove sends the latest one back to storage." }), grid);
+    };
+    render();
+    return root;
+  };
+
+  function openDecorate() {
+    if (!canDecorate || ctx.anyModal()) return;
+    host.open({
+      kind: "decorate",
+      title: "Decorate your home",
+      subtitle: "Make the room feel like yours.",
+      className: "olw-decorate-modal",
+      body: (md) => decorateView(md),
+    });
+  }
 
   const setIndoors = (on: boolean) => {
     if (ctx.indoors === on) return;
@@ -59,18 +173,21 @@ export function mountHouse(ctx: UIContext, host: ModalHost, sleep: Sleep) {
     }, ms);
   };
 
-  d.on(uiEvents, "enterHouse", (opts: { title: string; interior?: "cream" | "brown" }) => {
+  d.on(uiEvents, "enterHouse", (opts: { title: string; interior?: "cream" | "brown"; primaryHome?: boolean }) => {
     if (ctx.indoors || ctx.anyModal()) return;
     const title = opts?.title ?? "Home";
     transition(
       title,
-      (done) => uiEvents.emit("interiorEnter", { title, interior: opts?.interior ?? "cream" }, done),
+      (done) => uiEvents.emit("interiorEnter", { title, interior: opts?.interior ?? "cream", primaryHome: !!opts?.primaryHome }, done),
       (ok) => {
         if (!ok) {
           store.toast(`${title} — couldn't go inside right now`, "#f4a6c0");
           return;
         }
         setIndoors(true);
+        const primary = store.state.properties[store.state.primaryHomeId];
+        canDecorate = !!opts?.primaryHome && !!primary?.owned;
+        decorateButton.hidden = !canDecorate;
         uiEvents.emit("locationTitle", title, opts?.interior === "brown" ? "Inside" : "Home");
         // HouseScene: a small note about the place once Moomoo knows it well
         const note = opts?.interior !== "brown" ? homeComment() : null;
@@ -85,12 +202,20 @@ export function mountHouse(ctx: UIContext, host: ModalHost, sleep: Sleep) {
       "Outside…",
       (done) => uiEvents.emit("interiorExit", done),
       (ok) => {
-        if (ok) setIndoors(false);
+        if (ok) {
+          setIndoors(false);
+          canDecorate = false;
+          decorateButton.hidden = true;
+        }
       },
     );
   });
 
-  d.on(uiEvents, "interiorClosed", () => setIndoors(false));
+  d.on(uiEvents, "interiorClosed", () => {
+    setIndoors(false);
+    canDecorate = false;
+    decorateButton.hidden = true;
+  });
 
   // ---- bed: "Rest?" ----
   d.on(uiEvents, "houseRest", () => {

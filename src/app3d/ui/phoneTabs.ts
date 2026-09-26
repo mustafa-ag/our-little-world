@@ -6,6 +6,9 @@ import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { npcWhere } from "../../game/systems/life";
 import * as companions from "../../game/systems/companions";
+import { markRead } from "../../game/systems/phone";
+import { chatContacts, markThreadRead, sendChat, suggestionsFor, threadFor } from "../../game/systems/chat";
+import { activateFromMessage } from "../../game/systems/quests";
 import type { SavedPhoto } from "../../game/systems/save";
 import { NPCS } from "../../game/data/npcs";
 import { QUESTS } from "../../game/data/quests";
@@ -32,6 +35,7 @@ const TIME_LABEL: Record<string, string> = { morning: "Morning", afternoon: "Aft
 
 let selectedPhoto: string | undefined;
 let selectedContact: string | undefined;
+let selectedMessageContact: string | undefined;
 let cameraFlash: string | undefined;
 let pendingDelete: string | undefined;
 
@@ -39,8 +43,156 @@ let pendingDelete: string | undefined;
 export function resetPhoneTabs() {
   selectedPhoto = undefined;
   selectedContact = undefined;
+  selectedMessageContact = undefined;
   cameraFlash = undefined;
   pendingDelete = undefined;
+}
+
+// ---------------------------------------------------------------- texts
+
+interface ThreadMessage {
+  id: string;
+  direction: "incoming" | "outgoing";
+  body: string;
+  day: number;
+  read: boolean;
+  questId?: string;
+}
+
+/** Story texts are mirrored into chatEntries in current saves. Keep unmatched
+ * legacy messages visible without showing the mirrored copy twice. */
+function conversationFor(contactId: string): ThreadMessage[] {
+  const chat: ThreadMessage[] = threadFor(contactId).map((entry) => ({ ...entry }));
+  const mirrored = new Set(chat.flatMap((entry) => {
+    const id = entry.id.replace(/^(story|legacy):/, "");
+    return [entry.id, id];
+  }));
+  const legacy = store.state.messages
+    .filter((message) => message.sender === contactId && !mirrored.has(message.id))
+    .slice()
+    .reverse()
+    .map<ThreadMessage>((message) => ({ ...message, direction: "incoming" }));
+  return [...legacy, ...chat].sort((a, b) => a.day - b.day);
+}
+
+function readConversation(contactId: string) {
+  for (const message of store.state.messages) if (message.sender === contactId && !message.read) markRead(message.id);
+  markThreadRead(contactId);
+}
+
+export function selectMessageThread(contactId?: string) {
+  selectedMessageContact = contactId;
+  if (contactId) readConversation(contactId);
+}
+
+function messageContacts() {
+  const byId = new Map(chatContacts().map((contact) => [contact.id, contact]));
+  for (const message of store.state.messages) {
+    const npc = NPCS.find((candidate) => candidate.id === message.sender);
+    if (npc) byId.set(npc.id, npc);
+  }
+  for (const entry of store.state.chatEntries) {
+    const npc = NPCS.find((candidate) => candidate.id === entry.contactId);
+    if (npc) byId.set(npc.id, npc);
+  }
+  return [...byId.values()].sort((a, b) => {
+    const aThread = conversationFor(a.id);
+    const bThread = conversationFor(b.id);
+    const aLatest = aThread[aThread.length - 1]?.day ?? 0;
+    const bLatest = bThread[bThread.length - 1]?.day ?? 0;
+    return bLatest - aLatest || (a.id === "moomoo" ? -1 : b.id === "moomoo" ? 1 : a.name.localeCompare(b.name));
+  });
+}
+
+function messageThread(md: Disposer, nav: PhoneNav, contactId: string): Node {
+  const messages = conversationFor(contactId);
+  const history = el("ol", { class: "olw-chat-history", attrs: { "aria-label": `Conversation with ${npcName(contactId)}` } });
+  if (!messages.length) history.append(el("li", { class: "olw-empty", text: `No messages yet. Say hi to ${npcName(contactId)}.` }));
+  for (const message of messages) {
+    const bubble = el("div", { class: `olw-chat-bubble olw-chat-bubble--${message.direction}` }, [
+      el("span", { class: "olw-chat-body", text: message.body }),
+      el("span", { class: "olw-chat-meta", text: `${message.direction === "outgoing" ? "You" : npcName(contactId)} · day ${message.day}` }),
+    ]);
+    if (message.questId) {
+      bubble.append(button(md, "Open quest", "olw-chat-quest", () => {
+        activateFromMessage(message.questId!);
+        nav.render();
+      }));
+    }
+    history.append(el("li", { class: `olw-chat-line olw-chat-line--${message.direction}` }, [bubble]));
+  }
+
+  const input = el("input", {
+    class: "olw-chat-input",
+    attrs: { type: "text", maxlength: "280", placeholder: `Message ${npcName(contactId)}…`, autocomplete: "off", "aria-label": `Message ${npcName(contactId)}` },
+  });
+  const send = () => {
+    if (!sendChat(contactId, input.value)) {
+      if (!input.value.trim()) input.focus();
+      else store.toast("That message couldn't send.", "#e46d94");
+      return;
+    }
+    input.value = "";
+    nav.render();
+  };
+  const sendButton = button(md, "Send", "olw-btn olw-btn--rose olw-chat-send", send);
+  const form = el("form", { class: "olw-chat-reply" }, [input, sendButton]);
+  md.listen(form, "submit", (event) => {
+    event.preventDefault();
+    send();
+  });
+  const suggestions = el(
+    "div",
+    { class: "olw-chat-suggestions", attrs: { "aria-label": "Suggested replies" } },
+    suggestionsFor(contactId).slice(0, 4).map((text) => button(md, text, "olw-chat-suggestion", () => {
+      input.value = text;
+      input.focus();
+    })),
+  );
+  md.timeout(() => {
+    history.scrollTop = history.scrollHeight;
+  }, 0);
+  return el("div", { class: "olw-chat-thread" }, [
+    el("div", { class: "olw-chat-head" }, [
+      button(md, "‹ Texts", "olw-btn olw-btn--ghost olw-btn--small", () => {
+        selectedMessageContact = undefined;
+        nav.render();
+      }),
+      el("h3", { class: "olw-contact-name", text: npcName(contactId) }),
+    ]),
+    history,
+    suggestions,
+    form,
+  ]);
+}
+
+export function messagesView(md: Disposer, nav: PhoneNav): Node {
+  if (selectedMessageContact) return messageThread(md, nav, selectedMessageContact);
+  const contacts = messageContacts();
+  if (!contacts.length) return el("p", { class: "olw-empty", text: "No texts yet. Sleep, travel, talk — they'll find you." });
+  const list = el("ul", { class: "olw-chat-contacts" });
+  for (const contact of contacts) {
+    const thread = conversationFor(contact.id);
+    const latest = thread[thread.length - 1];
+    const unread = thread.filter((message) => message.direction === "incoming" && !message.read).length;
+    const row = button(md, "", `olw-chat-contact${unread ? " olw-chat-contact--unread" : ""}`, () => {
+      selectMessageThread(contact.id);
+      nav.render();
+    });
+    row.append(
+      el("span", { class: "olw-chat-avatar", text: contact.name.charAt(0), attrs: { "aria-hidden": "true" } }),
+      el("span", { class: "olw-contact-text" }, [
+        el("span", { class: "olw-chat-contact-top" }, [
+          el("span", { class: "olw-contact-name", text: contact.name }),
+          unread ? el("span", { class: "olw-chat-unread", text: `${unread}`, attrs: { "aria-label": `${unread} unread` } }) : null,
+        ]),
+        el("span", { class: "olw-chat-preview", text: latest ? `${latest.direction === "outgoing" ? "You: " : ""}${latest.body}` : "Start a conversation" }),
+      ]),
+      el("span", { class: "olw-contact-chev", text: "›", attrs: { "aria-hidden": "true" } }),
+    );
+    list.append(el("li", {}, [row]));
+  }
+  return list;
 }
 
 // ---------------------------------------------------------------- photos
