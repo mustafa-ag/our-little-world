@@ -16,7 +16,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { OccluderInfo } from "../rendering/occlusion";
 import { CAFE_TABLE_H, CAR_H, FENCE_H, LAMP_H, POSTBOX_H, SIGNPOST_H, WALL_H } from "./scale";
 import { installValidator } from "./validate";
-import { SCOTLAND_PROFILE, type LandmarkMesh, type WorldArtProfile } from "./artProfile";
+import { SCOTLAND_PROFILE, benchKeyFor, lampKeyFor, type LandmarkMesh, type WorldArtProfile } from "./artProfile";
 
 export type { OccluderInfo };
 
@@ -78,6 +78,8 @@ const HEIGHT_TARGETS: Record<string, { h: number; mode: "uniform" | "y" }> = {
   "wooden-fence": { h: FENCE_H, mode: "y" },
   car: { h: CAR_H, mode: "uniform" },
 };
+/** Street lamps (all regional styles): each gets a night glow disc + warm point-light slot. */
+const LAMP_KEYS = new Set(["lamp-post", "lamp-modern", "lamp-ornate", "lamp-minimal"]);
 /** Pieces whose base must sit exactly on the ground (origin fix-up at flush). */
 const SNAP_KEYS = new Set(["lamp-post", "lamp-modern", "lamp-ornate", "lamp-minimal", "bench", "bench-stone", "bench-modern", "signpost", "post-box", "planter", "cafe-table", "cafe-chair", "barrel", "crate", "phone-box", "stone-wall", "fence", "wooden-fence", "fence-gate", "car", "chalkboard", "well", "fountain", "bollard", "curb", "bush", "bush-a", "bush-b"]);
 
@@ -402,6 +404,14 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
     }
     const m = mapProp(p.tex, Math.floor(p.x / TILE), Math.floor(p.y / TILE) - 1);
     if (!m) continue;
+    // regional street furniture / trees (mapProp is region-agnostic: without this every
+    // authored lamp is a Victorian iron post, every bench wooden, every palm an oak)
+    if (m.key === "lamp-post" && ctx.am.has(lampKeyFor(profile))) m.key = lampKeyFor(profile);
+    else if (m.key === "bench" && ctx.am.has(benchKeyFor(profile))) m.key = benchKeyFor(profile);
+    else if (p.tex === "o_palm" && ctx.am.has("tree-palm")) {
+      m.key = "tree-palm";
+      m.variant = "";
+    } else if (m.key === "tree-a" && profile.foliageTint) m.variant = `c=${profile.foliageTint}`;
     const tx = Math.floor(p.x / TILE);
     const ty = Math.floor(p.y / TILE) - 1;
     // the 2D map's single decorative flowers only grow in soil: on paving / the
@@ -415,7 +425,7 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
     }
     const pl = { x: p.x / TILE + (m.dx ?? 0), y: m.solid ? groundUnder(env, tx - Math.floor(fx / 2), ty - fd + 1, fx, fd) : env.heightAt(tx, ty), z: -(ty + 0.5) + (m.dz ?? 0), rotationY: m.rotationY ?? 0, scale: m.scale ?? 1 };
     placer.add(m.key, m.variant ?? "", pl, { solid: !!m.solid, trunk: m.key.startsWith("tree") ? 0.2 : undefined, src: "worldgen" });
-    if (m.key === "lamp-post") lamps.push({ x: pl.x, y: pl.y, z: pl.z });
+    if (LAMP_KEYS.has(m.key)) lamps.push({ x: pl.x, y: pl.y, z: pl.z });
   }
 
   const built: BuiltWorld = { world, buildings, reserved, instances, placer, lamps, occluders: placer.occluders, records: placer.records };

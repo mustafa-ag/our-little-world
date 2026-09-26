@@ -15,7 +15,7 @@ import { kitDoorX, presetVariant } from "../assets/kit/architecture";
 import type { BuildContext, BuiltWorld, PlaceMeta, PlacedBuilding } from "./worldBuilder";
 import { groundUnder, heroBuilding, isRoadTex, tileKey } from "./worldBuilder";
 import { PRESETS } from "../assets/kit/architecture/presets";
-import { SCOTLAND_PROFILE, type RegionKind, type WorldArtProfile } from "./artProfile";
+import { SCOTLAND_PROFILE, benchKeyFor, lampKeyFor, type RegionKind, type WorldArtProfile } from "./artProfile";
 
 const isTree = (k: string) => k.startsWith("tree") || k === "bush" || k.startsWith("bush-");
 
@@ -73,34 +73,6 @@ function extraPresets(profile: WorldArtProfile): [string, number][] {
   return (EXTRA_PRESETS_BY_REGION[profile.region] ?? []).filter(([name]) => name in PRESETS);
 }
 
-/** Street-lamp asset key for the region (the caller falls back to "lamp-post" when unregistered). */
-function lampKey(profile: WorldArtProfile): string {
-  switch (profile.lampStyle) {
-    case "modern_steel":
-      return "lamp-modern";
-    case "ornate_gold":
-      return "lamp-ornate";
-    case "minimal":
-      return "lamp-minimal";
-    case "victorian_iron":
-    default:
-      return "lamp-post";
-  }
-}
-
-/** Bench asset key for the region (the caller falls back to "bench" when unregistered). */
-function benchKey(profile: WorldArtProfile): string {
-  switch (profile.benchStyle) {
-    case "stone":
-      return "bench-stone";
-    case "metal_modern":
-      return "bench-modern";
-    case "wooden_slat":
-    default:
-      return "bench"; // the wooden slat bench is the registered hero "bench"
-  }
-}
-
 export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   const { collider, env, def, am } = ctx;
   const { world, reserved, placer, buildings } = built;
@@ -120,8 +92,8 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     pine: key("tree-pine", "tree-b"),
     bushA: key("bush-a", "bush"),
     bushB: key("bush-b", "bush"),
-    bench: key(benchKey(profile), "bench"),
-    lamp: key(lampKey(profile), "lamp-post"),
+    bench: key(benchKeyFor(profile), "bench"),
+    lamp: key(lampKeyFor(profile), "lamp-post"),
     signpost: key("signpost", "signpost"),
     wall: key("stone-wall", "stone-wall"),
     fence: key("fence", "wooden-fence"),

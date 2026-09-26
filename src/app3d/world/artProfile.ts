@@ -391,6 +391,34 @@ const PREFIX_PROFILES: [string, WorldArtProfile][] = [
 
 export const SCOTLAND_PROFILE: Readonly<WorldArtProfile> = SCOTLAND;
 
+/** Street-lamp asset key for the region (callers fall back to "lamp-post" when unregistered). */
+export function lampKeyFor(profile: WorldArtProfile): string {
+  switch (profile.lampStyle) {
+    case "modern_steel":
+      return "lamp-modern";
+    case "ornate_gold":
+      return "lamp-ornate";
+    case "minimal":
+      return "lamp-minimal";
+    case "victorian_iron":
+    default:
+      return "lamp-post";
+  }
+}
+
+/** Bench asset key for the region (callers fall back to "bench" when unregistered). */
+export function benchKeyFor(profile: WorldArtProfile): string {
+  switch (profile.benchStyle) {
+    case "stone":
+      return "bench-stone";
+    case "metal_modern":
+      return "bench-modern";
+    case "wooden_slat":
+    default:
+      return "bench"; // the wooden slat bench is the registered hero "bench"
+  }
+}
+
 export function getArtProfile(locationId: string): WorldArtProfile {
   const p = LOCATION_PROFILES[locationId] ?? PREFIX_PROFILES.find(([pre]) => locationId.startsWith(pre))?.[1] ?? SCOTLAND;
   return p;
