@@ -1,4 +1,4 @@
-// Phone panel — trimmed DOM port of ui/PhoneOverlay.ts (texts, quests, bag, memories, map links).
+// Phone panel — trimmed DOM port of ui/PhoneOverlay.ts (texts, quests, bag, memories, world map).
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { markRead } from "../../game/systems/phone";
@@ -9,6 +9,7 @@ import { ITEMS } from "../../game/data/items";
 import { MEMORIES } from "../../game/data/memories";
 import { CITIES } from "../../game/data/locations";
 import { button, el, type Disposer } from "./dom";
+import { worldMapView } from "./worldMap";
 
 type Tab = "messages" | "quests" | "bag" | "memories" | "map";
 const TABS: { id: Tab; label: string }[] = [
@@ -23,7 +24,7 @@ let lastTab: Tab = "messages";
 
 const npcName = (id: string) => NPCS.find((n) => n.id === id)?.name ?? id;
 
-export function phoneBody(md: Disposer, close: () => void): Node {
+export function phoneBody(md: Disposer, close: () => void, travel: (id: string) => void): Node {
   const tabs = el("div", { class: "olw-tabs", attrs: { role: "tablist" } });
   const pane = el("div", { class: "olw-tabpane" });
   const tabBtns = new Map<Tab, HTMLButtonElement>();
@@ -148,16 +149,17 @@ export function phoneBody(md: Disposer, close: () => void): Node {
     return wrap;
   };
 
+  // world map: grouped places with lock state; "Travel here" closes the phone
+  // and hands off to the fade -> loadLocation -> fade-in sequence
   const map = () =>
     el("div", { class: "olw-phone-map" }, [
-      el("p", { text: "Globe or the little GPS. Both still work." }),
-      button(md, "Open globe", "olw-btn", () => {
-        close();
-        uiEvents.emit("openMap");
-      }),
-      button(md, "Open district map", "olw-btn olw-btn--rose", () => {
+      button(md, "Open district map", "olw-btn olw-btn--ghost olw-btn--small", () => {
         close();
         uiEvents.emit("openLocalMap");
+      }),
+      worldMapView(md, (id) => {
+        close();
+        travel(id);
       }),
     ]);
 

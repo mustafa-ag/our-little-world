@@ -127,5 +127,5 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
     d.timeout(() => h.remove(), 800);
   });
 
-  return { refreshAll };
+  return { refreshAll, el: hud };
 }

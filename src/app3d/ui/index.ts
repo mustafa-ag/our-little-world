@@ -14,6 +14,7 @@ import { mountToasts } from "./toast";
 import { mountJoystick } from "./joystick";
 import { mountButtons } from "./buttons";
 import { mountModals } from "./modals";
+import { mountMinimap } from "./minimap";
 
 const FONT_HREF =
   "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Nunito:wght@500;700;800&display=swap";
@@ -55,6 +56,7 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
   mountJoystick(ctx);
   mountPrompt(ctx);
   const modals = mountModals(ctx);
+  hud.el.append(mountMinimap(ctx, modals.openLocalMap));
   mountButtons(ctx, modals.openPhone);
   const dialogue = mountDialogue(ctx, (npcId) => {
     if (npcId) modals.openGift(npcId);

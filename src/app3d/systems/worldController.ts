@@ -32,7 +32,18 @@ export interface WorldViewHooks {
 }
 
 /** Locations that have a 3D scene. Others show a toast when you try to go there. */
-export const PORTED_LOCATIONS = new Set(["edinburgh_oldtown", "edinburgh_dean", "edinburgh_uni"]);
+export const PORTED_LOCATIONS = new Set([
+  "edinburgh_oldtown",
+  "edinburgh_dean",
+  "edinburgh_uni",
+  // UAE hub (Phase 2A): Yas is Baba's home, ADNOC HQ (Alya) is in the city
+  "abudhabi_yas",
+  "abudhabi_city",
+  "abudhabi_saadiyat",
+  "abudhabi_corniche",
+  "abudhabi_last_exit",
+  "abudhabi_hudayriyat",
+]);
 
 export const TIME_TICK_MS = 90_000;
 

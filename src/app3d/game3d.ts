@@ -31,6 +31,7 @@ import { pxToXZ } from "./world/coords";
 import { InteractionSystem } from "./systems/interaction";
 import { PlayerController } from "./systems/playerController";
 import { PORTED_LOCATIONS, WorldController, type PickupKind } from "./systems/worldController";
+import { mapFeed } from "./systems/mapFeed";
 import { PlayerView } from "./entities/PlayerView";
 import { NpcView } from "./entities/NpcView";
 import { PickupView, petalBurst } from "./entities/Pickup";
@@ -64,6 +65,8 @@ export interface LoadOptions {
   spawn?: { x: number; y: number };
   /** Build visuals only; gameplay setup waits for `beginSession()`. */
   deferSetup?: boolean;
+  /** Arrived by travel (world map) rather than walking: counts as travelled for setup. */
+  travelled?: boolean;
 }
 
 export const DEFAULT_LOCATION = "edinburgh_oldtown";
@@ -85,6 +88,8 @@ export class Game3D {
   /** Hero GLBs preloaded (or fallen back) — awaited before the first location build. */
   private heroReady: Promise<void> = Promise.resolve();
   private stopUpdate: (() => void) | null = null;
+  /** Last time (ms) the player position went out to the map feed. */
+  private feedAt = 0;
 
   constructor(root: HTMLElement) {
     this.host = createRenderHost(root);
@@ -278,7 +283,7 @@ export class Game3D {
         effects: [],
         timers: [],
         setupPending: true,
-        travelled: !!opts.from,
+        travelled: !!opts.from || !!opts.travelled,
         unregisterGlow,
         backdrop,
         profile,
@@ -295,6 +300,8 @@ export class Game3D {
 
       // publish only once everything is built
       this.loaded = loaded;
+      mapFeed.setLocation(id, built.world);
+      mapFeed.setPlayer(sp.x, sp.z);
       if (!opts.deferSetup) this.beginSession();
     } finally {
       this.loading = false;
@@ -307,12 +314,26 @@ export class Game3D {
     if (!l || !l.setupPending) return;
     l.setupPending = false;
     l.controller.setup(performance.now(), { travelled: l.travelled, fresh: opts.fresh });
+    // NPCs are spawned by setup(); hand their spots to the DOM maps
+    mapFeed.setNpcs([...l.npcs.values()].map((n) => ({ id: n.def.id, name: n.def.name, x: n.x, z: n.z })));
+  }
+
+  /**
+   * World-map travel: load a ported location at its default spawn. Resolves
+   * true once the new location is live, false if it can't be reached in 3D
+   * (not ported, or another load is already running).
+   */
+  async travelTo(id: string): Promise<boolean> {
+    if (this.loading || !PORTED_LOCATIONS.has(id)) return false;
+    await this.loadLocation(id, { travelled: true });
+    return this.loaded?.id === id;
   }
 
   unload() {
     const l = this.loaded;
     if (!l) return;
     this.loaded = null;
+    mapFeed.clear();
     for (const t of l.timers) window.clearTimeout(t);
     this.occlusion.clear();
     l.backdrop.dispose();
@@ -342,6 +363,10 @@ export class Game3D {
     const s = l.player.state;
     const gy = l.env.heightAt(Math.floor(s.x), Math.floor(-s.z));
     l.playerView.update(dt, s, gy);
+    if (now - this.feedAt > 100) {
+      this.feedAt = now;
+      mapFeed.setPlayer(s.x, s.z);
+    }
     if (!l.setupPending) l.controller.update(dtMs, now); // no rules (time ticks, exits) behind the title
     this.camera.setTarget(s.x, s.z);
     this.camera.update(dt);

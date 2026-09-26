@@ -41,6 +41,19 @@ function boot() {
   };
   uiEvents.on("startGame", start);
 
+  // world-map travel from the UI (phone Map tab / Map button); the UI fades
+  // out, asks here, and fades back in once `done` reports the outcome
+  uiEvents.on("travelTo", (id: string, done?: (ok: boolean) => void) => {
+    if (!started) return done?.(false);
+    void game.travelTo(id).then(
+      (ok) => done?.(ok),
+      (err) => {
+        console.error("travel failed", err);
+        done?.(false);
+      },
+    );
+  });
+
   if (import.meta.env.DEV) {
     const w = window as unknown as Record<string, unknown>;
     w.__game = game;
