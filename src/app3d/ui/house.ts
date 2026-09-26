@@ -8,8 +8,10 @@
 // "interiorClosed" whenever the interior goes away (also on travel).
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
-import { homeComment } from "../../game/systems/life";
-import { getLocation } from "../../game/data/locations";
+import { getNpcsAtLocation, homeComment, npcWhere } from "../../game/systems/life";
+import * as quests from "../../game/systems/quests";
+import { LOCATIONS, getLocation } from "../../game/data/locations";
+import { NPCS, type NpcDef } from "../../game/data/npcs";
 import { button, el, prefersReducedMotion } from "./dom";
 import type { UIContext } from "./context";
 import type { ModalHost } from "./modal";
@@ -151,6 +153,92 @@ export function mountHouse(ctx: UIContext, host: ModalHost, sleep: Sleep) {
         );
       },
     });
+  });
+
+  // ---- "Invite someone over" (HouseScene visitor hangout) ----
+  /** Everyone whose schedule has them somewhere in this city right now (mall staff stay at work). */
+  const nearbyPeople = (): NpcDef[] => {
+    const cityId = getLocation(store.state.currentLocation)?.cityId;
+    if (!cityId) return [];
+    const ids = new Set<string>();
+    for (const loc of Object.values(LOCATIONS)) {
+      if (loc.cityId !== cityId) continue;
+      for (const id of getNpcsAtLocation(loc.id)) ids.add(id);
+    }
+    return NPCS.filter((n) => ids.has(n.id) && n.location !== "mall");
+  };
+
+  const placeOf = (n: NpcDef) => {
+    const id = npcWhere(n).location;
+    return getLocation(id)?.name ?? id;
+  };
+
+  /** HouseScene's married-Moomoo hangout choices, with lines for anyone. */
+  const HANGOUTS: { id: string; label: string; line: (name: string) => string }[] = [
+    { id: "hug", label: "Hug", line: (name) => `${name} hugs Juju at the door like it has been a year, not a week.` },
+    { id: "coffee", label: "Make coffee", line: () => "Two cups. One sofa. The timing is somehow perfect." },
+    { id: "sofa", label: "Sit together", line: (name) => `Juju and ${name} sink into the sofa. Feet up. The world can wait outside.` },
+    { id: "home", label: "Talk about the home", line: (name) => homeComment() ?? `${name} walks the room slowly. "It feels like you in here."` },
+  ];
+
+  const openHangout = (npc: NpcDef) => {
+    host.open({
+      kind: "visitor",
+      title: `${npc.name} is here`,
+      subtitle: "Keep it short, cozy, and completely optional.",
+      className: "olw-rest-modal",
+      body: (md, close) =>
+        el("div", { class: "olw-rest-body" }, [
+          el("div", { class: "olw-modal-actions" }, HANGOUTS.map((h) =>
+            button(md, h.label, "olw-btn olw-btn--ghost", () => {
+              close();
+              uiEvents.emit("dialogue", npc.name, [h.line(npc.name)]);
+            }),
+          )),
+        ]),
+    });
+  };
+
+  const inviteOver = (npc: NpcDef) => {
+    quests.onInteract("home_visit");
+    // one bond point per person per day (the visit itself can repeat)
+    if (!store.hasDaily(`home_visit_${npc.id}`)) {
+      store.setDaily(`home_visit_${npc.id}`);
+      store.addRelationship(npc.id, 1);
+    }
+    store.toast(`${npc.name} came over!`, "#f4a6c0");
+    openHangout(npc);
+  };
+
+  d.on(uiEvents, "houseInvite", () => {
+    if (ctx.anyModal()) return;
+    const people = nearbyPeople();
+    host.open({
+      kind: "visitor",
+      title: "Invite someone over",
+      subtitle: people.length ? "Who's around the city right now?" : store.clockLabel(),
+      className: "olw-rest-modal",
+      body: (md, close) =>
+        el("div", { class: "olw-rest-body" }, [
+          people.length
+            ? el("div", { class: "olw-modal-actions" }, people.map((n) =>
+                button(md, `${n.name} · ${placeOf(n)}`, "olw-btn olw-btn--rose", () => {
+                  close();
+                  inviteOver(n);
+                }),
+              ))
+            : el("p", { class: "olw-rest-line", text: "Nobody's around this part of the world right now. Try another time of day." }),
+          el("div", { class: "olw-modal-actions" }, [button(md, "Never mind", "olw-btn olw-btn--ghost", close)]),
+        ]),
+    });
+  });
+
+  // ---- Tigor at home ----
+  d.on(uiEvents, "petHomeTigor", () => {
+    if (ctx.anyModal() || !store.state.tigor.atHome) return;
+    store.petTigor();
+    quests.onInteract("tigor_home");
+    uiEvents.emit("dialogue", "Tigor", ["Tigor curls up on your lap. Purring loudly."]);
   });
 
   return { openWardrobe };
