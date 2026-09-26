@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" width="200" height="120">
+<ellipse cx="100" cy="100" rx="88" ry="18" fill="#5a4030" opacity=".2"/>
+<ellipse cx="100" cy="92" rx="86" ry="22" fill="#6a8f3a"/><g transform="translate(40 88)">
+      <circle cx="-4" cy="-2" r="4" fill="#ff8fb3"/><circle cx="4" cy="-2" r="4" fill="#ff8fb3"/>
+      <circle cx="0" cy="3" r="4" fill="#ff8fb3"/><circle cx="0" cy="-5" r="4" fill="#ff8fb3"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(70 80)">
+      <circle cx="-4" cy="-2" r="4" fill="#ffe08a"/><circle cx="4" cy="-2" r="4" fill="#ffe08a"/>
+      <circle cx="0" cy="3" r="4" fill="#ffe08a"/><circle cx="0" cy="-5" r="4" fill="#ffe08a"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(100 84)">
+      <circle cx="-4" cy="-2" r="4" fill="#ff8fb3"/><circle cx="4" cy="-2" r="4" fill="#ff8fb3"/>
+      <circle cx="0" cy="3" r="4" fill="#ff8fb3"/><circle cx="0" cy="-5" r="4" fill="#ff8fb3"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(130 78)">
+      <circle cx="-4" cy="-2" r="4" fill="#c9a0ff"/><circle cx="4" cy="-2" r="4" fill="#c9a0ff"/>
+      <circle cx="0" cy="3" r="4" fill="#c9a0ff"/><circle cx="0" cy="-5" r="4" fill="#c9a0ff"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(160 86)">
+      <circle cx="-4" cy="-2" r="4" fill="#ffe08a"/><circle cx="4" cy="-2" r="4" fill="#ffe08a"/>
+      <circle cx="0" cy="3" r="4" fill="#ffe08a"/><circle cx="0" cy="-5" r="4" fill="#ffe08a"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(55 98)">
+      <circle cx="-4" cy="-2" r="4" fill="#fff"/><circle cx="4" cy="-2" r="4" fill="#fff"/>
+      <circle cx="0" cy="3" r="4" fill="#fff"/><circle cx="0" cy="-5" r="4" fill="#fff"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(115 96)">
+      <circle cx="-4" cy="-2" r="4" fill="#ff8fb3"/><circle cx="4" cy="-2" r="4" fill="#ff8fb3"/>
+      <circle cx="0" cy="3" r="4" fill="#ff8fb3"/><circle cx="0" cy="-5" r="4" fill="#ff8fb3"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g><g transform="translate(145 100)">
+      <circle cx="-4" cy="-2" r="4" fill="#fff"/><circle cx="4" cy="-2" r="4" fill="#fff"/>
+      <circle cx="0" cy="3" r="4" fill="#fff"/><circle cx="0" cy="-5" r="4" fill="#fff"/>
+      <circle cx="0" cy="0" r="2.2" fill="#fff3b0"/>
+    </g>
+</svg>
