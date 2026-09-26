@@ -166,42 +166,96 @@ function buildCypress(ctx: HeroCtx): Mesh {
 
 // ---------------------------------------------------------------- palm (procedural)
 
+const PALM_BARK = "#8a6a3a";
+const PALM_FROND = "#4a7a30";
+
 /**
- * Date palm: a gently leaning ringed trunk (stacked tapering segments) and a
- * crown of drooping fronds. Vertex-coloured on shared flat materials.
+ * One palm frond as a flattened blade from `from`, heading `yaw` and pitched
+ * `droop` radians below horizontal (negative = rising). Two half-blades rolled
+ * into a shallow inverted V give the folded, leaflet-edged read of a real frond.
+ */
+function frondBlade(k: KitContext, leafMat: ReturnType<KitContext["mats"]["flat"]>, from: Vector3, yaw: number, droop: number, len: number, w: number, hex: string): { parts: Mesh[]; end: Vector3 } {
+  // local +Z after (roll, pitch, yaw): Babylon's YXZ order, +pitch tips the far end down
+  const dir = new Vector3(Math.sin(yaw) * Math.cos(droop), -Math.sin(droop), Math.cos(yaw) * Math.cos(droop));
+  const side = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const mid = from.add(dir.scale(len / 2));
+  const parts: Mesh[] = [];
+  for (const sgn of [-1, 1]) {
+    const b = box(k.scene, w / 2, 0.03, len, leafMat, 0, 0, 0);
+    b.position.set(mid.x + side.x * sgn * w * 0.23, mid.y - 0.015 - w * 0.06, mid.z + side.z * sgn * w * 0.23);
+    b.rotation.set(droop, yaw, sgn * 0.32);
+    tintVertices(b, sgn > 0 ? hex : shade(hex, -0.1));
+    parts.push(b);
+  }
+  // the midrib: a thin lighter spine along the fold
+  const rib = box(k.scene, 0.035, 0.035, len, leafMat, 0, 0, 0);
+  rib.position.set(mid.x, mid.y - 0.005, mid.z);
+  rib.rotation.set(droop, yaw, 0);
+  tintVertices(rib, shade(hex, 0.18));
+  parts.push(rib);
+  return { parts, end: from.add(dir.scale(len)) };
+}
+
+/**
+ * Date palm: a gently leaning, tapering ringed trunk (flared base, leaf-scar
+ * collars) and a crown of arching fronds: each main frond leaves the crown
+ * 20-35 degrees below horizontal and bends further down toward its tip, with
+ * a few young fronds rising from the heart and two dead ones hanging below.
+ * Vertex-coloured on shared flat materials (thin-instanced, one draw batch).
  */
 function buildPalm(k: KitContext): Mesh {
   const s = k.scene;
-  const bark = k.mats.textured("bark", "#9a7b58", 1.5);
-  const leaf = k.mats.flat("#ffffff");
+  const bark = k.mats.textured("bark", PALM_BARK, 1.5);
+  const leafMat = k.mats.flat("#ffffff");
+  const trunkParts: Mesh[] = [];
   const parts: Mesh[] = [];
-  const segs = 7;
+  const segs = 8;
   const h = 3.6;
+  const segH = h / segs;
   let x = 0;
+  // flared root
+  trunkParts.push(kitCyl(s, 0.34, 0.46, 0.22, bark, 0, 0, 0, 9));
   for (let i = 0; i < segs; i++) {
     const t = i / segs;
-    const seg = kitCyl(s, 0.26 - t * 0.08, 0.3 - t * 0.08, h / segs + 0.02, bark, x, (i * h) / segs, 0, 8);
-    parts.push(seg);
-    x += 0.035 + t * 0.03; // lean
+    const rBot = 0.34 - t * 0.14;
+    const rTop = 0.34 - ((i + 1) / segs) * 0.14;
+    trunkParts.push(kitCyl(s, rTop, rBot, segH + 0.02, bark, x, i * segH, 0, 8));
+    // leaf-scar collar at each joint: a slightly proud, darker ring
+    const ring = kitCyl(s, rTop + 0.04, rTop + 0.02, 0.05, bark, x, (i + 1) * segH - 0.04, 0, 8);
+    tintVertices(ring, "#c8b49a");
+    parts.push(ring);
+    x += 0.03 + t * 0.035; // lean, growing toward the top
   }
-  const top = h;
-  const fronds = 9;
-  for (let i = 0; i < fronds; i++) {
-    const a = (i / fronds) * Math.PI * 2;
-    const len = 1.5 + (i % 3) * 0.2;
-    const f = box(s, 0.34, 0.04, len, leaf, 0, 0, 0);
-    tintVertices(f, i % 2 ? "#5f8a3e" : "#6f9a48");
-    // pivot at the crown: shift the frond out along its length, droop and spin
-    f.position.set(x + Math.sin(a) * len * 0.45, top + 0.05 - 0.28, Math.cos(a) * len * 0.45);
-    f.rotation.set(0.45, a, 0);
-    parts.push(f);
-  }
-  const heart = blob(s, 0.5, leaf, x, top, 0, 0.8, 6);
-  tintVertices(heart, "#557a36");
-  parts.push(heart);
   // bark segments carry no vertex colour: paint them white so the texture shows
-  for (const p of parts.slice(0, segs)) tintVertices(p, "#ffffff");
-  return merge("tree-palm", parts);
+  for (const p of trunkParts) tintVertices(p, "#ffffff");
+  const crown = new Vector3(x, h + 0.05, 0);
+  // boot: the knobbly frond bases wrapping the top of the trunk
+  const boot = blob(s, 0.52, leafMat, x, h - 0.12, 0, 0.9, 6);
+  tintVertices(boot, "#7a6038");
+  parts.push(boot);
+  // main fronds: 7, evenly fanned with a little jitter, two-segment arch
+  const fronds = 7;
+  const tones = [PALM_FROND, shade(PALM_FROND, 0.08), shade(PALM_FROND, -0.06)];
+  for (let i = 0; i < fronds; i++) {
+    const yaw = (i / fronds) * Math.PI * 2 + (((i * 37) % 11) / 11 - 0.5) * 0.35;
+    const droop = ((20 + ((i * 53) % 16)) * Math.PI) / 180; // 20..35 degrees
+    const len = 1.55 + (i % 3) * 0.18;
+    const hex = tones[i % tones.length];
+    const inner = frondBlade(k, leafMat, crown, yaw, droop, len * 0.55, 0.36, hex);
+    const outer = frondBlade(k, leafMat, inner.end, yaw, droop + 0.55, len * 0.5, 0.26, shade(hex, 0.05));
+    parts.push(...inner.parts, ...outer.parts);
+  }
+  // young fronds rising from the heart
+  for (let i = 0; i < 3; i++) {
+    const yaw = (i / 3) * Math.PI * 2 + 0.5;
+    parts.push(...frondBlade(k, leafMat, crown, yaw, -0.85, 0.9, 0.22, shade(PALM_FROND, 0.14)).parts);
+  }
+  // two dead fronds hanging against the trunk
+  for (const yaw of [1.1, 3.9]) parts.push(...frondBlade(k, leafMat, crown.add(new Vector3(0, -0.12, 0)), yaw, 1.25, 1.0, 0.22, "#8a7448").parts);
+  const heart = blob(s, 0.36, leafMat, x, h + 0.08, 0, 0.9, 6);
+  tintVertices(heart, "#3f6a28");
+  parts.push(heart);
+  return merge("tree-palm", [...trunkParts, ...parts]);
 }
 
 // ---------------------------------------------------------------- flower bed / heather / grass (procedural)

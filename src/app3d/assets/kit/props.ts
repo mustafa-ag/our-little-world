@@ -10,7 +10,8 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import type { AssetManager, KitContext } from "../AssetManager";
+import { type AssetManager, type KitContext, heroFactory } from "../AssetManager";
+import { buildBenchModern, buildBenchStone, buildLampMinimal, buildLampModern, buildLampOrnate } from "../hero/props";
 import { PALETTE } from "../../rendering/materials";
 import { box, cyl, sphere, merge } from "./util";
 
@@ -157,6 +158,15 @@ export function registerProps(am: AssetManager) {
   // hero pieces (GLB + procedural fallback)
   for (const key of ["bench", "lamp-post", "signpost", "stone-wall", "fence", "fence-gate", "planter", "post-box", "cafe-table", "cafe-chair", "barrel", "crate"] as const) am.registerHero(key);
   am.registerAlias("wooden-fence", "fence");
+  // regional lamp / bench variants (artProfile lampStyle / benchStyle; see
+  // world/dressing.ts lampKey / benchKey). Hero-slot builders, procedural only:
+  // no GLB is shipped, so they are not in HERO_ASSETS (the preload would fetch
+  // a missing file).
+  am.register("lamp-modern", heroFactory(buildLampModern), { shadow: true });
+  am.register("lamp-ornate", heroFactory(buildLampOrnate), { shadow: true });
+  am.register("lamp-minimal", heroFactory(buildLampMinimal), { shadow: true });
+  am.register("bench-stone", heroFactory(buildBenchStone), { shadow: true });
+  am.register("bench-modern", heroFactory(buildBenchModern), { shadow: true });
   // procedural extras
   am.register("lamp-glow", lampGlow, { shadow: false });
   am.register("phone-box", phoneBox, { shadow: true });

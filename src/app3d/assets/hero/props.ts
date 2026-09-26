@@ -68,6 +68,91 @@ export function buildLampPost(ctx: HeroCtx): Mesh {
   return merge("lamp-post", p);
 }
 
+// ---------------------------------------------------------------- regional lamp / bench variants
+// Procedural only (no GLB): kit/props.ts registers them with heroFactory, so the
+// slots (olw_light_emissive glows at night) remap like the hero lamp's. Heights
+// are normalised to LAMP_H at placement, so only the proportions matter here.
+
+const STEEL = "#8090a0";
+const STEEL_LIGHT = "#c0c8d0";
+const BRASS = "#8a7040";
+const BRASS_LIGHT = "#b09058";
+
+/** Modern steel street lamp (UAE / Dubai): slim tapered pole, flat LED head cantilevered to the front. ~2.3 tall. */
+export function buildLampModern(ctx: HeroCtx): Mesh {
+  const p: Mesh[] = [];
+  p.push(cyl(ctx, "olw_metal", 0.15, 0.17, 0.04, shade(STEEL, -0.2), 0, 0, 0, 12)); // base plate
+  p.push(cyl(ctx, "olw_metal", 0.07, 0.09, 0.22, STEEL, 0, 0.04, 0, 12)); // foot sleeve
+  p.push(cyl(ctx, "olw_metal", 0.045, 0.06, 2.0, STEEL, 0, 0.26, 0, 10)); // pole
+  // short horizontal arm and the LED head, both toward the front (-Z)
+  p.push(box(ctx, "olw_metal", 0.035, 0.035, 0.14, STEEL, 0, 2.23, -0.05));
+  p.push(box(ctx, "olw_metal", 0.15, 0.06, 0.25, STEEL_LIGHT, 0, 2.2, -0.2));
+  // the LED panel: a thin glowing strip set into the head's underside
+  p.push(box(ctx, "olw_light_emissive", 0.12, 0.012, 0.21, "#fff8e8", 0, 2.192, -0.2));
+  return merge("lamp-modern", p);
+}
+
+/** Ornate brass lamp (Italy / Greece): fluted plinth, a scrolled arm from ~70 % up carrying a glowing globe. ~2.2 tall. */
+export function buildLampOrnate(ctx: HeroCtx): Mesh {
+  const p: Mesh[] = [];
+  p.push(cyl(ctx, "olw_metal", 0.22, 0.28, 0.1, shade(BRASS, -0.15), 0, 0, 0, 10));
+  p.push(cyl(ctx, "olw_metal", 0.1, 0.18, 0.3, BRASS, 0, 0.1, 0, 10));
+  p.push(cyl(ctx, "olw_metal", 0.14, 0.14, 0.04, BRASS_LIGHT, 0, 0.4, 0, 10)); // collar
+  p.push(cyl(ctx, "olw_metal", 0.05, 0.07, 1.62, BRASS, 0, 0.44, 0, 8)); // pole to ~2.06
+  p.push(cyl(ctx, "olw_metal", 0.1, 0.1, 0.035, BRASS_LIGHT, 0, 1.5, 0, 8)); // ring at the arm root
+  // curving arm from ~70 % up, out to +X and gently up, ending in a hook
+  const arm = [v3(0, 1.52, 0), v3(0.12, 1.66, 0), v3(0.26, 1.78, 0), v3(0.38, 1.82, 0), v3(0.44, 1.79, 0)];
+  p.push(tube(ctx, "olw_metal", arm, (i) => 0.022 - i * 0.002, BRASS, 6));
+  // decorative scroll under the arm (a small vertical ring)
+  const scroll = torus(ctx, "olw_metal", 0.13, 0.016, BRASS_LIGHT, 0.13, 1.58, 0, 12);
+  scroll.rotation.x = Math.PI / 2;
+  p.push(scroll);
+  // lantern: cap, glowing globe, drip finial
+  p.push(cyl(ctx, "olw_metal", 0.04, 0.12, 0.05, BRASS, 0.44, 1.74, 0, 8));
+  p.push(sphere(ctx, "olw_light_emissive", 0.24, "#fff3c0", 0.44, 1.62, 0, 12));
+  p.push(dot(ctx, "olw_metal", 0.04, BRASS_LIGHT, 0.44, 1.49, 0));
+  // pole finial
+  p.push(cyl(ctx, "olw_metal", 0.02, 0.08, 0.06, BRASS, 0, 2.06, 0, 8));
+  p.push(dot(ctx, "olw_metal", 0.07, BRASS_LIGHT, 0, 2.14, 0));
+  return merge("lamp-ornate", p);
+}
+
+/** Minimal stone-coloured lamp (Amman / Jordan): square post, flat rectangular head, cool white glow. ~2.1 tall. */
+export function buildLampMinimal(ctx: HeroCtx): Mesh {
+  const p: Mesh[] = [];
+  p.push(box(ctx, "olw_paint", 0.11, 0.08, 0.11, shade("#b0a888", -0.12), 0, 0, 0)); // footing
+  p.push(box(ctx, "olw_paint", 0.05, 2.0, 0.05, "#b0a888", 0, 0.08, 0)); // post
+  p.push(box(ctx, "olw_paint", 0.2, 0.04, 0.1, "#c8c0a0", 0, 2.08, 0)); // head
+  p.push(box(ctx, "olw_light_emissive", 0.17, 0.01, 0.07, "#eef3ff", 0, 2.072, 0)); // cool lens
+  return merge("lamp-minimal", p);
+}
+
+/** Solid stone bench (Scotland / UK): a slab seat on two block legs. 1.0 wide, 0.4 tall. */
+export function buildBenchStone(ctx: HeroCtx): Mesh {
+  const rng = prng(211);
+  const p: Mesh[] = [];
+  for (const x of [-0.36, 0.36]) p.push(box(ctx, "olw_paint", 0.12, 0.28, 0.38, jittered("#8a8070", 0.04, rng), x, 0, 0, 1.4));
+  p.push(box(ctx, "olw_paint", 1.0, 0.12, 0.38, jittered("#9a9080", 0.03, rng), 0, 0.28, 0, 1.4));
+  // softened front edge: a slightly lighter lip so the slab reads as dressed stone
+  p.push(box(ctx, "olw_paint", 1.0, 0.02, 0.02, shade("#9a9080", 0.08), 0, 0.38, -0.185));
+  return merge("bench-stone", p);
+}
+
+/** Modern bench (UAE / Dubai): two slim steel frames under three warm wooden slats. 1.2 wide. */
+export function buildBenchModern(ctx: HeroCtx): Mesh {
+  const p: Mesh[] = [];
+  const frame = "#7080a0";
+  for (const x of [-0.5, 0.5]) {
+    // a flat "table-leg" frame: two uprights and a top rail
+    p.push(box(ctx, "olw_metal", 0.04, 0.4, 0.04, frame, x, 0, -0.17));
+    p.push(box(ctx, "olw_metal", 0.04, 0.4, 0.04, frame, x, 0, 0.17));
+    p.push(box(ctx, "olw_metal", 0.04, 0.03, 0.4, frame, x, 0.4, 0));
+  }
+  p.push(box(ctx, "olw_metal", 1.04, 0.025, 0.03, frame, 0, 0.4, 0)); // stretcher under the slats
+  for (let i = 0; i < 3; i++) p.push(box(ctx, "olw_paint", 1.2, 0.035, 0.12, i % 2 ? shade("#c8b880", -0.06) : "#c8b880", 0, 0.43, -0.135 + i * 0.135));
+  return merge("bench-modern", p);
+}
+
 /** Wooden fingerpost with four painted arrow boards. 2.2 tall. */
 export function buildSignpost(ctx: HeroCtx): Mesh {
   const rng = prng(131);
