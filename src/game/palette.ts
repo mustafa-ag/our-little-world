@@ -57,7 +57,7 @@ const shade = (base: string) => base; // placeholder; explicit shades below read
 
 // Handy outfit palettes reused by the wardrobe system.
 export const Outfits: Record<string, { top: string; topShade: string; bottom: string; shoes: string; label: string }> = {
-  casual: { label: "Casual", top: "#f28ab2", topShade: "#d96e98", bottom: "#5b6ee1", shoes: "#3a2b3a" },
+  casual: { label: "Casual", top: "#F5F0EB", topShade: "#e2d9cf", bottom: "#2D2D3A", shoes: "#fbfaf7" },
   cozy: { label: "Cozy", top: "#c98adf", topShade: "#a86dbf", bottom: "#6b4f9e", shoes: "#4a3a2a" },
   summer: { label: "Summer", top: "#ffe08a", topShade: "#e6c25f", bottom: "#8ad0ff", shoes: "#ffffff" },
   sporty: { label: "Sporty", top: "#7be0a3", topShade: "#57bf82", bottom: "#333a45", shoes: "#f4f4f4" },

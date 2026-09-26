@@ -17,8 +17,15 @@
 // fallback upgrades itself in place once the GLB arrives, so callers can keep
 // the same CharacterRig object.
 
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
+import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { Axis } from "@babylonjs/core/Maths/math.axis";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -32,6 +39,7 @@ import { type AnimatedInstance, type AssetManager, type HierarchyInstance, type 
 import { heroCtx } from "../hero/slots";
 import { buildCharacter, rigFromRoot, type CharacterBuild, type CharacterColors, type CharacterOpts, type HairStyle, HAIR_STYLES, retintCharacter, CHAR_HEIGHT as HERO_HEIGHT } from "../hero/character";
 import { strHash } from "./util";
+import { proceduralFaceMaterial, type FaceKind } from "./faces";
 
 export interface CharacterRig {
   /** Stable holder: position / rotation.y this. */
@@ -100,11 +108,17 @@ export interface Appearance {
   hairStyle?: HairStyle;
   /** Juju: pearl choker, beaded strand, flower claw clip. */
   accessories?: boolean;
+  /** Paint the face decal procedurally (faces.ts) instead of using the GLB's baked face. */
+  face?: FaceKind;
+  /** Hide every hair mesh (e.g. under a hijab). */
+  hideHair?: boolean;
 }
 
-/** Juju's own look: warm tan skin, very long dark-brown hair (vertex colours add darker roots / chestnut ends). */
-export const JUJU_SKIN = "#d9a27c";
-export const JUJU_HAIR = "#523428";
+/** Juju's own look: warm dark olive skin, very long dark-brown wavy hair (vertex colours add darker roots / chestnut ends). */
+export const JUJU_SKIN = "#8B5E3C";
+export const JUJU_HAIR = "#3D2010";
+/** The chestnut highlight streak painted into one side of her hair. */
+export const JUJU_HAIR_STREAK = "#6B3A1F";
 
 export interface JujuLook {
   top: string;
@@ -116,12 +130,12 @@ export interface JujuLook {
 
 /**
  * Outfit id (store.state.outfit) -> Juju's clothes. "casual" (the default) is
- * her signature look: cream ruffle top, pale denim maxi skirt, white sneakers.
+ * her signature look: white ruffle top, dark fitted jeans, white sneakers.
  * "cozy" is the storybook-reference look: dusty-pink cardigan over the cream
  * top with jeans. Other outfits derive from the shared Outfits palette.
  */
 export const JUJU_LOOKS: Record<string, JujuLook> = {
-  casual: { top: "#f7f0e3", bottom: "#a7c2de", bottomKind: "skirt", shoes: "#fbfaf7" },
+  casual: { top: "#F5F0EB", bottom: "#2D2D3A", bottomKind: "jeans", shoes: "#fbfaf7" },
   cozy: { top: "#f7f0e3", outer: "#dc9eaa", bottom: "#6d8dc0", bottomKind: "jeans", shoes: "#fbfaf7" },
   summer: { top: "#ffe7a0", bottom: "#9fd3f5", bottomKind: "skirt", shoes: "#fbfaf7" },
   sneakers: { top: "#f7f0e3", bottom: "#6d8dc0", bottomKind: "jeans", shoes: "#ffffff" },
@@ -146,7 +160,7 @@ export function jujuLook(outfit: string): JujuLook {
 
 export function jujuAppearance(outfit: string): Appearance {
   const l = jujuLook(outfit);
-  return { skin: JUJU_SKIN, hair: JUJU_HAIR, top: l.top, bottom: l.bottom, shoes: l.shoes, outer: l.outer, bottomKind: l.bottomKind, accessories: true };
+  return { skin: JUJU_SKIN, hair: JUJU_HAIR, top: l.top, bottom: l.bottom, shoes: l.shoes, outer: l.outer, bottomKind: l.bottomKind, accessories: true, face: "juju" };
 }
 
 /** Hair styles for the people we know; everyone else hashes into the list. */
@@ -161,7 +175,46 @@ const HAIR_BY_ID: Record<string, HairStyle> = {
   rhiannon: "long",
   chloe: "ponytail",
 };
-const SKIRT_BY_ID: Record<string, boolean> = { moomoo: false, baba: false, her: true, mama: true };
+const SKIRT_BY_ID: Record<string, boolean> = { moomoo: false, baba: true, her: true, mama: true };
+
+/** Per-person silhouette + headwear for the people we know (everyone else: default build). */
+export interface NpcBuild {
+  /** Holder scaling (width, height, depth). */
+  scale: [number, number, number];
+  /** Hijab colour (hides the hair). */
+  hijab?: string;
+  /** Beard colour. */
+  beard?: string;
+  /** false: never layer a cardigan over the top (a plain shirt / thobe / dress). */
+  outer?: false;
+}
+
+const NPC_BUILDS: Record<string, NpcBuild> = {
+  // taller, broader shoulders; plain blue shirt
+  moomoo: { scale: [1.08, 1.1, 1.05], outer: false },
+  // medium height, modest dress + hijab
+  mama: { scale: [1.02, 0.97, 1.02], hijab: "#2f3a56", outer: false },
+  // stocky, grey beard, white thobe
+  baba: { scale: [1.14, 0.98, 1.14], beard: "#a9a6a0", outer: false },
+};
+
+export function npcBuild(id: string): NpcBuild {
+  return NPC_BUILDS[id] ?? { scale: [1, 1, 1] };
+}
+
+export function isMaleNpc(id: string) {
+  return MALE_IDS.has(id);
+}
+
+/** Top of an NPC's head (world units), for the name tag. */
+export function npcHeight(id: string) {
+  return CHAR_HEIGHT * npcBuild(id).scale[1];
+}
+
+/** Feminine head shape (slightly oval: taller, a touch shallower) and hip sway amplitude (radians). */
+const FEM_HEAD: [number, number, number] = [1.0, 1.1, 0.95];
+const JUJU_HIP_SWAY = (8 * Math.PI) / 180;
+const NPC_HIP_SWAY = (5 * Math.PI) / 180;
 
 export function styleFor(id: string): CharacterOpts {
   const h = strHash(id);
@@ -173,8 +226,9 @@ export function styleFor(id: string): CharacterOpts {
 }
 
 /** An NPC's appearance from their CharColors + per-person style. */
-export function npcAppearance(c: CharColors, opts: CharacterOpts): Appearance {
-  const layered = !!opts.scarf;
+export function npcAppearance(c: CharColors, opts: CharacterOpts, id = ""): Appearance {
+  const b = npcBuild(id);
+  const layered = !!opts.scarf && b.outer !== false;
   return {
     skin: c.skin,
     hair: c.hair,
@@ -185,6 +239,8 @@ export function npcAppearance(c: CharColors, opts: CharacterOpts): Appearance {
     shoes: c.shoes,
     bottomKind: opts.skirt === false ? "jeans" : "skirt",
     hairStyle: opts.hair ?? "long",
+    hideHair: !!b.hijab,
+    face: isMaleNpc(id) ? "male" : "female",
   };
 }
 
@@ -238,12 +294,13 @@ function dress(k: KitContext, ai: AnimatedInstance, a: Appearance) {
     if (name === "jeans") on = a.bottomKind === "jeans";
     else if (name === "skirt" || name === "legs") on = a.bottomKind === "skirt";
     else if (name === "cardigan") on = !!a.outer;
-    else if (name.startsWith("hair_")) on = name === `hair_${a.hairStyle ?? "long"}`;
+    else if (name.startsWith("hair_")) on = !a.hideHair && name === `hair_${a.hairStyle ?? "long"}`;
+    else if (name === "hair") on = !a.hideHair;
     else if (name === "jewelry" || name === "clip") on = !!a.accessories;
     m.setEnabled(on);
     const slot = meta.olwSlot;
     if (slot === "olw_face") {
-      m.material = faceMaterial(k, meta.olwFaceSrc ?? null);
+      m.material = a.face ? proceduralFaceMaterial(k.scene, a.face) : faceMaterial(k, meta.olwFaceSrc ?? null);
       m.alphaIndex = DECAL_ALPHA_INDEX; // before a faded building's depth twin
     }
     else if (col[slot]) m.material = k.mats.flat(col[slot]!);
@@ -333,14 +390,166 @@ class ClipMixer {
   }
 }
 
+// ------------------------------------------------------ skinned rig extras --
+
+/** Per-rig additions on top of the GLB: head shape, hip sway, headwear, a hair streak. */
+export interface RigExtras {
+  /** Head bone scaling (x lateral, y up, z depth). */
+  headScale?: [number, number, number];
+  /** Pelvic tilt amplitude (radians) synced to the walk cycle; a faint weight shift at idle. */
+  hipSway?: number;
+  hijab?: string;
+  beard?: string;
+  /** Recolour one side of the "hair" mesh towards this colour (Juju). */
+  hairStreak?: { base: string; streak: string };
+}
+
+const streaked = new WeakSet<Geometry>();
+
+function hexRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
+ * A highlight streak down the front-left curtain of the hair: the hair's
+ * vertex colours are shading multipliers under a flat material, so vertices
+ * in the streak band get multiplied by streak / base (GLB bind-pose model
+ * space: x lateral, y up, z forward). Shared geometry: done once.
+ */
+function paintHairStreak(mesh: Mesh, base: string, streak: string) {
+  const geo = mesh.geometry;
+  if (!geo || streaked.has(geo)) return;
+  streaked.add(geo);
+  const pos = mesh.getVerticesData(VertexBuffer.PositionKind);
+  const col = mesh.getVerticesData(VertexBuffer.ColorKind);
+  if (!pos || !col) return;
+  const n = pos.length / 3;
+  const stride = Math.round(col.length / n);
+  if (stride < 3) return;
+  const b = hexRgb(base);
+  const h = hexRgb(streak);
+  const ratio = [0, 1, 2].map((c) => h[c] / Math.max(1, b[c]));
+  const out = Float32Array.from(col);
+  for (let i = 0; i < n; i++) {
+    const x = pos[i * 3];
+    const z = pos[i * 3 + 2];
+    const bx = 1 - ((x - 0.1) / 0.032) ** 2;
+    if (bx <= 0) continue;
+    const front = Math.min(1, Math.max(0, (z + 0.01) / 0.05));
+    const w = bx * front * 0.9;
+    for (let c = 0; c < 3; c++) out[i * stride + c] = col[i * stride + c] * (1 + (ratio[c] - 1) * w);
+  }
+  mesh.setVerticesData(VertexBuffer.ColorKind, out, false, stride);
+}
+
+/** Bone-local head centre (Y up, Z forward) in every character GLB. */
+const HEAD_C = { y: 0.145, z: -0.004 };
+
+function addHeadwear(k: KitContext, ai: AnimatedInstance, head: TransformNode, chest: TransformNode | undefined, x: RigExtras): Mesh[] {
+  const out: Mesh[] = [];
+  const name = ai.root.name;
+  if (x.hijab) {
+    const mat = k.mats.flat(x.hijab);
+    // a hood around the head, open towards the face (sphere slice turned to face +Z, tilted a little down)
+    const hood = CreateSphere(`${name}:hijab`, { diameter: 2, segments: 16, slice: 0.76, sideOrientation: Mesh.DOUBLESIDE }, k.scene);
+    hood.parent = head;
+    hood.position.set(0, HEAD_C.y + 0.004, HEAD_C.z - 0.01);
+    hood.rotation.x = -Math.PI / 2 + 0.2;
+    hood.scaling.set(0.152, 0.152, 0.16);
+    hood.material = mat;
+    out.push(hood);
+    // the wrap over the neck and shoulders
+    if (chest) {
+      const drape = CreateCylinder(`${name}:hijabDrape`, { height: 0.11, diameterTop: 0.19, diameterBottom: 0.3, tessellation: 18 }, k.scene);
+      drape.parent = chest;
+      drape.position.set(0, 0.105, -0.008);
+      drape.scaling.z = 0.86;
+      drape.material = mat;
+      out.push(drape);
+    }
+  }
+  if (x.beard) {
+    const mat = k.mats.flat(x.beard);
+    const beard = CreateBox(`${name}:beard`, { width: 0.12, height: 0.066, depth: 0.06 }, k.scene);
+    beard.parent = head;
+    beard.position.set(0, HEAD_C.y - 0.114, HEAD_C.z + 0.078);
+    beard.material = mat;
+    const moustache = CreateBox(`${name}:moustache`, { width: 0.052, height: 0.011, depth: 0.018 }, k.scene);
+    moustache.parent = head;
+    moustache.position.set(0, HEAD_C.y - 0.057, HEAD_C.z + 0.112);
+    moustache.material = mat;
+    out.push(beard, moustache);
+  }
+  for (const m of out) {
+    m.isPickable = false;
+    k.lighting?.addCaster(m);
+  }
+  return out;
+}
+
+/**
+ * Applies the extras. Head scale and hip sway run after the clips each frame
+ * (the clips key every bone, so the offsets never accumulate): the hips roll
+ * about their forward axis and the spine + thighs are counter-rotated in the
+ * hips' frame, so only the pelvis tilts (one hip up, the other down) while the
+ * torso stays upright and the feet stay planted.
+ */
+function applyExtras(k: KitContext, ai: AnimatedInstance, x: RigExtras): { meshes: Mesh[]; dispose(): void } {
+  const nodes = new Map<string, TransformNode>();
+  for (const n of ai.root.getDescendants(false)) {
+    if (!(n instanceof TransformNode) || n instanceof Mesh) continue;
+    const nm = (n.metadata as SlotMeta | null)?.olwName;
+    if (nm) nodes.set(nm, n);
+  }
+  const head = nodes.get("head");
+  if (x.hairStreak) for (const m of ai.meshes) if ((m.metadata as SlotMeta | null)?.olwName === "hair") paintHairStreak(m, x.hairStreak.base, x.hairStreak.streak);
+  const meshes = head ? addHeadwear(k, ai, head, nodes.get("chest"), x) : [];
+
+  const hips = nodes.get("hips");
+  const counter = ["spine", "thigh.L", "thigh.R"].map((n) => nodes.get(n)).filter((n): n is TransformNode => !!n);
+  const walk = ai.animations.get("walk");
+  const idle = ai.animations.get("idle");
+  const sway = x.hipSway ?? 0;
+  const R = new Quaternion();
+  const Ri = new Quaternion();
+  let t = Math.random() * 10;
+  const obs = x.headScale || sway ? k.scene.onAfterAnimationsObservable.add(() => {
+    if (head && x.headScale) head.scaling.set(x.headScale[0], x.headScale[1], x.headScale[2]);
+    if (!sway || !hips?.rotationQuaternion) return;
+    t += Math.min(0.1, k.scene.getEngine().getDeltaTime() / 1000);
+    let s = 0;
+    if (walk?.isPlaying && walk.weight > 0) {
+      const span = walk.to - walk.from;
+      const ph = span > 0 ? (walk.getCurrentFrame() - walk.from) / span : 0;
+      // left foot is the stance foot for the first half of the loop: lift that hip
+      s += walk.weight * Math.sin(2 * Math.PI * ph);
+    }
+    if (idle?.isPlaying && idle.weight > 0) s += idle.weight * 0.18 * Math.sin(t * 0.8);
+    if (Math.abs(s) < 1e-4) return;
+    Quaternion.RotationAxisToRef(Axis.Z, sway * s, R);
+    R.conjugateToRef(Ri);
+    hips.rotationQuaternion.multiplyToRef(R, hips.rotationQuaternion);
+    for (const c of counter) if (c.rotationQuaternion) Ri.multiplyToRef(c.rotationQuaternion, c.rotationQuaternion);
+  }) : null;
+  return {
+    meshes,
+    dispose() {
+      if (obs) k.scene.onAfterAnimationsObservable.remove(obs);
+      for (const m of meshes) k.lighting?.removeCaster(m);
+    },
+  };
+}
+
 /** A skinned rig (GLB instance) inside `holder`. */
-function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, look: Appearance) {
+function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, look: Appearance, extras: RigExtras = {}) {
   ai.root.parent = holder;
   dress(k, ai, look);
   for (const m of ai.meshes) k.lighting?.addCaster(m);
+  const ex = applyExtras(k, ai, extras);
   const mixer = new ClipMixer(ai.animations);
   return {
-    meshes: ai.meshes,
+    meshes: [...ai.meshes, ...ex.meshes],
     animate(dt: number, moving: number, speed?: number) {
       const v = speed ?? moving * RUN_SPEED;
       mixer.update(Math.min(dt, 0.1), v);
@@ -352,6 +561,7 @@ function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, 
       mixer.gesture(kind);
     },
     dispose() {
+      ex.dispose();
       ai.dispose();
     },
   };
@@ -360,7 +570,10 @@ function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, 
 // --------------------------------------------------------- procedural rig --
 
 /** Drive a built/cloned procedural hierarchy (the fallback). */
-function proceduralRig(k: KitContext, b: CharacterBuild, colors: CharColors, onDispose: () => void) {
+function proceduralRig(k: KitContext, b: CharacterBuild, colors: CharColors, onDispose: () => void, feminine = false) {
+  // Juju: a subtler bob and a little more side-to-side sway
+  const bob = feminine ? 0.02 : 0.055;
+  const roll = feminine ? 0.06 : 0.035;
   const { root, body, head, armL, armR, legL, legR, meshes } = b;
   retintCharacter(root, toHeroColors(colors));
   for (const m of meshes) {
@@ -385,10 +598,10 @@ function proceduralRig(k: KitContext, b: CharacterBuild, colors: CharColors, onD
       armL.rotation.z = 0.14 + Math.sin(t * 0.55) * 0.035 * idle;
       armR.rotation.z = -0.14 - Math.sin(t * 0.55 + 1) * 0.035 * idle;
       const breathe = Math.sin(t * 1.4);
-      body.position.y = Math.abs(Math.sin(t)) * 0.055 * moving + breathe * 0.008 * idle;
+      body.position.y = Math.abs(Math.sin(t)) * bob * moving + breathe * 0.008 * idle;
       body.scaling.y = 1 + breathe * 0.012 * idle;
       body.rotation.x = 0.09 * moving;
-      body.rotation.z = Math.sin(t) * 0.035 * moving;
+      body.rotation.z = Math.sin(t) * roll * moving;
       head.rotation.z = Math.sin(t * 0.7) * 0.05 * idle - Math.sin(t) * 0.02 * moving;
       head.rotation.x = Math.sin(t * 1.1 + 0.5) * 0.03 * idle;
       if (gestureT > 0) {
@@ -435,6 +648,7 @@ function hybridRig(
   name: string,
   appearance: () => Appearance,
   fallback: () => { impl: Impl & { setColors(c: CharColors): void }; node: TransformNode },
+  extras: RigExtras = {},
 ): CharacterRig {
   const holder = new TransformNode(name, k.scene);
   let impl: Impl | null = null;
@@ -448,7 +662,7 @@ function hybridRig(
     if (!ai) return false;
     proc?.dispose();
     proc = null;
-    skin = skinnedRig(k, ai, holder, appearance());
+    skin = skinnedRig(k, ai, holder, appearance(), extras);
     impl = skin;
     rig.meshes.length = 0;
     rig.meshes.push(...skin.meshes);
@@ -526,11 +740,27 @@ export function createCharacter(k: KitContext, colors: CharColors, name = "char"
 export function createNpcRig(k: KitContext, am: AssetManager, id: string, colors: CharColors, name = `npc:${id}`): CharacterRig {
   const opts = styleFor(id);
   let cur = colors;
-  const rig = hybridRig(k, am, MALE_IDS.has(id) && am.hasAnimated(NPC_MALE_KEY) ? NPC_MALE_KEY : NPC_BASE_KEY, name, () => npcAppearance(cur, opts), () => {
-    const b = buildCharacter(heroCtx(k.scene), { name, hair: "long", skirt: true, ...opts });
-    for (const m of b.meshes) remapSlots(k, m);
-    return { impl: proceduralRig(k, b, colors, () => b.root.dispose(false, true)), node: b.root };
-  });
+  const male = MALE_IDS.has(id);
+  const build = npcBuild(id);
+  const extras: RigExtras = {
+    headScale: male ? undefined : FEM_HEAD,
+    hipSway: male ? undefined : NPC_HIP_SWAY,
+    hijab: build.hijab,
+    beard: build.beard,
+  };
+  const rig = hybridRig(
+    k,
+    am,
+    male && am.hasAnimated(NPC_MALE_KEY) ? NPC_MALE_KEY : NPC_BASE_KEY,
+    name,
+    () => npcAppearance(cur, opts, id),
+    () => {
+      const b = buildCharacter(heroCtx(k.scene), { name, hair: "long", skirt: true, ...opts });
+      for (const m of b.meshes) remapSlots(k, m);
+      return { impl: proceduralRig(k, b, colors, () => b.root.dispose(false, true)), node: b.root };
+    },
+    extras,
+  );
   const set = rig.setColors.bind(rig);
   rig.setColors = (c) => {
     cur = c;
@@ -539,17 +769,26 @@ export function createNpcRig(k: KitContext, am: AssetManager, id: string, colors
   return rig;
 }
 
-/** The player (Juju): juju.glb, else the hero GLB / procedural rig. */
+/** The player (Juju): juju.glb (oval head, hip sway, hair streak, painted face), else the hero GLB / procedural rig. */
 export function createPlayerRig(k: KitContext, am: AssetManager, colors: CharColors, name = "player", outfit: () => string = () => "casual"): CharacterRig {
-  return hybridRig(k, am, JUJU_KEY, name, () => jujuAppearance(outfit()), () => {
-    const hi: HierarchyInstance = am.instantiateHierarchy("player", `${name}:fallback`);
-    const b = rigFromRoot(hi.root);
-    if (b) return { impl: proceduralRig(k, b, colors, () => hi.dispose()), node: hi.root };
-    hi.dispose();
-    const b2 = buildCharacter(heroCtx(k.scene), { name, ...styleFor("her") });
-    for (const m of b2.meshes) remapSlots(k, m);
-    return { impl: proceduralRig(k, b2, colors, () => b2.root.dispose(false, true)), node: b2.root };
-  });
+  const extras: RigExtras = { headScale: FEM_HEAD, hipSway: JUJU_HIP_SWAY, hairStreak: { base: JUJU_HAIR, streak: JUJU_HAIR_STREAK } };
+  return hybridRig(
+    k,
+    am,
+    JUJU_KEY,
+    name,
+    () => jujuAppearance(outfit()),
+    () => {
+      const hi: HierarchyInstance = am.instantiateHierarchy("player", `${name}:fallback`);
+      const b = rigFromRoot(hi.root);
+      if (b) return { impl: proceduralRig(k, b, colors, () => hi.dispose(), true), node: hi.root };
+      hi.dispose();
+      const b2 = buildCharacter(heroCtx(k.scene), { name, ...styleFor("her") });
+      for (const m of b2.meshes) remapSlots(k, m);
+      return { impl: proceduralRig(k, b2, colors, () => b2.root.dispose(false, true), true), node: b2.root };
+    },
+    extras,
+  );
 }
 
 let registeredAssets: AssetManager | null = null;

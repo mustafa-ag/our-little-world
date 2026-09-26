@@ -28,13 +28,13 @@ export const PLAYER: { id: string; name: string; colors: CharColors } = {
   id: "her",
   name: "Juju",
   colors: baseColors({
-    skin: "#dca77d",
-    skinShade: "#bd805b",
-    hair: "#3a251b",
-    hairShade: "#26160f",
-    top: "#f28ab2",
-    topShade: "#d96e98",
-    bottom: "#5b6ee1",
+    skin: "#8B5E3C",
+    skinShade: "#7A5232",
+    hair: "#3D2010",
+    hairShade: "#28140a",
+    top: "#F5F0EB",
+    topShade: "#e2d9cf",
+    bottom: "#2D2D3A",
   }),
 };
 
@@ -43,7 +43,7 @@ export const NPCS: NpcDef[] = [
   {
     id: "moomoo",
     name: "Moomoo",
-    colors: baseColors({ hair: "#1c130d", hairShade: "#0f0a06", skin: "#d9a06f", skinShade: "#c1885a", top: "#3f6fd0", topShade: "#2f57a8", bottom: "#2a2f38" }),
+    colors: baseColors({ hair: "#1c130d", hairShade: "#0f0a06", skin: "#5C3D1E", skinShade: "#4a3118", top: "#3f6fd0", topShade: "#2f57a8", bottom: "#2a2f38" }),
     location: "dubai_oasis",
     tx: 52,
     ty: 62,
@@ -60,7 +60,7 @@ export const NPCS: NpcDef[] = [
   {
     id: "mama",
     name: "Mama",
-    colors: baseColors({ hair: "#5a5a5a", hairShade: "#3f3f3f", skin: "#e6b58c", skinShade: "#cf9a70", top: "#c98adf", topShade: "#a86dbf", bottom: "#6b4f9e" }),
+    colors: baseColors({ hair: "#5a5a5a", hairShade: "#3f3f3f", skin: "#a8714a", skinShade: "#8f5e3c", top: "#7d6390", topShade: "#654f76", bottom: "#7d6390", shoes: "#4a3a2a" }),
     location: "dubai_damac",
     tx: 14,
     ty: 24,
@@ -71,7 +71,7 @@ export const NPCS: NpcDef[] = [
   {
     id: "baba",
     name: "Baba",
-    colors: baseColors({ hair: "#33312e", hairShade: "#1f1d1b", skin: "#d9a679", skinShade: "#c08d60", top: "#5cb06d", topShade: "#489158", bottom: "#3a2b3a" }),
+    colors: baseColors({ hair: "#4a4744", hairShade: "#33312e", skin: "#b98457", skinShade: "#9c6c44", top: "#f4f1ea", topShade: "#ddd8cc", bottom: "#f4f1ea", shoes: "#6b4a33" }),
     location: "abudhabi_yas",
     tx: 96,
     ty: 52,
