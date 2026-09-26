@@ -2,8 +2,7 @@
 // district map (live overhead map), minigame (stub until the 3D version lands).
 import { store } from "../../game/systems/store";
 import { minimap, uiEvents, type MiniGameSpec } from "../../game/systems/controls";
-import { cityMeta, districtsOf, getLocation } from "../../game/data/locations";
-import { onDriveWith } from "../../game/systems/quests";
+import { cityMeta, getLocation } from "../../game/data/locations";
 import { mapFeed } from "../systems/mapFeed";
 import { button, el, prefersReducedMotion } from "./dom";
 import type { UIContext } from "./context";
@@ -137,41 +136,11 @@ export function mountModals(ctx: UIContext) {
     });
   };
 
-  // Jeep drive menu (WorldScene.openDriveMenu port): drive to another district
-  // of this city. The DrivingScene ride itself is skipped — the travel fade
-  // stands in for it. TODO(3d): "Cruise around here" free-driving mode.
-  const openDriveMenu = (opts: { locationId: string }) => {
-    if (ctx.anyModal()) return;
-    const loc = getLocation(opts.locationId);
-    const others = districtsOf(loc.cityId).filter((dd) => dd.id !== loc.id);
-    host.open({
-      kind: "drive",
-      title: "Blue Jeep Sport",
-      subtitle: others.length ? "Where to?" : undefined,
-      className: "olw-drive-modal",
-      body: (md, close) => {
-        if (!others.length) return el("p", { class: "olw-empty", text: `Nowhere else to drive in ${cityMeta(loc.cityId)?.name ?? loc.name} — try the world map.` });
-        return el(
-          "div",
-          { class: "olw-modal-actions olw-drive-list" },
-          others.map((dest) =>
-            button(md, `Drive to ${dest.name}`, "olw-btn olw-btn--rose", () => {
-              close();
-              if (store.state.lastPassenger) onDriveWith(store.state.lastPassenger);
-              travelTo(dest.id);
-            }),
-          ),
-        );
-      },
-    });
-  };
-
   d.on(uiEvents, "openShop", (mode?: ShopMode) => openShop(mode));
   d.on(uiEvents, "openPhone", openPhone);
   d.on(uiEvents, "openMap", openMap);
   d.on(uiEvents, "openLocalMap", openLocalMap);
   d.on(uiEvents, "minigame", openMiniGame);
-  d.on(uiEvents, "driveMenu", openDriveMenu);
 
   return { host, openPhone, openGift, openLocalMap, travelTo };
 }
