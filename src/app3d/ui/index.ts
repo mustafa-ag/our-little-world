@@ -14,6 +14,7 @@ import { mountToasts } from "./toast";
 import { mountJoystick } from "./joystick";
 import { mountButtons } from "./buttons";
 import { mountModals } from "./modals";
+import { MINIGAME_KEYS } from "./minigames";
 import { mountMinimap } from "./minimap";
 
 const FONT_HREF =
@@ -137,12 +138,29 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
         if (modals.host.escape()) consume(e);
         return;
       }
+      if (ctx.modal === "minigame" && MINIGAME_KEYS.has(e.code)) {
+        // the running minigame owns these keys (incl. hold-to-pour style games)
+        consume(e);
+        uiEvents.emit("minigameKey", e.code, true, e.repeat);
+        return;
+      }
       if (ctx.modal && ADVANCE_KEYS.has(e.code)) {
         // let Space/Enter activate a focused panel button, but never the world
         const onButton = e.target instanceof HTMLButtonElement && layer.contains(e.target);
         if (onButton && e.code !== "KeyE") e.stopImmediatePropagation();
         else consume(e);
       }
+    },
+    { capture: true },
+  );
+
+  d.listen(
+    window,
+    "keyup",
+    (e) => {
+      // not consumed: gameplay still needs keyups to clear held movement keys
+      if (ctx.modal !== "minigame" || ctx.dialogueOpen || !MINIGAME_KEYS.has(e.code)) return;
+      uiEvents.emit("minigameKey", e.code, false, false);
     },
     { capture: true },
   );

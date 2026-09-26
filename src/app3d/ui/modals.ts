@@ -10,6 +10,7 @@ import { ModalHost } from "./modal";
 import { shopBody, shopTitle, type ShopMode } from "./shop";
 import { phoneBody } from "./phone";
 import { giftBody, giftName } from "./gift";
+import { runMinigame } from "./minigames";
 import { worldMapView } from "./worldMap";
 import { NPC_BANDS, POI_LEGEND, createLocalMap } from "./minimap";
 
@@ -110,7 +111,7 @@ export function mountModals(ctx: UIContext) {
     });
   };
 
-  // TODO(3d): port ui/minigames.ts activities. Stub: title + hint + Done.
+  // DOM minigames (see ./minigames.ts). × / Esc leave without a result.
   const openMiniGame = (spec: MiniGameSpec) => {
     if (ctx.anyModal() && ctx.modal !== "minigame") return;
     host.open({
@@ -118,16 +119,19 @@ export function mountModals(ctx: UIContext) {
       title: spec.title,
       className: "olw-minigame-modal",
       body: (md, close) => {
-        const play = button(md, "Play (coming soon)", "olw-btn olw-btn--ghost", () => {});
-        play.disabled = true;
-        const done = button(md, spec.skipLabel ?? "Done", "olw-btn", () => {
+        const box = el("div", { class: "olw-minigame" });
+        let settled = false;
+        const settle = (ok: boolean) => {
+          if (settled) return;
+          settled = true;
           close();
-          spec.onDone(true);
-        });
-        return el("div", { class: "olw-minigame" }, [
-          el("p", { class: "olw-minigame-hint", text: spec.hint }),
-          el("div", { class: "olw-modal-actions" }, [play, done]),
-        ]);
+          spec.onDone(ok);
+        };
+        md.add(runMinigame(spec, box, settle));
+        if (spec.skipLabel) {
+          box.append(el("div", { class: "olw-minigame-skip" }, [button(md, spec.skipLabel, "olw-btn olw-btn--ghost olw-btn--small", () => settle(false))]));
+        }
+        return box;
       },
     });
   };
