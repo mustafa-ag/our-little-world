@@ -18,6 +18,8 @@
 // of two car instances.
 
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
+import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
+import { CreatePlane } from "@babylonjs/core/Meshes/Builders/planeBuilder";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
@@ -26,6 +28,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { controls, uiEvents } from "../../game/systems/controls";
 import { store } from "../../game/systems/store";
+import type { TimeOfDay } from "../../game/systems/save";
 import * as quests from "../../game/systems/quests";
 import { NPCS, type NpcDef } from "../../game/data/npcs";
 import type { AssetManager, KitContext, PieceInstance } from "../assets/AssetManager";
@@ -49,7 +52,23 @@ const GOAL = 440; // ~30 s at cruising speed
 const TREE_COUNT = 28;
 const ROCK_COUNT = 6;
 const HIDDEN_Y = -60;
-const FUEL_COST = 12;
+export const FUEL_COST = 12;
+/** Seconds to ease from the current speed to the target speed (~95%). */
+const ACCEL_TIME = 0.4;
+/** Seconds for a full boost-meter recharge. */
+const BOOST_RECHARGE = 4;
+/** An obstacle's shadow shows on the road this long before the obstacle itself. */
+const WARN_TIME = 0.6;
+/** Lateral clearance (beyond the hit box) that still counts as a near miss. */
+const NEAR_MISS = 0.8;
+/** Camera shake on a collision: amplitude (world units) and length (frames). */
+const SHAKE_AMP = 0.15;
+const SHAKE_FRAMES = 8;
+/** Passenger pickup window, as a fraction of the trip. */
+const HITCH_FROM = 0.2;
+const HITCH_TO = 0.5;
+/** Combo coins per near miss are capped at this multiplier. */
+const COMBO_CAP = 5;
 
 const CHAT: Record<string, string[]> = {
   moomoo: ["aux?", "absolutely not", "😔", "this road always feels longer with you", "i'll drive next time. maybe."],
@@ -93,6 +112,21 @@ interface Prop {
   active: boolean;
   /** already counted as a near miss on this pass */
   seen?: boolean;
+  /** seconds left of the warning shadow before the obstacle appears (0 = visible) */
+  warn?: number;
+}
+
+/** Sky colours for the far backdrop (top, horizon), by time of day. */
+const SKY: Record<TimeOfDay, [string, string]> = {
+  morning: ["#f2a65a", "#ffe0b0"],
+  afternoon: ["#4f9be0", "#c4e6ff"],
+  evening: ["#6d4a9c", "#f59ab8"],
+  night: ["#0e1436", "#3b3f70"],
+};
+
+/** Payload of "driveNearMiss" (ui/drive.ts shows the flash + combo). */
+export interface DriveNearMiss {
+  combo: number;
 }
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -114,8 +148,12 @@ function roadTexture(k: KitContext, asphalt: string): DynamicTexture {
   c.fillStyle = "#f3eee2";
   c.fillRect(3, 0, 4, h);
   c.fillRect(w - 7, 0, 4, h);
-  c.fillStyle = "#f4d35e";
-  for (const x of [w / 3, (2 * w) / 3]) c.fillRect(x - 2, 20, 4, h / 2 - 40);
+  // dashed white lane dividers (two dashes per repeat; they scroll with vOffset)
+  c.fillStyle = "#f7f4ec";
+  for (const x of [w / 3, (2 * w) / 3]) {
+    c.fillRect(x - 2, 16, 4, h / 4);
+    c.fillRect(x - 2, h / 2 + 16, 4, h / 4);
+  }
   t.wrapU = Texture.CLAMP_ADDRESSMODE;
   t.wrapV = Texture.WRAP_ADDRESSMODE;
   t.update(false);
@@ -138,6 +176,23 @@ function vergeTexture(k: KitContext, hex: string, name: string): DynamicTexture 
   }
   t.wrapU = Texture.WRAP_ADDRESSMODE;
   t.wrapV = Texture.WRAP_ADDRESSMODE;
+  t.update(false);
+  return t;
+}
+
+/** Vertical sky gradient for the far backdrop, tinted by the time of day. */
+function skyTexture(k: KitContext, tod: TimeOfDay): DynamicTexture {
+  const t = new DynamicTexture("drive:sky", { width: 4, height: 128 }, k.scene, false);
+  const c = t.getContext() as CanvasRenderingContext2D;
+  const [top, horizon] = SKY[tod] ?? SKY.afternoon;
+  const g = c.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0, top);
+  g.addColorStop(0.8, horizon);
+  g.addColorStop(1, horizon);
+  c.fillStyle = g;
+  c.fillRect(0, 0, 4, 128);
+  t.wrapU = Texture.CLAMP_ADDRESSMODE;
+  t.wrapV = Texture.CLAMP_ADDRESSMODE;
   t.update(false);
   return t;
 }
@@ -200,6 +255,15 @@ export class DrivingScene {
   private traffic: { inst: PieceInstance; p: Prop }[] = [];
   private hitcher: { view: NpcView; id: string; z: number } | null = null;
   private hitcherDone = false;
+  private hitcherT = 0;
+  private hitchers = 0;
+  private sky: { mesh: Mesh; mat: StandardMaterial; tex: DynamicTexture } | null = null;
+  private warnings = new Map<Prop, { mesh: Mesh; mat: StandardMaterial; w: number; d: number }>();
+  private shakeFrames = 0;
+  private shakeX = 0;
+  private combo = 0;
+  private bestCombo = 0;
+  private comboCoins = 0;
 
   private carX = 0;
   private steerVis = 0;
@@ -258,6 +322,24 @@ export class DrivingScene {
       this.planes.push({ mesh: kerb, mat: kerb.material as StandardMaterial });
     }
 
+    // ---- far backdrop: a gradient sky that shifts with the time of day ----
+    {
+      const tex = skyTexture(k, store.state.timeOfDay);
+      const mesh = CreatePlane("drive:skyPlane", { width: 320, height: 70 }, k.scene);
+      const mat = new StandardMaterial("drive:skyPlane:mat", k.scene);
+      mat.emissiveTexture = tex;
+      mat.diffuseColor = Color3.Black();
+      mat.specularColor = Color3.Black();
+      mat.disableLighting = true;
+      mat.fogEnabled = false;
+      mat.backFaceCulling = false;
+      mesh.material = mat;
+      mesh.position.set(DRIVE_ORIGIN.x, 33, DRIVE_ORIGIN.z + FAR + 6);
+      mesh.isPickable = false;
+      mesh.freezeWorldMatrix();
+      this.sky = { mesh, mat, tex };
+    }
+
     // ---- roadside trees (two kinds, thin instances) ----
     const kinds = treeKinds(prof);
     const per = Math.ceil(TREE_COUNT / kinds.length);
@@ -288,6 +370,25 @@ export class DrivingScene {
       this.traffic.push({ inst, p: { x: 0, z: FAR, vx: 0, rot: 0, scale: 1, active: false } });
     }
 
+    // ---- warning shadows: one soft dark oval per obstacle slot ----
+    const shadowFor = (p: Prop, w: number, d: number, i: number) => {
+      const mesh = CreateDisc(`drive:warn${i}`, { radius: 0.5, tessellation: 24 }, k.scene);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.scaling.set(w, d, 1);
+      const mat = new StandardMaterial(`drive:warn${i}:mat`, k.scene);
+      mat.diffuseColor = Color3.Black();
+      mat.specularColor = Color3.Black();
+      mat.emissiveColor = new Color3(0.05, 0.04, 0.05);
+      mat.disableLighting = true;
+      mat.alpha = 0;
+      mesh.material = mat;
+      mesh.isPickable = false;
+      mesh.position.set(DRIVE_ORIGIN.x, HIDDEN_Y, DRIVE_ORIGIN.z);
+      this.warnings.set(p, { mesh, mat, w, d });
+    };
+    this.rocks.forEach((r, i) => shadowFor(r, 1.5, 1.2, i));
+    this.traffic.forEach((t, i) => shadowFor(t.p, 1.9, 3.8, ROCK_COUNT + i));
+
     this.writeProps();
 
     // ---- input ----
@@ -308,13 +409,16 @@ export class DrivingScene {
     });
     const onBoost = (on: boolean) => (this.touchBoost = !!on);
     const onHonk = () => this.honk();
+    const onSkip = () => this.skip();
     uiEvents.on("driveBoost", onBoost);
     uiEvents.on("driveHonk", onHonk);
     uiEvents.on("action", onHonk);
+    uiEvents.on("driveSkip", onSkip);
     this.offs.push(() => {
       uiEvents.off("driveBoost", onBoost);
       uiEvents.off("driveHonk", onHonk);
       uiEvents.off("action", onHonk);
+      uiEvents.off("driveSkip", onSkip);
     });
 
     this.emitHud();
@@ -327,6 +431,23 @@ export class DrivingScene {
 
   get arrived() {
     return this.finished;
+  }
+
+  /** Camera shake offset (world X) for this frame; Game3D adds it after the follow camera moves. */
+  get shake() {
+    return this.shakeX;
+  }
+
+  /**
+   * "Skip drive": end the trip without the driving rewards. Burns the trip's
+   * fuel and parks you in the Jeep like a normal arrival, but gives no coins,
+   * hearts or relationship bonus. The UI then travels to the destination.
+   */
+  skip() {
+    if (this.finished) return;
+    this.finished = true;
+    store.useFuel(FUEL_COST);
+    store.setInJeep(true);
   }
 
   // -------------------------------------------------------------------------
@@ -356,10 +477,21 @@ export class DrivingScene {
 
   private bump() {
     this.bumps += 1;
+    this.shakeFrames = SHAKE_FRAMES;
+    if (this.combo > 1) uiEvents.emit("driveChat", `Combo broken at x${this.combo}`);
+    this.combo = 0;
     this.speed = Math.max(BASE_SPEED * 0.45, this.speed * 0.5);
     this.bounce = 1.6;
     uiEvents.emit("driveBump");
     if (this.passenger) uiEvents.emit("driveChat", `${npcName(this.passenger)}: !`);
+  }
+
+  private nearMiss() {
+    this.near += 1;
+    this.combo += 1;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+    this.comboCoins += Math.min(COMBO_CAP, this.combo);
+    uiEvents.emit("driveNearMiss", { combo: this.combo } satisfies DriveNearMiss);
   }
 
   private spawnRock() {
@@ -374,6 +506,7 @@ export class DrivingScene {
     r.vx = Math.random() < 0.45 ? rnd(0.5, 1.2) * (Math.random() < 0.5 ? -1 : 1) : 0;
     r.rot = rnd(0, Math.PI * 2);
     r.scale = rnd(0.7, 1.05);
+    r.warn = WARN_TIME;
   }
 
   private spawnTraffic() {
@@ -384,14 +517,23 @@ export class DrivingScene {
     t.p.x = (Math.floor(Math.random() * 3) - 1) * LANE;
     t.p.z = FAR;
     t.p.vx = 0;
+    t.p.warn = WARN_TIME;
   }
 
-  private maybeSpawnHitcher() {
-    if (this.hitcher || this.hitcherDone || (this.passenger && Math.random() < 0.6)) {
-      this.hitcherDone = true;
-      return;
-    }
-    this.hitcherDone = true;
+  /**
+   * Someone may wave from the verge between HITCH_FROM and HITCH_TO of the
+   * trip. Every couple of seconds there's a roll; a missed hitcher leaves room
+   * for another (up to two), and a solo trip always gets one before the window
+   * closes. Picking someone up ends the chances.
+   */
+  private maybeSpawnHitcher(dt: number, progress: number) {
+    if (this.hitcher || this.hitcherDone || this.hitchers >= 2) return;
+    this.hitcherT -= dt;
+    if (this.hitcherT > 0) return;
+    this.hitcherT = 2.5;
+    const last = progress > HITCH_TO - 0.1 && !this.passenger && this.hitchers === 0;
+    if (!last && Math.random() > (this.passenger ? 0.2 : 0.45)) return;
+    this.hitchers += 1;
     const pool = HITCHERS.filter((id) => id !== this.passenger);
     const id = pool[Math.floor(Math.random() * pool.length)];
     const def: NpcDef | undefined = NPCS.find((n) => n.id === id);
@@ -405,6 +547,7 @@ export class DrivingScene {
   }
 
   private pickUp(id: string) {
+    this.hitcherDone = true;
     this.passenger = id;
     store.state.lastPassenger = id;
     store.addRelationship(id, 1);
@@ -431,6 +574,10 @@ export class DrivingScene {
       store.addCoins(10);
       store.toast("Perfect drive", "#7be0a3");
     } else if (this.near > 4) store.toast("A few near misses", "#f4c95d");
+    if (this.comboCoins > 0) {
+      store.addCoins(this.comboCoins);
+      store.toast(`Near-miss combo (best x${this.bestCombo}) +${this.comboCoins} coins`, "#f4c95d");
+    }
     if (this.passenger) store.addRelationship(this.passenger, this.bumps === 0 ? 2 : 1);
     store.toast(`You made it to ${this.opts.destName}`, "#ff8fae");
     // arrive in the Jeep (WorldScene { driving: true })
@@ -447,9 +594,16 @@ export class DrivingScene {
     const wantBoost = !paused && !this.finished && (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.touchBoost);
     this.boosting = wantBoost && this.boost > 0.02;
     if (this.boosting) this.boost = Math.max(0, this.boost - dt / 2.2);
-    else this.boost = Math.min(1, this.boost + dt / 5);
+    else this.boost = Math.min(1, this.boost + dt / BOOST_RECHARGE);
     const target = paused ? 0 : this.finished ? BASE_SPEED * 0.35 : this.boosting ? BOOST_SPEED : BASE_SPEED;
-    this.speed += (target - this.speed) * Math.min(1, dt * (paused ? 6 : 1.6));
+    // exponential ease: ~95% of the way to the target speed in ACCEL_TIME
+    this.speed += (target - this.speed) * (1 - Math.exp((-3 * dt) / ACCEL_TIME));
+
+    // collision shake: alternate +-SHAKE_AMP for SHAKE_FRAMES frames
+    if (this.shakeFrames > 0) {
+      this.shakeFrames -= 1;
+      this.shakeX = (this.shakeFrames % 2 ? 1 : -1) * SHAKE_AMP;
+    } else this.shakeX = 0;
 
     // steering
     let steer = 0;
@@ -500,7 +654,8 @@ export class DrivingScene {
           this.spawnTraffic();
           this.trafficT = rnd(3, 6);
         }
-        if (this.distance > GOAL * 0.3) this.maybeSpawnHitcher();
+        const prog = this.distance / GOAL;
+        if (prog >= HITCH_FROM && prog <= HITCH_TO) this.maybeSpawnHitcher(dt, prog);
       }
 
       // rocks
@@ -509,13 +664,20 @@ export class DrivingScene {
         r.z -= scroll;
         r.x += r.vx * dt;
         if (Math.abs(r.x) > ROAD_HALF - 0.4) r.vx = -r.vx;
+        if (r.warn) {
+          // still just a shadow on the road: no collisions yet
+          r.warn = Math.max(0, r.warn - dt);
+          if (r.z < NEAR) r.active = false;
+          continue;
+        }
         const dx = Math.abs(r.x - this.carX);
-        if (!this.finished && Math.abs(r.z) < 1.3 * r.scale + 0.2 && dx < 0.55 + 0.6 * r.scale) {
+        const hitR = 0.55 + 0.6 * r.scale;
+        if (!this.finished && Math.abs(r.z) < 1.3 * r.scale + 0.2 && dx < hitR) {
           this.bump();
           r.active = false;
-        } else if (!this.finished && !r.seen && Math.abs(r.z) < 0.4 && dx < 1.7) {
+        } else if (!this.finished && !r.seen && Math.abs(r.z) < 0.4 && dx < hitR + NEAR_MISS) {
           r.seen = true;
-          this.near += 1;
+          this.nearMiss();
         }
         if (r.z < NEAR) r.active = false;
       }
@@ -525,12 +687,17 @@ export class DrivingScene {
         const p = t.p;
         if (!p.active) continue;
         p.z -= scroll + 7 * dt;
+        if (p.warn) {
+          p.warn = Math.max(0, p.warn - dt);
+          if (p.z < NEAR) p.active = false;
+          continue;
+        }
         if (!this.finished && Math.abs(p.z) < 2.1 && Math.abs(p.x - this.carX) < 1.05) {
           this.bump();
           p.active = false;
-        } else if (!this.finished && !p.seen && Math.abs(p.z) < 0.5 && Math.abs(p.x - this.carX) < 2) {
+        } else if (!this.finished && !p.seen && Math.abs(p.z) < 0.5 && Math.abs(p.x - this.carX) < 1.05 + NEAR_MISS) {
           p.seen = true;
-          this.near += 1;
+          this.nearMiss();
         }
         if (p.z < NEAR) p.active = false;
       }
@@ -548,6 +715,7 @@ export class DrivingScene {
         } else if (h.z < NEAR) {
           h.view.dispose();
           this.hitcher = null;
+          this.hitcherT = 2;
           uiEvents.emit("driveChat", `Missed ${npcName(h.id)} — next time!`);
         }
       }
@@ -585,11 +753,19 @@ export class DrivingScene {
       tb.batch.flush();
     }
     if (this.rockBatch) {
-      this.rocks.forEach((r, i) => this.rockBatch!.set(i, r.x, r.active ? 0 : HIDDEN_Y, r.z, r.rot, r.scale));
+      this.rocks.forEach((r, i) => this.rockBatch!.set(i, r.x, r.active && !r.warn ? 0 : HIDDEN_Y, r.z, r.rot, r.scale));
       this.rockBatch.flush();
     }
     for (const t of this.traffic) {
-      t.inst.root.position.set(DRIVE_ORIGIN.x + t.p.x, t.p.active ? 0 : HIDDEN_Y, DRIVE_ORIGIN.z + t.p.z);
+      t.inst.root.position.set(DRIVE_ORIGIN.x + t.p.x, t.p.active && !t.p.warn ? 0 : HIDDEN_Y, DRIVE_ORIGIN.z + t.p.z);
+    }
+    // warning shadows fade in over WARN_TIME, then the obstacle takes over
+    for (const [p, w] of this.warnings) {
+      const on = p.active && !!p.warn;
+      const s = p.scale; // traffic keeps scale 1
+      w.mesh.position.set(DRIVE_ORIGIN.x + p.x, on ? 0.05 : HIDDEN_Y, DRIVE_ORIGIN.z + p.z);
+      w.mesh.scaling.set(w.w * s, w.d * s, 1);
+      w.mat.alpha = on ? 0.55 * (1 - (p.warn ?? 0) / WARN_TIME) : 0;
     }
   }
 
@@ -598,6 +774,17 @@ export class DrivingScene {
     this.offs = [];
     this.hitcher?.view.dispose();
     this.hitcher = null;
+    for (const w of this.warnings.values()) {
+      w.mesh.dispose();
+      w.mat.dispose();
+    }
+    this.warnings.clear();
+    if (this.sky) {
+      this.sky.mesh.dispose();
+      this.sky.mat.dispose();
+      this.sky.tex.dispose();
+      this.sky = null;
+    }
     this.car.dispose();
     for (const t of this.traffic) t.inst.dispose();
     for (const tb of this.treeBatches) {

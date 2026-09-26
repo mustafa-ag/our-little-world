@@ -193,11 +193,147 @@
   text-align: center;
 }
 
-.olw-drive-end {
+/* top-right corner: "Skip drive ›" (prominent) above "End drive" */
+.olw-drive-corner {
   position: absolute;
   top: calc(var(--olw-safe-t) + 10px);
   right: calc(var(--olw-safe-r) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
   pointer-events: auto;
+  z-index: 3;
+}
+
+.olw-drive-skip {
+  background: var(--olw-gold);
+  color: var(--olw-ink);
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* picker: "Drive to X" + a small "Skip" on the same row */
+.olw-drive-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.olw-drive-row > .olw-btn:first-child {
+  flex: 1;
+}
+
+.olw-drive-row > .olw-drive-skip {
+  flex: none;
+  align-self: center;
+}
+
+/* boost: darkened screen edges (opacity 0..0.4 set from the HUD) */
+.olw-drive-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.85) 100%);
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+/* NEAR MISS! flash (+ combo multiplier) */
+.olw-drive-flash {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  font-weight: 900;
+  color: #fff4c2;
+  text-shadow: 0 2px 0 #b2552e, 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.olw-drive-flash.olw-hidden {
+  display: none;
+}
+
+.olw-drive-flash-main {
+  font-size: clamp(26px, 6vw, 44px);
+  letter-spacing: 0.04em;
+}
+
+.olw-drive-flash-combo {
+  font-size: clamp(16px, 3.4vw, 24px);
+  color: #ffd76a;
+}
+
+.olw-drive-flash--on {
+  animation: olw-drive-flash 0.8s ease-out forwards;
+}
+
+@keyframes olw-drive-flash {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(1);
+  }
+}
+
+/* pickup burst: sparks fly out from around the Jeep and fade */
+.olw-drive-fx {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.olw-drive-spark {
+  position: absolute;
+  left: -5px;
+  top: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffd84a;
+  box-shadow: 0 0 8px #ffe98a;
+  animation: olw-drive-spark 0.7s ease-out forwards;
+}
+
+@keyframes olw-drive-spark {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .olw-drive-flash--on {
+    animation: none;
+  }
+  .olw-drive-vignette {
+    transition: none;
+  }
 }
 
 .olw-drive-hint {

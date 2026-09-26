@@ -540,6 +540,9 @@ export class Game3D {
       const c = drv.scene.carPos;
       this.camera.setTarget(c.x, c.z);
       this.camera.update(dt);
+      // collision shake: nudge the placed camera (the follow camera re-places it every frame)
+      const shake = drv.scene.shake;
+      if (shake) this.camera.camera.position.x += shake;
       this.lighting.follow(c.x, c.z);
       this.sky.update(dt, this.camera.camera.position);
       if (l.effects.length) l.effects = l.effects.filter((fx) => !fx(dt));

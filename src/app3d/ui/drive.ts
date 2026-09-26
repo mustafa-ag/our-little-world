@@ -8,6 +8,9 @@
 // "driveArrived" at the goal -> fade -> "travelTo" (Game3D.travelTo) loads
 // the destination. Esc / End drive -> "driveExit" back to where you parked.
 // Game3D emits "driveClosed" whenever the road trip goes away.
+// "Skip drive" (HUD corner, or "Skip" in the picker) jumps straight to the
+// destination: same fade + "travelTo" as a normal arrival (which fires
+// quests.onVisit), but none of the driving rewards (coins / hearts / bonds).
 import css from "./drive.css?inline";
 import { store } from "../../game/systems/store";
 import { controls, uiEvents } from "../../game/systems/controls";
@@ -15,7 +18,7 @@ import { cityMeta, districtsOf, getLocation } from "../../game/data/locations";
 import { activeQuests, onDriveWith } from "../../game/systems/quests";
 import { NPCS } from "../../game/data/npcs";
 import { PORTED_LOCATIONS } from "../systems/worldController";
-import type { DriveHud } from "../scenes/drivingScene";
+import { FUEL_COST, type DriveHud, type DriveNearMiss } from "../scenes/drivingScene";
 import { button, el, prefersReducedMotion } from "./dom";
 import type { UIContext } from "./context";
 import type { ModalHost } from "./modal";
@@ -78,7 +81,10 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
     radio,
   ]);
   const chat = el("p", { class: "olw-drive-chat olw-hidden", attrs: { "aria-live": "polite" } });
-  const endBtn = button(d, "End drive", "olw-btn olw-btn--rose olw-btn--small olw-drive-end", () => endDrive());
+  const endBtn = button(d, "End drive", "olw-btn olw-btn--rose olw-btn--small", () => endDrive());
+  const skipBtn = button(d, "Skip drive ›", "olw-btn olw-btn--small olw-drive-skip", () => skipDrive());
+  skipBtn.setAttribute("aria-label", "Skip the drive and arrive now");
+  const corner = el("div", { class: "olw-drive-corner" }, [skipBtn, endBtn]);
   const hint = el("p", { class: "olw-drive-hint", text: "A / D or ← → steer · Shift floor it · Space honk · Esc end drive" });
 
   const pedal = (label: string, cls: string, onDown: () => void, onUp: () => void) => {
@@ -112,7 +118,12 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
       pedal("Boost", "olw-drive-pedal--boost", () => uiEvents.emit("driveBoost", true), () => uiEvents.emit("driveBoost", false)),
     ]),
   ]);
-  const hud = d.node(el("div", { class: "olw-drive-hud olw-hidden" }, [top, chat, endBtn, hint, pad]));
+  // ---- screen effects: boost vignette, near-miss flash + combo, pickup burst ----
+  const vignette = el("div", { class: "olw-drive-vignette", attrs: { "aria-hidden": "true" } });
+  const flash = el("div", { class: "olw-drive-flash olw-hidden", attrs: { "aria-hidden": "true" } });
+  const fx = el("div", { class: "olw-drive-fx", attrs: { "aria-hidden": "true" } });
+
+  const hud = d.node(el("div", { class: "olw-drive-hud olw-hidden" }, [vignette, fx, flash, top, chat, corner, hint, pad]));
   ctx.layer.append(hud);
 
   const setDriving = (on: boolean) => {
@@ -122,7 +133,12 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
     ctx.layer.classList.toggle("olw-driving", on);
     steerL = steerR = false;
     controls.moveX = 0;
-    if (!on) chat.classList.add("olw-hidden");
+    if (!on) {
+      chat.classList.add("olw-hidden");
+      flash.classList.add("olw-hidden");
+      vignette.style.opacity = "0";
+      fx.replaceChildren();
+    }
     ctx.changed();
   };
 
@@ -141,6 +157,33 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
     hud.classList.add("olw-drive-hud--bump");
   });
 
+  let flashHide: (() => void) | null = null;
+  d.on(uiEvents, "driveNearMiss", (n: DriveNearMiss) => {
+    if (!driving) return;
+    flash.replaceChildren(el("span", { class: "olw-drive-flash-main", text: "NEAR MISS!" }));
+    if (n.combo > 1) flash.append(el("span", { class: "olw-drive-flash-combo", text: `Combo x${n.combo}` }));
+    flash.classList.remove("olw-hidden", "olw-drive-flash--on");
+    void flash.offsetWidth; // restart the animation
+    flash.classList.add("olw-drive-flash--on");
+    flashHide?.();
+    flashHide = d.timeout(() => flash.classList.add("olw-hidden"), 800);
+  });
+
+  // 6-8 little yellow sparks flying out from the Jeep, then fading
+  d.on(uiEvents, "drivePickup", () => {
+    if (!driving || prefersReducedMotion()) return;
+    const n = 6 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      const r = 60 + Math.random() * 50;
+      const spark = el("span", { class: "olw-drive-spark" });
+      spark.style.setProperty("--dx", `${Math.cos(a) * r}px`);
+      spark.style.setProperty("--dy", `${Math.sin(a) * r}px`);
+      fx.append(spark);
+      d.timeout(() => spark.remove(), 750);
+    }
+  });
+
   d.on(uiEvents, "driveHud", (h: DriveHud) => {
     if (!driving) return;
     destEl.textContent = h.destName;
@@ -151,6 +194,7 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
     fuelVal.textContent = `${h.fuel}%`;
     boostFill.style.width = `${Math.round(h.boost * 100)}%`;
     boostFill.classList.toggle("olw-drive-fill--hot", h.boosting);
+    vignette.style.opacity = h.boosting ? "0.4" : "0";
     radio.textContent = h.radio;
     composure.classList.toggle("olw-hidden", !h.passenger);
     if (h.passenger) composure.textContent = `${h.passenger}'s composure  ${"♥".repeat(h.composure)}${"♡".repeat(5 - h.composure)}`;
@@ -183,12 +227,20 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
               startDrive(dest.id);
             });
             if (wanted.has(dest.id) || wanted.has(dest.cityId)) b.append(el("span", { class: "olw-drive-quest", text: "Quest" }));
-            return b;
+            const skip = button(md, "Skip", "olw-btn olw-btn--small olw-drive-skip", () => {
+              close();
+              skipTo(dest.id);
+            });
+            skip.setAttribute("aria-label", `Skip the drive and go straight to ${dest.name}`);
+            return el("div", { class: "olw-drive-row" }, [b, skip]);
           }),
         );
       },
     });
   };
+
+  /** Where the current road trip is headed (for "Skip drive"). */
+  let driveDest: string | null = null;
 
   const startDrive = (destId: string) => {
     const dest = getLocation(destId);
@@ -203,10 +255,45 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
         }
         // WorldScene.driveTo: driving with someone counts for their quest step
         if (passenger) onDriveWith(passenger);
+        driveDest = destId;
         setDriving(true);
         uiEvents.emit("locationTitle", "Road trip", `Driving to ${dest.name}`);
       },
     );
+  };
+
+  /** Travel to the destination as if the drive had just ended (no driving rewards). */
+  const arriveAt = (destId: string, onFail: () => void) => {
+    transition(
+      `Arriving at ${getLocation(destId).name}…`,
+      // travelTo loads the district, which fires quests.onVisit like a normal arrival
+      (done) => uiEvents.emit("travelTo", destId, done),
+      (ok) => {
+        if (!ok) {
+          onFail();
+          store.toast(`Couldn't get to ${getLocation(destId).name} right now`, "#e46d94");
+        }
+        setDriving(false);
+      },
+    );
+  };
+
+  // "Skip" in the picker: no road trip at all, just go (still burns the fuel)
+  const skipTo = (destId: string) => {
+    if (busy || driving) return;
+    const passenger = store.state.lastPassenger;
+    arriveAt(destId, () => undefined);
+    if (!busy) return;
+    store.useFuel(FUEL_COST);
+    store.setInJeep(true);
+    if (passenger) onDriveWith(passenger);
+  };
+
+  // "Skip drive ›" on the HUD: stop the trip now (DrivingScene.skip) and arrive
+  const skipDrive = () => {
+    if (!driving || busy || !driveDest) return;
+    uiEvents.emit("driveSkip");
+    arriveAt(driveDest, () => uiEvents.emit("driveExit"));
   };
 
   const endDrive = () => {
@@ -220,17 +307,7 @@ export function mountDrive(ctx: UIContext, host: ModalHost) {
 
   d.on(uiEvents, "driveArrived", (destId: string) => {
     if (!driving) return;
-    transition(
-      `Arriving at ${getLocation(destId).name}…`,
-      (done) => uiEvents.emit("travelTo", destId, done),
-      (ok) => {
-        if (!ok) {
-          uiEvents.emit("driveExit");
-          store.toast(`Couldn't get to ${getLocation(destId).name} right now`, "#e46d94");
-        }
-        setDriving(false);
-      },
-    );
+    arriveAt(destId, () => uiEvents.emit("driveExit"));
   });
 
   d.on(uiEvents, "driveClosed", () => setDriving(false));
