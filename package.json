@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs",
     "audit:hd": "node scripts/audit-hd-assets.mjs",
+    "audit:performance": "node scripts/audit-3d-assets.mjs",
     "assets:build": "node scripts/build-hero-assets.mjs",
     "assets:blender": "node tools/blender/build.mjs"
   },

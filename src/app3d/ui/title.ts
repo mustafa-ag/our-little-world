@@ -1,6 +1,7 @@
 // Title screen — DOM port of scenes/TitleScene.ts.
 import { store } from "../../game/systems/store";
 import { resetControls, uiEvents } from "../../game/systems/controls";
+import { loadGraphicsSettings, saveGraphicsSettings, type FrameRatePreference, type GraphicsQuality } from "../performance/quality";
 import { button, el, icon, prefersReducedMotion, type Disposer } from "./dom";
 import type { UIContext } from "./context";
 
@@ -47,7 +48,37 @@ export function mountTitle(ctx: UIContext) {
     text: "Play Full Pixel Game",
     attrs: { href: "./legacy.html", "aria-label": "Play the full pixel game" },
   });
-  actions.append(play, newGame, legacy, el("p", { class: "olw-title-keys", text: "Press Space or Enter to begin" }));
+  const savedGraphics = loadGraphicsSettings();
+  const choice = <T extends string>(label: string, value: T, values: readonly { value: T; label: string }[]) => {
+    const select = el("select", { class: "olw-title-select", attrs: { "aria-label": label } });
+    for (const item of values) {
+      const option = el("option", { text: item.label, attrs: { value: item.value } });
+      option.selected = item.value === value;
+      select.append(option);
+    }
+    return select;
+  };
+  const quality = choice<GraphicsQuality>("Graphics quality", savedGraphics.quality, [
+    { value: "auto", label: "Auto graphics" },
+    { value: "high", label: "High graphics" },
+    { value: "medium", label: "Medium graphics" },
+    { value: "low", label: "Low graphics" },
+  ]);
+  const frameRate = choice<string>("Frame rate", `${savedGraphics.frameRate}`, [
+    { value: "60", label: "60 FPS" },
+    { value: "30", label: "30 FPS" },
+    { value: "uncapped", label: "Uncapped FPS" },
+  ]);
+  const applyGraphics = button(d, "Apply & reload", "olw-btn olw-btn--ghost olw-btn--small", () => {
+    const fps: FrameRatePreference = frameRate.value === "30" ? 30 : frameRate.value === "uncapped" ? "uncapped" : 60;
+    saveGraphicsSettings({ quality: quality.value as GraphicsQuality, frameRate: fps, dynamicResolution: true });
+    location.reload();
+  });
+  const settings = el("details", { class: "olw-title-settings" }, [
+    el("summary", { text: "Graphics settings" }),
+    el("div", { class: "olw-title-settings-row" }, [quality, frameRate, applyGraphics]),
+  ]);
+  actions.append(play, newGame, legacy, settings, el("p", { class: "olw-title-keys", text: "Press Space or Enter to begin" }));
 
   const render = () => {
     const started = store.state.started;

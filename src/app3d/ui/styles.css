@@ -187,6 +187,40 @@
   font-size: 14px;
 }
 
+.olw-title-settings {
+  width: min(320px, 78vw);
+  color: var(--olw-ink-soft);
+  font-size: 12px;
+}
+
+.olw-title-settings summary {
+  cursor: pointer;
+  font-weight: 800;
+  list-style-position: inside;
+}
+
+.olw-title-settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.olw-title-select {
+  min-height: 42px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--olw-brown-soft);
+  border-radius: 12px;
+  background: rgba(255, 251, 241, 0.96);
+  color: var(--olw-ink);
+  font: 700 13px var(--olw-sans);
+}
+
+.olw-title-settings-row .olw-btn {
+  grid-column: 1 / -1;
+}
+
 /* HUD ------------------------------------------------------------------------ */
 .olw-hud {
   position: absolute;

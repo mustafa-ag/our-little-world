@@ -162,7 +162,7 @@ export function registerProps(am: AssetManager) {
   am.register("phone-box", phoneBox, { shadow: true });
   am.register("chalkboard", chalkboard, { shadow: false });
   am.register("bollard", bollard, { shadow: false });
-  am.register("rock", rock, { shadow: true });
+  am.register("rock", rock, { shadow: false });
   am.register("well", well, { shadow: true });
   am.register("fountain", fountain, { shadow: true });
 }

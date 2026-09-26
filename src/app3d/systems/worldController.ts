@@ -42,9 +42,11 @@ export class WorldController {
   private timeAcc = 0;
   private arriveAt = 0;
   private now = 0;
+  private nearbyAcc = 0;
   // assigned in the constructor: a field initializer would run before the
   // parameter properties are set (useDefineForClassFields)
   private def: LocationDef;
+  private benchmarkMode = false;
 
   constructor(
     readonly locationId: string,
@@ -63,7 +65,8 @@ export class WorldController {
    * currentLocation is only overwritten when it is itself a ported location,
    * so a started save sitting in a non-ported place is left untouched.
    */
-  setup(nowMs: number, opts: { travelled?: boolean; fresh?: boolean } = {}) {
+  setup(nowMs: number, opts: { travelled?: boolean; fresh?: boolean; benchmark?: boolean } = {}) {
+    this.benchmarkMode = !!opts.benchmark;
     this.now = nowMs;
     this.arriveAt = nowMs + 600;
     controls.locked = false;
@@ -77,9 +80,11 @@ export class WorldController {
     }
 
     const def = this.def;
-    if (opts.travelled || opts.fresh || PORTED_LOCATIONS.has(store.state.currentLocation)) store.setLocation(def.id);
-    store.unlockLocation(def.cityId);
-    store.unlockLocation(def.id);
+    if (!this.benchmarkMode) {
+      if (opts.travelled || opts.fresh || PORTED_LOCATIONS.has(store.state.currentLocation)) store.setLocation(def.id);
+      store.unlockLocation(def.cityId);
+      store.unlockLocation(def.id);
+    }
 
     for (const z of this.world.zones) {
       if (z.action === "drive") continue;
@@ -95,17 +100,19 @@ export class WorldController {
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("uiClosed", this.onUiClosed, this);
 
-    quests.onVisit(def.id);
-    quests.onVisit(def.cityId);
-    tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
+    if (!this.benchmarkMode) {
+      quests.onVisit(def.id);
+      quests.onVisit(def.cityId);
+      tryDeliverMessages({ wake: store.state.messages.length === 0, limit: 1 });
+    }
     uiEvents.emit("locationTitle", def.name, def.subtitle);
-    if (store.hasFlag("heist_victory_pending")) {
+    if (!this.benchmarkMode && store.hasFlag("heist_victory_pending")) {
       store.setFlag("heist_victory_pending", false);
       this.hooks.setTimeout(350, () =>
         uiEvents.emit("dialogue", "Juju", ["THE GREAT FAMILY JEWEL HEIST · Complete", "Absolutely no crimes occurred."]),
       );
     }
-    this.hooks.setTimeout(700, () => {
+    if (!this.benchmarkMode) this.hooks.setTimeout(700, () => {
       if (this.transitioning) return;
       this.maybeEncounter();
     });
@@ -533,16 +540,19 @@ export class WorldController {
   update(dtMs: number, nowMs: number) {
     this.now = nowMs;
     if (this.transitioning) return;
-    const p = this.hooks.playerPos();
-    this.interaction.update(p.x, p.z);
     if (!controls.locked) {
-      this.timeAcc += dtMs;
+      if (!this.benchmarkMode) this.timeAcc += dtMs;
       if (this.timeAcc > TIME_TICK_MS) {
         this.timeAcc = 0;
         store.advanceTime();
       }
-      this.checkMapEdge(p);
     }
+    this.nearbyAcc += dtMs;
+    if (this.nearbyAcc < 100) return;
+    this.nearbyAcc %= 100;
+    const p = this.hooks.playerPos();
+    this.interaction.update(p.x, p.z);
+    if (!controls.locked) this.checkMapEdge(p);
   }
 
   private checkMapEdge(p: { x: number; z: number }) {

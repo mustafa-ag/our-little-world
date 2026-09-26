@@ -21,16 +21,31 @@ export interface Interactable {
 
 export class InteractionSystem {
   private items: Interactable[] = [];
+  private buckets = new Map<number, Interactable[]>();
   private current: Interactable | null = null;
   private suspended = false;
 
   add(it: Interactable) {
     this.items.push(it);
+    const key = this.bucketKey(Math.floor(it.x / 4), Math.floor(it.z / 4));
+    const bucket = this.buckets.get(key);
+    if (bucket) bucket.push(it);
+    else this.buckets.set(key, [it]);
     return it;
   }
 
   remove(id: string) {
-    this.items = this.items.filter((i) => i.id !== id);
+    const index = this.items.findIndex((i) => i.id === id);
+    if (index >= 0) {
+      const [removed] = this.items.splice(index, 1);
+      const key = this.bucketKey(Math.floor(removed.x / 4), Math.floor(removed.z / 4));
+      const bucket = this.buckets.get(key);
+      if (bucket) {
+        const bi = bucket.indexOf(removed);
+        if (bi >= 0) bucket.splice(bi, 1);
+        if (!bucket.length) this.buckets.delete(key);
+      }
+    }
     if (this.current?.id === id) {
       this.current = null;
       uiEvents.emit("prompt", null);
@@ -70,14 +85,22 @@ export class InteractionSystem {
     if (this.suspended) return;
     let best: Interactable | null = null;
     let bestD = Infinity;
-    for (const it of this.items) {
-      if (it.enabled && !it.enabled()) continue;
-      const dx = it.x - px;
-      const dz = it.z - pz;
-      const d = Math.hypot(dx, dz);
-      if (d <= it.radius && d < bestD) {
-        best = it;
-        bestD = d;
+    const bx = Math.floor(px / 4);
+    const bz = Math.floor(pz / 4);
+    for (let z = bz - 1; z <= bz + 1; z++) {
+      for (let x = bx - 1; x <= bx + 1; x++) {
+        const bucket = this.buckets.get(this.bucketKey(x, z));
+        if (!bucket) continue;
+        for (const it of bucket) {
+          if (it.enabled && !it.enabled()) continue;
+          const dx = it.x - px;
+          const dz = it.z - pz;
+          const d2 = dx * dx + dz * dz;
+          if (d2 <= it.radius * it.radius && d2 < bestD) {
+            best = it;
+            bestD = d2;
+          }
+        }
       }
     }
     if (best !== this.current) {
@@ -95,6 +118,12 @@ export class InteractionSystem {
 
   clear() {
     this.items = [];
+    this.buckets.clear();
     this.current = null;
+  }
+
+  private bucketKey(x: number, z: number) {
+    // 16-bit signed cell coordinates packed into one stable integer key.
+    return ((x & 0xffff) << 16) ^ (z & 0xffff);
   }
 }

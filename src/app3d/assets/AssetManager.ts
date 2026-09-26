@@ -386,6 +386,14 @@ export class AssetManager {
     return !!(r?.glbBase || r?.glbRoot);
   }
 
+  /** Development profiler summary; containers are cached once per URL. */
+  loadedGlbCount() {
+    let pieces = 0;
+    for (const r of this.regs.values()) if (r.glbBase || r.glbRoot) pieces++;
+    for (const r of this.animatedRegs.values()) if (r.container) pieces++;
+    return pieces;
+  }
+
   /**
    * Ensure GLB pieces are loaded and procedural prototypes are built. Each GLB
    * races a timeout; failures fall back to the procedural builder and never
@@ -533,7 +541,6 @@ export class AssetManager {
       m.registerInstancedBuffer("color", 4);
       m.instancedBuffers.color = new Color4(1, 1, 1, 1);
     }
-    if (reg.opts.shadow !== false) this.ctx.lighting?.addCaster(m);
     this.protos.set(id, m);
     return m;
   }
@@ -572,7 +579,8 @@ export class AssetManager {
       meshes,
       key,
       dispose: () => {
-        this.instances.delete(pi);
+        if (!this.instances.delete(pi)) return;
+        for (const mesh of meshes) this.ctx.lighting?.removeCaster(mesh);
         root.dispose();
       },
     };
@@ -619,7 +627,8 @@ export class AssetManager {
       meshes,
       fromGlb,
       dispose: () => {
-        this.hierarchies.delete(hi);
+        if (!this.hierarchies.delete(hi)) return;
+        for (const mesh of meshes) this.ctx.lighting?.removeCaster(mesh);
         root.dispose(false, false);
       },
     };
@@ -671,7 +680,10 @@ export class AssetManager {
     for (const i of [...this.instances]) i.dispose();
     for (const h of [...this.hierarchies]) h.dispose();
     for (const a of [...this.animatedInstances]) a.dispose();
-    for (const m of this.thinMeshes) m.dispose();
+    for (const m of this.thinMeshes) {
+      this.ctx.lighting?.removeCaster(m);
+      m.dispose();
+    }
     this.thinMeshes = [];
   }
 

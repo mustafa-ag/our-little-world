@@ -38,6 +38,7 @@ export interface PlayerState {
 
 export class PlayerController {
   state: PlayerState;
+  private input = { x: 0, z: 0 };
   private keys = new Set<string>();
   private lastAction = 0;
   private onKeyDown = (e: KeyboardEvent) => {
@@ -94,7 +95,12 @@ export class PlayerController {
 
   /** Desired input vector in world units (X east, Z north), normalised. */
   inputVector(): { x: number; z: number } {
-    if (controls.locked) return { x: 0, z: 0 };
+    const out = this.input;
+    if (controls.locked) {
+      out.x = 0;
+      out.z = 0;
+      return out;
+    }
     let ix = 0;
     let iy = 0; // 2D "down" is +y
     const k = this.keys;
@@ -115,12 +121,15 @@ export class PlayerController {
       ix /= len;
       iy /= len;
     }
-    return { x: ix, z: -iy };
+    out.x = ix;
+    out.z = -iy;
+    return out;
   }
 
   update(dt: number, frozen = false) {
     const s = this.state;
-    const inp = frozen ? { x: 0, z: 0 } : this.inputVector();
+    const inp = this.inputVector();
+    if (frozen) inp.x = inp.z = 0;
     const targetVx = inp.x * s.speed;
     const targetVz = inp.z * s.speed;
     const accel = inp.x || inp.z ? 28 : 34; // units/s^2: quick to start, quicker to stop

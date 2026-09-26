@@ -67,6 +67,7 @@ export interface LoadOptions {
 export const DEFAULT_LOCATION = "edinburgh_oldtown";
 
 export class Game3D {
+  static readonly DEFAULT_LOCATION = DEFAULT_LOCATION;
   host: RenderHost;
   mats: Materials;
   lighting: Lighting;
@@ -83,12 +84,14 @@ export class Game3D {
   /** Hero GLBs preloaded (or fallen back) — awaited before the first location build. */
   private heroReady: Promise<void> = Promise.resolve();
   private stopUpdate: (() => void) | null = null;
+  private profiler: import("./performance/profiler").PerformanceProfiler | null = null;
+  private lastLoadMs = 0;
 
   constructor(root: HTMLElement) {
     this.host = createRenderHost(root);
     const { scene, canvas, isMobile } = this.host;
     this.mats = new Materials(scene);
-    this.lighting = createLighting(scene, isMobile);
+    this.lighting = createLighting(scene, this.host.quality.profile);
     this.camera = createFollowCamera(scene, canvas, isMobile);
     this.sky = createSky(scene);
     this.occlusion = createOcclusion(scene, {
@@ -149,6 +152,7 @@ export class Game3D {
   async loadLocation(id: string, opts: LoadOptions = {}) {
     if (this.loading) return;
     this.loading = true;
+    const loadStarted = performance.now();
     try {
       this.unload();
       await this.heroReady;
@@ -248,7 +252,7 @@ export class Game3D {
           const t = window.setTimeout(() => void this.loadLocation(to, { from }), 120);
           loaded.timers.push(t);
         },
-        playerPos: () => ({ x: player.state.x, z: player.state.z }),
+        playerPos: () => player.state,
         setTimeout: (ms, fn) => {
           const t = window.setTimeout(() => {
             if (this.loaded === loaded) fn();
@@ -290,16 +294,17 @@ export class Game3D {
       this.loaded = loaded;
       if (!opts.deferSetup) this.beginSession();
     } finally {
+      this.lastLoadMs = performance.now() - loadStarted;
       this.loading = false;
     }
   }
 
   /** Run the pending gameplay setup of a pre-built location (save writes, quests, encounters). */
-  beginSession(opts: { fresh?: boolean } = {}) {
+  beginSession(opts: { fresh?: boolean; benchmark?: boolean } = {}) {
     const l = this.loaded;
     if (!l || !l.setupPending) return;
     l.setupPending = false;
-    l.controller.setup(performance.now(), { travelled: l.travelled, fresh: opts.fresh });
+    l.controller.setup(performance.now(), { travelled: l.travelled, fresh: opts.fresh, benchmark: opts.benchmark });
   }
 
   unload() {
@@ -389,6 +394,22 @@ export class Game3D {
     };
   }
 
+  /** Lazily load Babylon instrumentation so production players do not download it. */
+  async toggleProfiler(force?: boolean) {
+    if (!this.profiler) {
+      const { PerformanceProfiler } = await import("./performance/profiler");
+      this.profiler = new PerformanceProfiler({
+        engine: this.host.engine,
+        scene: this.host.scene,
+        location: () => this.loaded?.id ?? "loading",
+        quality: () => this.host.quality.label,
+        loadedGlbs: () => this.am.loadedGlbCount(),
+        loadMs: () => this.lastLoadMs,
+      });
+    }
+    return this.profiler.toggle(force);
+  }
+
   // ---- debug / screenshot helpers (window.__game in dev) ----
 
   /** Override camera composition: elev (deg), fov (rad), lookY, lookAhead, lead; dist = zoom. */
@@ -416,7 +437,47 @@ export class Game3D {
     };
   }
 
+  resourceSnapshot() {
+    const scene = this.host.scene;
+    const memory = performance as Performance & { memory?: { usedJSHeapSize: number } };
+    const observerCount =
+      scene.onBeforeRenderObservable.observers.length +
+      scene.onAfterRenderObservable.observers.length +
+      scene.onBeforeAnimationsObservable.observers.length +
+      scene.onDisposeObservable.observers.length;
+    return {
+      location: this.loaded?.id ?? "none",
+      meshes: scene.meshes.length,
+      materials: scene.materials.length,
+      textures: scene.textures.length,
+      animationGroups: scene.animationGroups.length,
+      animatables: scene.animatables.length,
+      observers: observerCount,
+      shadowCasters: this.lighting.shadows?.getShadowMap()?.renderList?.length ?? 0,
+      heapMb: memory.memory ? +(memory.memory.usedJSHeapSize / 1_048_576).toFixed(1) : null,
+    };
+  }
+
+  /** Deterministic A→B→C resource-lifecycle test used by ?memoryTest=1. */
+  async runDistrictMemoryTest(repeats = 10) {
+    const ids = ["edinburgh_oldtown", "edinburgh_dean", "edinburgh_uni"];
+    const samples: ReturnType<Game3D["resourceSnapshot"]>[] = [];
+    for (let pass = 0; pass < repeats; pass++) {
+      for (const id of ids) {
+        await this.loadLocation(id, { deferSetup: true });
+        this.beginSession({ benchmark: true });
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        samples.push(this.resourceSnapshot());
+      }
+    }
+    return samples;
+  }
+
   dispose() {
+    this.profiler?.dispose();
+    this.profiler = null;
+    this.instrumentation?.dispose();
+    this.instrumentation = null;
     this.stopUpdate?.();
     this.unload();
     this.stopAtmo();

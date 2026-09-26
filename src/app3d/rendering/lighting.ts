@@ -26,6 +26,7 @@ import { Scene as SceneClass } from "@babylonjs/core/scene";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
 import { store } from "../../game/systems/store";
 import type { TimeOfDay } from "../../game/systems/save";
+import type { QualityProfile } from "../performance/quality";
 
 /** Sky / horizon colours shared with sky.ts and backdrop.ts (linear-ish 0..1 RGB). */
 export interface Atmosphere {
@@ -309,7 +310,7 @@ export interface Lighting {
   dispose(): void;
 }
 
-export function createLighting(scene: Scene, isMobile: boolean): Lighting {
+export function createLighting(scene: Scene, quality: QualityProfile): Lighting {
   const hemi = new HemisphericLight("hemi", new Vector3(0.2, 1, 0.1), scene);
   const sun = new DirectionalLight("sun", PRESETS.afternoon.sunDir.clone(), scene);
   sun.position = new Vector3(0, 40, 0);
@@ -317,7 +318,7 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
   sun.shadowMinZ = 5;
   sun.shadowMaxZ = 110;
   // the lower camera sees further north: a wider, north-shifted shadow frustum
-  const ext = isMobile ? 26 : 30;
+  const ext = quality.id === "high" ? 30 : 26;
   sun.orthoLeft = -ext;
   sun.orthoRight = ext;
   sun.orthoTop = ext;
@@ -325,9 +326,9 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
 
   let shadows: ShadowGenerator | null = null;
   try {
-    shadows = new ShadowGenerator(isMobile ? 1024 : 2048, sun);
+    shadows = new ShadowGenerator(quality.shadowMapSize, sun);
     shadows.usePercentageCloserFiltering = true;
-    shadows.filteringQuality = isMobile ? ShadowGenerator.QUALITY_LOW : ShadowGenerator.QUALITY_MEDIUM;
+    shadows.filteringQuality = quality.shadowQuality === "medium" ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_LOW;
     shadows.bias = 0.0012;
     shadows.normalBias = 0.02;
     shadows.darkness = 0.6;
@@ -338,7 +339,7 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
   }
 
   // warm pooled point lights (always present so light counts / shaders never change)
-  const POOL = isMobile ? 2 : 4;
+  const POOL = quality.pointLights;
   const pool: PoolLight[] = [];
   for (let i = 0; i < POOL; i++) {
     const l = new PointLight(`lampPool${i}`, new Vector3(0, -50, 0), scene);
@@ -373,7 +374,8 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
   const nightMeshes: AbstractMesh[] = [];
   let lamps: WarmSpot[] = [];
   let current: TimeOfDay = store.state.timeOfDay;
-  let focus = { x: 0, z: 0 };
+  let focusX = 0;
+  let focusZ = 0;
 
   let from = live(PRESETS[current] ?? PRESETS.afternoon);
   let to = cloneLive(from);
@@ -433,7 +435,7 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     atmo.cloudShade.copyFrom(p.cloudShade);
     atmo.night = p.night;
     for (const fn of atmoListeners) fn(atmo);
-    follow(focus.x, focus.z);
+    follow(focusX, focusZ);
   };
 
   const setGlow = (e: GlowEntry, g: number) => {
@@ -456,7 +458,8 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
   };
 
   const follow = (x: number, z: number) => {
-    focus = { x, z };
+    focusX = x;
+    focusZ = z;
     const d = sun.direction;
     // the camera looks north: centre the shadow frustum ahead of the player
     sun.position.set(x - d.x * 55, -d.y * 55, z + 9 - d.z * 55);
@@ -473,8 +476,8 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
       wanted.length = 0;
       if (level > 0.01 && lamps.length) {
         // nearest lamps to a point a little north of the player (what the camera sees most)
-        const fx = focus.x;
-        const fz = focus.z + 3;
+        const fx = focusX;
+        const fz = focusZ + 3;
         const order = lamps.map((l, i) => ({ i, d: ((l.x - fx) ** 2 + (l.z - fz) ** 2) / (l.weight ?? 1) ** 2 })).filter((o) => o.d < 22 * 22);
         order.sort((a, b) => a.d - b.d);
         for (let i = 0; i < Math.min(POOL, order.length); i++) wanted.push(order[i].i);

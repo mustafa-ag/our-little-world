@@ -49,8 +49,8 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
   d.on(store, "time", setClock);
   d.on(store, "newDay", setClock);
   d.on(store, "changed", refreshAll);
-  // UIScene refreshed the clock every frame; a slow poll covers direct state writes.
-  d.interval(setClock, 1000);
+  // Clock refreshes are event-driven. All supported time mutations emit one
+  // of the events above, so idle HUD work stays at zero.
 
   // ---- location title ("locationTitle", name, subtitle) ----
   let titleNode: HTMLElement | null = null;

@@ -171,7 +171,8 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   const ownTex: Texture[] = [];
   const W = world.w;
   const H = world.h;
-  const isMobile = typeof navigator !== "undefined" && (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 720);
+  const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const isMobile = typeof navigator !== "undefined" && (coarse || navigator.maxTouchPoints > 0) && Math.min(window.innerWidth, window.innerHeight) < 900;
 
   // ---- tile classification ----
   const paint: Paint[] = new Array(W * H);
@@ -585,7 +586,13 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   // ---- curbs, gutters, drain grates and manhole covers along the road edges ----
   for (const sm of buildStreetDetails(scene, W, H, paintAt, roadX, (tx, ty) => heights[ty]?.[tx] ?? 0)) {
     meshes.push(sm);
-    ownMats.push(sm.material as StandardMaterial);
+    const material = sm.material as StandardMaterial;
+    ownMats.push(material);
+    // These three location-specific painted textures are created inside
+    // buildStreetDetails. They are not part of the scene-wide texture cache
+    // and must be released on district travel.
+    const texture = material.diffuseTexture;
+    if (texture && /^(gutter|grate|manhole)Tex$/.test(texture.name)) ownTex.push(texture as Texture);
   }
 
   // an endless meadow under everything so the horizon never shows the void

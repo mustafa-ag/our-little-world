@@ -82,6 +82,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        // Diagnostic-only chunks stay network-on-demand. Normal PWA installs
+        // should not pay for Babylon instrumentation they cannot open unless
+        // the explicit production ?perf=1 flag is present.
+        globIgnores: ["assets/profiler-*.js", "assets/sceneInstrumentation-*.js"],
         // Babylon chunk is larger than the old 6MB Phaser-only limit.
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         clientsClaim: true,

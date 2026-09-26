@@ -48,6 +48,8 @@ export interface CharacterRig {
   setOutfit?(id: string): void;
   /** Play a short gesture (a wave when interacting, a nod when talked to). */
   gesture(kind?: "wave" | "nod"): void;
+  /** Pause/resume expensive skeletal animation while an NPC is far off camera. */
+  setActive?(active: boolean): void;
   /** true once the skinned GLB drives this rig (false: procedural fallback). */
   readonly skinned: boolean;
   dispose(): void;
@@ -339,6 +341,8 @@ function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, 
   dress(k, ai, look);
   for (const m of ai.meshes) k.lighting?.addCaster(m);
   const mixer = new ClipMixer(ai.animations);
+  let active = true;
+  let paused: AnimationGroup[] = [];
   return {
     meshes: ai.meshes,
     animate(dt: number, moving: number, speed?: number) {
@@ -350,6 +354,17 @@ function skinnedRig(k: KitContext, ai: AnimatedInstance, holder: TransformNode, 
     },
     gesture(kind: "wave" | "nod") {
       mixer.gesture(kind);
+    },
+    setActive(on: boolean) {
+      if (on === active) return;
+      active = on;
+      if (!on) {
+        paused = [...ai.animations.values()].filter((group) => group.isPlaying);
+        for (const group of paused) group.pause();
+      } else {
+        for (const group of paused) group.restart();
+        paused = [];
+      }
     },
     dispose() {
       ai.dispose();
@@ -421,6 +436,7 @@ type Impl = {
   meshes: Mesh[];
   animate(dt: number, moving: number, speed?: number): void;
   gesture(kind: "wave" | "nod"): void;
+  setActive?(active: boolean): void;
   dispose(): void;
 };
 
@@ -476,6 +492,9 @@ function hybridRig(
     gesture(kind = "wave") {
       impl?.gesture(kind);
     },
+    setActive(active) {
+      impl?.setActive?.(active);
+    },
     dispose() {
       disposed = true;
       impl?.dispose();
@@ -515,6 +534,7 @@ export function createCharacter(k: KitContext, colors: CharColors, name = "char"
     animate: (dt, moving) => p.animate(dt, moving),
     setColors: (c) => p.setColors(c),
     gesture: (kind = "wave") => p.gesture(kind),
+    setActive: () => {},
     dispose() {
       p.dispose();
       holder.dispose(false, false);

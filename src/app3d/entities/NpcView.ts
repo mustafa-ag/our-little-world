@@ -19,6 +19,8 @@ export class NpcView {
   private restYaw: number;
   private lookTimer = 0;
   private greeted = false;
+  private active = true;
+  private updateAcc = 0;
 
   constructor(
     k: KitContext,
@@ -49,7 +51,24 @@ export class NpcView {
 
   update(dt: number, px: number, pz: number) {
     // glance at the player when they're close, otherwise drift back to rest
-    const d = Math.hypot(px - this.x, pz - this.z);
+    const dx = px - this.x;
+    const dz = pz - this.z;
+    const d2 = dx * dx + dz * dz;
+    const shouldRender = d2 < 26 * 26;
+    if (shouldRender !== this.active) {
+      this.active = shouldRender;
+      this.rig.root.setEnabled(shouldRender);
+      this.shadow.setEnabled(shouldRender);
+      this.label.mesh.setEnabled(shouldRender);
+      this.rig.setActive?.(shouldRender);
+    }
+    if (!shouldRender) return;
+    const interval = d2 < 8 * 8 ? 0 : 0.2;
+    this.updateAcc += dt;
+    if (this.updateAcc < interval) return;
+    dt = this.updateAcc;
+    this.updateAcc = 0;
+    const d = Math.sqrt(d2);
     if (this.lookTimer > 0) this.lookTimer -= dt;
     else if (d < 2.2) this.targetYaw = yawFor(px - this.x, pz - this.z);
     else this.targetYaw = this.restYaw;

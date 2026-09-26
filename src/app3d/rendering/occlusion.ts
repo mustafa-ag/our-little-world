@@ -93,17 +93,17 @@ function segHitsBox(p0: Vector3, p1: Vector3, min: Vector3, max: Vector3, r: num
   tmpDir.copyFrom(p1).subtractInPlace(p0);
   let t0 = 0;
   let t1 = 1;
-  const o = [p0.x, p0.y, p0.z];
-  const d = [tmpDir.x, tmpDir.y, tmpDir.z];
-  const lo = [min.x - r, min.y - r, min.z - r];
-  const hi = [max.x + r, max.y + r, max.z + r];
   for (let a = 0; a < 3; a++) {
-    if (Math.abs(d[a]) < 1e-6) {
-      if (o[a] < lo[a] || o[a] > hi[a]) return false;
+    const o = a === 0 ? p0.x : a === 1 ? p0.y : p0.z;
+    const d = a === 0 ? tmpDir.x : a === 1 ? tmpDir.y : tmpDir.z;
+    const lo = (a === 0 ? min.x : a === 1 ? min.y : min.z) - r;
+    const hi = (a === 0 ? max.x : a === 1 ? max.y : max.z) + r;
+    if (Math.abs(d) < 1e-6) {
+      if (o < lo || o > hi) return false;
       continue;
     }
-    let ta = (lo[a] - o[a]) / d[a];
-    let tb = (hi[a] - o[a]) / d[a];
+    let ta = (lo - o) / d;
+    let tb = (hi - o) / d;
     if (ta > tb) [ta, tb] = [tb, ta];
     t0 = Math.max(t0, ta);
     t1 = Math.min(t1, tb);
