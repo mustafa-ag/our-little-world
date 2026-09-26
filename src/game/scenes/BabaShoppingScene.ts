@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { SceneKeys } from "../constants";
-import { BABA_SHOPPING_STORES, type ShoppingMallId, type ShoppingProductDef, type ShoppingStoreDef } from "../data/babaShopping";
+import { BABA_LINES, BABA_SHOPPING_STORES, COLLISION_LINES, JUJU_LINES, type ShoppingMallId, type ShoppingProductDef, type ShoppingStoreDef } from "../data/babaShopping";
 import { Player } from "../objects/Player";
 import { controls, uiEvents } from "../systems/controls";
 import * as quests from "../systems/quests";
@@ -77,31 +77,6 @@ const CHECKOUT_Y = WORLD_H - 72;
 const STORE_GATE_OFFSET = 90;
 const FONT = "monospace";
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
-
-const COLLISION_LINES = [
-  "SORRY SORRY SORRY",
-  "Baba saw that.",
-  "The bags have developed independent movement.",
-  "Pedestrian boss battle.",
-  "JUJU PLEASE.",
-];
-
-const BABA_LINES = [
-  "ANOTHER RECEIPT?!",
-  "JUJU.",
-  "YOU SAID ONE STORE.",
-  "THIS ONE HAS HOW MANY ZEROES?",
-  "CARTIER??",
-  "I RAISED A FINANCIAL MENACE.",
-];
-
-const JUJU_LINES = [
-  "No refunds 💗",
-  "It was basically an investment.",
-  "Baba look how cute it is.",
-  "You can't put a price on happiness.",
-  "Technically this one was on sale.",
-];
 
 /** A bespoke scrolling mall gauntlet. It intentionally owns no permanent currency. */
 export class BabaShoppingScene extends Phaser.Scene {

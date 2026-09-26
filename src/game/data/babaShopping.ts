@@ -232,3 +232,29 @@ export const BABA_SHOPPING_STORES: ShoppingStoreDef[] = [
 
 export const shoppingStoreById = (id: string) => BABA_SHOPPING_STORES.find((entry) => entry.id === id);
 export const shoppingProductById = (id: string) => BABA_SHOPPING_STORES.flatMap((entry) => entry.products).find((entry) => entry.id === id);
+
+/** Pedestrian-collision barks (BabaShoppingScene + the 3D shopping modal). */
+export const COLLISION_LINES = [
+  "SORRY SORRY SORRY",
+  "Baba saw that.",
+  "The bags have developed independent movement.",
+  "Pedestrian boss battle.",
+  "JUJU PLEASE.",
+];
+
+export const BABA_LINES = [
+  "ANOTHER RECEIPT?!",
+  "JUJU.",
+  "YOU SAID ONE STORE.",
+  "THIS ONE HAS HOW MANY ZEROES?",
+  "CARTIER??",
+  "I RAISED A FINANCIAL MENACE.",
+];
+
+export const JUJU_LINES = [
+  "No refunds 💗",
+  "It was basically an investment.",
+  "Baba look how cute it is.",
+  "You can't put a price on happiness.",
+  "Technically this one was on sale.",
+];
