@@ -1,5 +1,5 @@
-// Phone panel — trimmed DOM port of ui/PhoneOverlay.ts (texts, quests, bag,
-// wardrobe, homes, memories, world map).
+// Phone panel — DOM port of ui/PhoneOverlay.ts (texts, quests, camera,
+// album, stats, people, notes, bag, wardrobe, homes, memories, world map).
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { markRead } from "../../game/systems/phone";
@@ -15,11 +15,17 @@ import { button, el, type Disposer } from "./dom";
 import { worldMapView } from "./worldMap";
 import { wardrobeView } from "./wardrobe";
 import { storyRequestForStep, type StorySceneId } from "./storyScenes";
+import { albumView, cameraView, contactsView, notesView, resetPhoneTabs, statsView, type PhoneNav } from "./phoneTabs";
 
-type Tab = "messages" | "quests" | "bag" | "wardrobe" | "homes" | "memories" | "map";
+type Tab = "messages" | "quests" | "camera" | "album" | "stats" | "contacts" | "notes" | "bag" | "wardrobe" | "homes" | "memories" | "map";
 const TABS: { id: Tab; label: string }[] = [
   { id: "messages", label: "Texts" },
   { id: "quests", label: "Quests" },
+  { id: "camera", label: "Camera" },
+  { id: "album", label: "Album" },
+  { id: "stats", label: "Stats" },
+  { id: "contacts", label: "People" },
+  { id: "notes", label: "Notes" },
   { id: "bag", label: "Bag" },
   { id: "wardrobe", label: "Wardrobe" },
   { id: "homes", label: "Homes" },
@@ -28,6 +34,8 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 let lastTab: Tab = "messages";
+/** Texts tab filtered to one sender (set from People › Message). */
+let textsFrom: string | undefined;
 
 /** Story scenes that can start from the quest card (the rest are place-bound). */
 const PHONE_STORIES = new Set<StorySceneId>(["romance", "wedding", "tigor", "pirate"]);
@@ -40,8 +48,22 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
   const tabBtns = new Map<Tab, HTMLButtonElement>();
 
   const messages = () => {
-    const list = store.state.messages;
-    if (!list.length) return el("p", { class: "olw-empty", text: "No texts yet. Sleep, travel, talk — they'll find you." });
+    const from = textsFrom;
+    const list = from ? store.state.messages.filter((m) => m.sender === from) : store.state.messages;
+    const filterBar = from
+      ? el("div", { class: "olw-msg-filter" }, [
+          el("span", { text: `Texts with ${npcName(from)}` }),
+          button(md, "Show all", "olw-btn olw-btn--ghost olw-btn--small", () => {
+            textsFrom = undefined;
+            render();
+          }),
+        ])
+      : null;
+    if (!list.length)
+      return el("div", {}, [
+        filterBar,
+        el("p", { class: "olw-empty", text: from ? `No texts from ${npcName(from)} yet. Go say hi in person!` : "No texts yet. Sleep, travel, talk — they'll find you." }),
+      ]);
     const ul = el("ul", { class: "olw-msgs" });
     for (const m of list.slice(0, 30)) {
       const row = button(md, "", `olw-msg ${m.read ? "" : "olw-msg--unread"}`, () => {
@@ -55,7 +77,7 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
       );
       ul.append(el("li", {}, [row]));
     }
-    return ul;
+    return filterBar ? el("div", {}, [filterBar, ul]) : ul;
   };
 
   const questList = () => {
@@ -218,6 +240,15 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
       }),
     ]);
 
+  const nav: PhoneNav = {
+    render: () => render(),
+    messageContact: (npcId) => {
+      textsFrom = npcId;
+      lastTab = "messages";
+      render();
+    },
+  };
+
   let tabD: Disposer | null = null;
   const render = () => {
     for (const [id, b] of tabBtns) {
@@ -228,13 +259,32 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
     tabD?.dispose();
     tabD = md.child();
     const scoped = tabD;
-    const views: Record<Tab, () => Node> = { messages, quests: questList, bag, wardrobe: () => wardrobeView(scoped), homes, memories, map };
+    const views: Record<Tab, () => Node> = {
+      messages,
+      quests: questList,
+      camera: () => cameraView(scoped, nav, () => {
+        lastTab = "album";
+        render();
+      }),
+      album: () => albumView(scoped, nav),
+      stats: statsView,
+      contacts: () => contactsView(scoped, nav),
+      notes: () => notesView(scoped, nav),
+      bag,
+      wardrobe: () => wardrobeView(scoped),
+      homes,
+      memories,
+      map,
+    };
     const view = views[lastTab]();
     pane.replaceChildren(view);
   };
 
+  resetPhoneTabs();
+  textsFrom = undefined;
   for (const t of TABS) {
     const b = button(md, t.label, "olw-tab", () => {
+      if (t.id === "messages" && lastTab === "messages") textsFrom = undefined;
       lastTab = t.id;
       render();
     });
@@ -251,6 +301,9 @@ export function phoneBody(md: Disposer, close: () => void, travel: (id: string) 
   });
   md.on(store, "inventory", () => {
     if (lastTab === "bag") render();
+  });
+  md.on(store, "relationship", () => {
+    if (lastTab === "contacts" || lastTab === "stats") render();
   });
   return el("div", { class: "olw-phone" }, [el("p", { class: "olw-phone-clock", text: store.clockLabel() }), tabs, pane]);
 }

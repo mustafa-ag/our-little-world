@@ -37,6 +37,7 @@ import { NpcView } from "./entities/NpcView";
 import { PickupView, petalBurst } from "./entities/Pickup";
 import { createLabel, type Label } from "./entities/Label";
 import { InteriorScene, type InteriorStyle } from "./scenes/interiorScene";
+import { DrivingScene } from "./scenes/drivingScene";
 import { uiEvents } from "../game/systems/controls";
 
 interface Loaded {
@@ -77,6 +78,17 @@ export const DEFAULT_LOCATION = "edinburgh_oldtown";
 const INDOOR_CAMERA = { elev: 50, lookY: 0.6, lookAhead: 0.9, lead: 0.4 };
 const INDOOR_DISTANCE = 8;
 
+/** Higher, looser framing for the road trip: the road ahead fills the frame. */
+const DRIVE_CAMERA = { elev: 34, lookY: 0.4, lookAhead: 7, lead: 0 };
+const DRIVE_DISTANCE = 12;
+
+interface Driving {
+  scene: DrivingScene;
+  destId: string;
+  /** Exterior follow distance to restore on the way out. */
+  distance: number;
+}
+
 interface Indoors {
   scene: InteriorScene;
   player: PlayerController;
@@ -105,6 +117,8 @@ export class Game3D {
   private feedAt = 0;
   /** The house interior, while the player is inside (the exterior stays loaded). */
   private indoors: Indoors | null = null;
+  /** The arcade road trip, while driving (the exterior stays loaded). */
+  private driving: Driving | null = null;
 
   constructor(root: HTMLElement) {
     this.host = createRenderHost(root);
@@ -344,6 +358,61 @@ export class Game3D {
     return this.loaded?.id === id;
   }
 
+  get isDriving() {
+    return this.driving !== null;
+  }
+
+  /**
+   * Start the road trip to `destId` (DrivingScene port): builds the scrolling
+   * road far from the map and pauses the exterior rules. On arrival it emits
+   * "driveArrived" (destId); the UI fades and travels there. Returns false
+   * when there's no live world or the destination can't be loaded in 3D.
+   */
+  enterDriving(opts: { destId: string; passenger?: string }): boolean {
+    const l = this.loaded;
+    if (!l || l.setupPending || this.indoors || this.driving || this.loading) return false;
+    if (!PORTED_LOCATIONS.has(opts.destId) || opts.destId === l.id) return false;
+    const dest = getLocation(opts.destId);
+    const scene = new DrivingScene(this.kit, this.am, {
+      destId: dest.id,
+      destName: dest.name,
+      passenger: opts.passenger,
+      profile: getArtProfile(dest.id),
+      night: store.state.timeOfDay === "night",
+    }, {
+      onArrive: () => uiEvents.emit("driveArrived", dest.id),
+    });
+    l.controller.setIndoors(true);
+    l.player.detach();
+    this.driving = { scene, destId: dest.id, distance: this.camera.getDistance() };
+    this.camera.tune(DRIVE_CAMERA);
+    this.camera.setDistance(DRIVE_DISTANCE, true);
+    const c = scene.carPos;
+    this.camera.setTarget(c.x, c.z, true);
+    this.lighting.follow(c.x, c.z);
+    return true;
+  }
+
+  /** Leave the road trip (Esc / End drive, or before loading the destination). */
+  exitDriving(): boolean {
+    const drv = this.driving;
+    if (!drv) return false;
+    this.driving = null;
+    drv.scene.dispose();
+    this.camera.clearTune();
+    this.camera.setDistance(drv.distance, true);
+    const l = this.loaded;
+    if (l) {
+      l.player.attach();
+      l.controller.setIndoors(false);
+      const s = l.player.state;
+      this.camera.setTarget(s.x, s.z, true);
+      this.lighting.follow(s.x, s.z);
+    }
+    uiEvents.emit("driveClosed");
+    return true;
+  }
+
   get isIndoors() {
     return this.indoors !== null;
   }
@@ -413,8 +482,9 @@ export class Game3D {
   }
 
   unload() {
-    // travelling from inside a house: drop the interior first
+    // travelling from inside a house / the road trip: drop it first
     if (this.indoors) this.exitInterior();
+    if (this.driving) this.exitDriving();
     const l = this.loaded;
     if (!l) return;
     this.loaded = null;
@@ -444,6 +514,17 @@ export class Game3D {
       return;
     }
     const dtMs = dt * 1000;
+    if (this.driving) {
+      const drv = this.driving;
+      drv.scene.update(dt);
+      const c = drv.scene.carPos;
+      this.camera.setTarget(c.x, c.z);
+      this.camera.update(dt);
+      this.lighting.follow(c.x, c.z);
+      this.sky.update(dt, this.camera.camera.position);
+      if (l.effects.length) l.effects = l.effects.filter((fx) => !fx(dt));
+      return;
+    }
     if (this.indoors) {
       const ind = this.indoors;
       ind.player.update(dt);

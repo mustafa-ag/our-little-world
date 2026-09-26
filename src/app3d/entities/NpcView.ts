@@ -23,8 +23,8 @@ export class NpcView {
   constructor(
     k: KitContext,
     readonly def: NpcDef,
-    readonly x: number,
-    readonly z: number,
+    public x: number,
+    public z: number,
     groundY: number,
     am?: AssetManager,
   ) {
@@ -45,6 +45,15 @@ export class NpcView {
     this.lookTimer = 6;
     this.rig.gesture(this.greeted ? "nod" : "wave");
     this.greeted = true;
+  }
+
+  /** Move the whole NPC (rig, blob shadow, name tag), e.g. a roadside passenger scrolling past. */
+  moveTo(x: number, groundY: number, z: number) {
+    this.x = x;
+    this.z = z;
+    this.rig.root.position.set(x, groundY, z);
+    this.shadow.position.set(x, groundY + 0.015, z);
+    this.label.setPosition(x, groundY + CHAR_HEIGHT + 0.32, z);
   }
 
   update(dt: number, px: number, pz: number) {

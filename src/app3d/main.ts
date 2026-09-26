@@ -66,6 +66,18 @@ function boot() {
   });
   uiEvents.on("interiorExit", (done?: (ok: boolean) => void) => done?.(game.exitInterior()));
 
+  // arcade road trip (ui/drive.ts fades around these; `done` reports the outcome)
+  uiEvents.on("driveStart", (opts: { destId: string; passenger?: string }, done?: (ok: boolean) => void) => {
+    let ok = false;
+    try {
+      ok = started && game.enterDriving(opts);
+    } catch (err) {
+      console.error("drive failed", err);
+    }
+    done?.(ok);
+  });
+  uiEvents.on("driveExit", (done?: (ok: boolean) => void) => done?.(game.exitDriving()));
+
   if (import.meta.env.DEV) {
     const w = window as unknown as Record<string, unknown>;
     w.__game = game;
