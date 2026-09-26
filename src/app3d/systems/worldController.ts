@@ -337,7 +337,11 @@ export class WorldController {
     const loc = this.def;
     switch (z.action) {
       case "cafe":
-        if (z.tag === "dubai_mall" || z.tag === "dubai_hills_mall") return this.enterMall(z.tag);
+        if (z.tag === "dubai_mall" || z.tag === "dubai_hills_mall") {
+          // q_date's "Reach Dubai Mall" step is an interact on the mall tag (WorldScene parity)
+          quests.onInteract(z.tag);
+          return this.enterMall(z.tag);
+        }
         if (z.tag === "hudayriyat_trucks") {
           quests.onInteract("cafe");
           quests.onInteract(z.tag);
@@ -463,9 +467,10 @@ export class WorldController {
     if (!uiEvents.emit("enterHouse", { title, interior })) store.toast(`${title} — interiors aren't in 3D yet`, "#f4a6c0");
   }
 
+  /** ui/mall.ts opens the store directory (and Baba Shopping from there). */
   private enterMall(mallId: string) {
     uiEvents.emit("sceneReset");
-    if (!uiEvents.emit("enterMall", { mallId })) store.toast("The mall isn't in 3D yet", "#f4a6c0");
+    uiEvents.emit("enterMall", { mallId });
   }
 
   private goDistrict(to: string, from: Cardinal) {

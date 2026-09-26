@@ -17,6 +17,8 @@ import { mountModals } from "./modals";
 import { MINIGAME_KEYS } from "./minigames";
 import { mountMinimap } from "./minimap";
 import { mountHouse } from "./house";
+import { mountMall } from "./mall";
+import { mountBabaShopping } from "./babaShopping";
 import { mountAdnoc } from "./adnoc";
 
 const FONT_HREF =
@@ -62,6 +64,8 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
   hud.el.append(mountMinimap(ctx, modals.openLocalMap));
   mountButtons(ctx, modals.openPhone);
   mountHouse(ctx, modals.host, hud.sleep);
+  mountMall(ctx, modals.host);
+  mountBabaShopping(ctx, modals.host);
   mountAdnoc(ctx, modals.host);
   const dialogue = mountDialogue(ctx, (npcId) => {
     if (npcId) modals.openGift(npcId);

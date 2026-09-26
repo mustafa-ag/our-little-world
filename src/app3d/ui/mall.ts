@@ -322,12 +322,12 @@ export function mountMall(ctx: UIContext, host: ModalHost) {
       ...[banner()].filter((n): n is HTMLDivElement => !!n),
       tabs,
       pane,
-      extras.length
-        ? el("p", {
+      ...(extras.length
+        ? [el("p", {
             class: "olw-mall-note olw-mall-extras",
             text: `Also here: ${extras.map((s) => (s.kind === "aquarium" ? `${s.label} — the fish are judging every bag` : `${s.label} — now showing: Tiny Pirates`)).join(" · ")}`,
-          })
-        : null,
+          })]
+        : []),
       el("div", { class: "olw-modal-actions" }, [button(md, "Leave the mall", "olw-btn olw-btn--rose", () => leaveFor(() => undefined))]),
     );
     return root;
