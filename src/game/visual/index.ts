@@ -1,0 +1,10 @@
+export { ALLOW_LEGACY_ENVIRONMENT_FALLBACK, getVisualAssetDef, isLegacyFallback, VISUAL_ASSETS } from "./catalog";
+export { applyVisualFilter, applyVisualFilters, diagnoseVisualAssets, getVisualTexture, queueVisualAssets } from "./runtime";
+export { getWorldVisualTheme } from "./themes";
+export { buildHdGround } from "./ground";
+export { createVisualShadow } from "./shadows";
+export { DEFAULT_LIGHTING_PROFILE } from "./themes";
+export type { HdGroundLayer } from "./ground";
+export type { VisualShadowHandle } from "./shadows";
+export type { LightingProfile, WorldVisualTheme } from "./themes";
+export type { VisualAssetDef, VisualAuditState, VisualFilter, VisualRenderClass, VisualShadowDef, VisualShadowType } from "./types";

@@ -1,3 +1,5 @@
+// Legacy 2D entry (/legacy.html): the complete Phaser pixel game.
+// The default entry (/ -> src/main.ts) boots the Babylon.js 3D build.
 import Phaser from "phaser";
 import { registerSW } from "virtual:pwa-register";
 import { BootScene } from "./game/scenes/BootScene";
@@ -10,14 +12,31 @@ import { DrivingScene } from "./game/scenes/DrivingScene";
 import { MallScene } from "./game/scenes/MallScene";
 import { PirateVoyageScene } from "./game/scenes/PirateVoyageScene";
 import { SisterHeistScene } from "./game/scenes/SisterHeistScene";
+import { AdnocHQScene } from "./game/scenes/AdnocHQScene";
+import { AdnocTaskScene } from "./game/scenes/AdnocTaskScene";
+import { QuestActivityScene } from "./game/scenes/QuestActivityScene";
+import { BabaShoppingScene } from "./game/scenes/BabaShoppingScene";
+import { RomanceScene } from "./game/scenes/RomanceScene";
+import { WeddingScene } from "./game/scenes/WeddingScene";
+import { TigorMissionScene } from "./game/scenes/TigorMissionScene";
+import { TigorAirportScene } from "./game/scenes/TigorAirportScene";
 import { UIScene } from "./game/scenes/UIScene";
 
+const isAppleTouchDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
+  // Mobile Safari can terminate the WebGL process after the world scene opens.
+  type: isAppleTouchDevice ? Phaser.CANVAS : Phaser.AUTO,
   parent: "game",
   backgroundColor: "#8ecae6",
-  pixelArt: true,
+  // Canvas has one global sampling mode. Favor legible type and smooth HD scenery
+  // on the mobile reliability fallback; desktop retains per-texture WebGL filters.
+  pixelArt: !isAppleTouchDevice,
   roundPixels: true,
+  render: {
+    antialias: isAppleTouchDevice,
+  },
+  dom: { createContainer: true },
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -32,7 +51,7 @@ const config: Phaser.Types.Core.GameConfig = {
     },
   },
   // UI is last so it always renders on top of gameplay scenes.
-  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, UIScene],
+  scene: [BootScene, PreloadScene, TitleScene, WorldScene, HouseScene, WorldMapScene, DrivingScene, MallScene, PirateVoyageScene, SisterHeistScene, AdnocHQScene, AdnocTaskScene, QuestActivityScene, BabaShoppingScene, RomanceScene, WeddingScene, TigorMissionScene, TigorAirportScene, UIScene],
 };
 
 const game = new Phaser.Game(config);
@@ -42,5 +61,14 @@ if (import.meta.env.DEV) {
   (window as unknown as { __game: Phaser.Game }).__game = game;
 }
 
-// register the service worker so the game works offline / installs to home screen
-registerSW({ immediate: true });
+// Always activate a newer release immediately so installed copies do not remain
+// stranded on an old Netlify Drop deployment.
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    void updateSW(true);
+  },
+  onRegisteredSW(_swUrl, registration) {
+    void registration?.update();
+  },
+});

@@ -2,15 +2,16 @@ import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { store } from "../systems/store";
 import { controls, uiEvents, minimap } from "../systems/controls";
-import { activeQuests } from "../systems/quests";
+import { activeQuests, type ActiveQuest } from "../systems/quests";
 import { Outfits } from "../palette";
 import { OUTFIT_UNLOCKS } from "../data/outfits";
 import { rebuildPlayerTexture } from "../textures";
-import { PhoneOverlay } from "../ui/PhoneOverlay";
+import { PhoneOverlay, type PhoneTab } from "../ui/PhoneOverlay";
 import { openActivity, type MiniSpec } from "../ui/minigames";
 import { NPCS } from "../data/npcs";
 import { ITEMS } from "../data/items";
 import * as quests from "../systems/quests";
+import type { QuestDef, QuestStep } from "../data/quests";
 
 const FONT = "monospace";
 
@@ -21,25 +22,46 @@ export class UIScene extends Phaser.Scene {
   private coinIcon!: Phaser.GameObjects.Image;
   private heartText!: Phaser.GameObjects.Text;
   private coinText!: Phaser.GameObjects.Text;
-  private questBox!: Phaser.GameObjects.Text;
+  private questPanel!: Phaser.GameObjects.Graphics;
+  private questIcon!: Phaser.GameObjects.Image;
+  private questKicker!: Phaser.GameObjects.Text;
+  private questTitle!: Phaser.GameObjects.Text;
+  private questNext!: Phaser.GameObjects.Text;
+  private questHelp!: Phaser.GameObjects.Text;
+  private questCount!: Phaser.GameObjects.Text;
+  private questHit!: Phaser.GameObjects.Rectangle;
+  private mapGuide?: Phaser.GameObjects.Text;
+  private questIndex = 0;
   private promptText!: Phaser.GameObjects.Text;
+  private dedicatedStatus!: Phaser.GameObjects.Text;
+  private dedicatedStatusActive = false;
 
   // joystick
   private joyBase!: Phaser.GameObjects.Image;
   private joyThumb!: Phaser.GameObjects.Image;
   private joyPointerId = -1;
   private joyCenter = new Phaser.Math.Vector2();
-  private readonly joyRadius = 42;
+  private readonly joyRadius = 54;
 
   // buttons (plain interactive images + a text label stored on `.label`)
   private actionBtn!: Phaser.GameObjects.Image;
   private mapBtn!: Phaser.GameObjects.Image;
   private fitBtn!: Phaser.GameObjects.Image;
   private phoneBtn!: Phaser.GameObjects.Image;
+  private ultimateBtn!: Phaser.GameObjects.Image;
   private phoneBadge!: Phaser.GameObjects.Text;
   private clockText!: Phaser.GameObjects.Text;
   private phone!: PhoneOverlay;
   private giftMenu?: Phaser.GameObjects.Container;
+  private foodMenu?: Phaser.GameObjects.Container;
+  private choiceMenu?: Phaser.GameObjects.Container;
+  private cameraHud?: Phaser.GameObjects.Container;
+  private shoppingHud?: Phaser.GameObjects.Container;
+  private shoppingHudG?: Phaser.GameObjects.Graphics;
+  private shoppingHudStress?: Phaser.GameObjects.Text;
+  private shoppingHudUltimate?: Phaser.GameObjects.Text;
+  private shoppingHudMeta?: Phaser.GameObjects.Text;
+  private shoppingHudState?: import("../systems/controls").ShoppingHudSpec;
   private pendingGiftNpc?: string;
 
   // dialogue
@@ -79,6 +101,9 @@ export class UIScene extends Phaser.Scene {
   private localTitle!: Phaser.GameObjects.Text;
   private localLegend!: Phaser.GameObjects.Text;
   private localPins: Phaser.GameObjects.Text[] = [];
+  private dedicatedHud = false;
+  private questCelebration?: Phaser.GameObjects.Container;
+  private pendingMilestone?: { title: string; dialogue: string };
 
   constructor() {
     super({ key: SceneKeys.UI, active: false });
@@ -105,27 +130,15 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(20);
 
-    // ---- quest tracker ----
-    this.questBox = this.add
-      .text(width - 12, 12, "", {
-        fontFamily: FONT,
-        fontSize: "11px",
-        color: "#fff",
-        align: "right",
-        stroke: "#3a2b3a",
-        strokeThickness: 3,
-        resolution: 2,
-        lineSpacing: 3,
-      })
-      .setOrigin(1, 0)
-      .setScrollFactor(0);
+    // ---- focused quest card ----
+    this.buildQuestCard();
     this.refreshQuests();
 
     // ---- interaction prompt ----
     this.promptText = this.add
       .text(width / 2, height - 150, "", {
         fontFamily: FONT,
-        fontSize: "12px",
+        fontSize: "14px",
         color: "#fff",
         backgroundColor: "rgba(58,43,58,0.85)",
         padding: { x: 8, y: 5 },
@@ -134,14 +147,25 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setVisible(false);
+    this.dedicatedStatus = this.add.text(width / 2, 64, "", {
+      fontFamily: FONT,
+      fontSize: "13px",
+      color: "#fff4e6",
+      align: "center",
+      backgroundColor: "rgba(43,34,51,0.9)",
+      padding: { x: 9, y: 5 },
+      resolution: 2,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(94).setVisible(false);
 
     this.phone = new PhoneOverlay(this);
     this.buildJoystick();
     this.buildButtons();
+    this.buildMapGuide();
     this.buildDialogue();
     this.buildWardrobe();
     this.buildShop();
     this.buildLocalMap();
+    this.buildShoppingHud();
 
     this.keys = this.input.keyboard!.addKeys("SPACE,E,ENTER,ESC") as Record<string, Phaser.Input.Keyboard.Key>;
 
@@ -149,11 +173,18 @@ export class UIScene extends Phaser.Scene {
     store.on("hearts", (v: number) => this.heartText.setText(`${v}`));
     store.on("coins", (v: number) => this.coinText.setText(`${v}`));
     store.on("questUpdated", () => this.refreshQuests());
+    store.on("questStepComplete", (def: QuestDef, step: QuestStep) => this.showObjectiveComplete(def, step));
+    store.on("questCompleted", (def: QuestDef) => this.showQuestComplete(def));
+    store.on("replayEnded", this.onReplayEnded, this);
     store.on("toast", (t: string, c: string) => this.showToast(t, c));
     store.on("time", () => this.clockText.setText(store.clockLabel()));
     store.on("newDay", () => this.clockText.setText(store.clockLabel()));
     store.on("message", () => this.phone.refreshBadge());
     store.on("relGain", () => this.heartPop());
+    store.on("milestone", (milestone: { title: string; dialogue: string }) => {
+      this.pendingMilestone = milestone;
+      this.time.delayedCall(250, () => this.showPendingMilestone());
+    });
 
     uiEvents.on("prompt", (p: string | null) => this.setPrompt(p));
     uiEvents.on("dialogue", (name: string, lines: string[], extra?: { npcId?: string }) => {
@@ -161,8 +192,18 @@ export class UIScene extends Phaser.Scene {
       this.openDialogue(name, lines);
     });
     uiEvents.on("action", () => this.onAction());
+    uiEvents.on("dedicatedStatus", (text: string | null, color = "#fff4e6") => {
+      this.dedicatedStatusActive = !!text;
+      this.dedicatedStatus.setText(text ?? "").setColor(color);
+    });
     uiEvents.on("openShop", (mode?: "home" | "adnoc") => this.openShop(mode));
-    uiEvents.on("openPhone", () => this.phone.show());
+    uiEvents.on("openFoodOrder", (spec: import("../systems/controls").FoodOrderSpec) => this.openFoodOrder(spec));
+    uiEvents.on("choice", (spec: import("../systems/controls").ChoiceSpec) => this.openChoice(spec));
+    uiEvents.on("shoppingHud", (spec: import("../systems/controls").ShoppingHudSpec | null) => this.updateShoppingHud(spec));
+    uiEvents.on("cameraStart", (pose: typeof controls.cameraPose) => this.showCameraHud(pose));
+    uiEvents.on("cameraExit", () => this.hideCameraHud());
+    uiEvents.on("openWardrobe", () => this.openWardrobe());
+    uiEvents.on("openPhone", (tab?: PhoneTab) => this.phone.show(tab));
     uiEvents.on("openLocalMap", () => this.openLocalMap());
     uiEvents.on("minigame", (spec: import("../systems/controls").MiniGameSpec) => this.openMiniGame(spec));
     uiEvents.on("sceneReset", () => this.resetOverlays());
@@ -172,6 +213,106 @@ export class UIScene extends Phaser.Scene {
     });
 
     this.scale.on("resize", this.layout, this);
+  }
+
+  private buildQuestCard() {
+    this.questPanel = this.add.graphics().setScrollFactor(0).setDepth(24);
+    this.questIcon = this.add.image(0, 0, "ui_star").setScale(1.15).setScrollFactor(0).setDepth(26);
+    this.questKicker = this.add
+      .text(0, 0, "CURRENT PLAN", { fontFamily: FONT, fontSize: "9px", color: "#2f6fd0", fontStyle: "bold", resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questTitle = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "14px", color: "#3a2b3a", fontStyle: "bold", resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questNext = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", lineSpacing: 2, resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questHelp = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "9px", color: "#7a6a5a", resolution: 2 })
+      .setScrollFactor(0)
+      .setDepth(26);
+    this.questCount = this.add
+      .text(0, 0, "", { fontFamily: FONT, fontSize: "9px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 5, y: 2 }, resolution: 2 })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(27);
+    this.questHit = this.add.rectangle(0, 0, 1, 1, 0xffffff, 0.001).setScrollFactor(0).setDepth(28).setInteractive({ useHandCursor: true });
+    this.questHit.on("pointerdown", () => this.cycleQuest());
+    this.layoutQuestCard();
+  }
+
+  private buildMapGuide() {
+    this.mapGuide = this.add
+      .text(0, 0, "MAP", {
+        fontFamily: FONT,
+        fontSize: "9px",
+        color: "#fff",
+        backgroundColor: "#2f6fd0",
+        padding: { x: 4, y: 2 },
+        resolution: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setScrollFactor(0)
+      .setDepth(29)
+      .setVisible(false);
+    this.tweens.add({ targets: this.mapGuide, y: "-=5", duration: 500, yoyo: true, repeat: -1, ease: "Sine.inOut" });
+    this.layoutQuestCard();
+  }
+
+  private layoutQuestCard() {
+    if (!this.questPanel) return;
+    const { width } = this.scale.gameSize;
+    const panelW = Math.min(326, width - 24);
+    const panelH = 136;
+    const x = width - panelW - 12;
+    const y = 12;
+    this.questPanel.clear();
+    this.questPanel.fillStyle(0xfff9f0, 0.96).fillRoundedRect(x, y, panelW, panelH, 12);
+    this.questPanel.lineStyle(2, 0xcaa27a, 0.95).strokeRoundedRect(x, y, panelW, panelH, 12);
+    this.questPanel.fillStyle(0x2f6fd0, 1).fillRoundedRect(x, y, 8, panelH, { tl: 12, bl: 12, tr: 0, br: 0 });
+    this.questPanel.fillStyle(0xf4c95d, 1).fillCircle(x + 30, y + 27, 17);
+    this.questIcon.setPosition(x + 30, y + 27);
+    this.questKicker.setPosition(x + 54, y + 14);
+    this.questTitle.setPosition(x + 54, y + 29).setWordWrapWidth(panelW - 70);
+    this.questNext.setPosition(x + 18, y + 61).setWordWrapWidth(panelW - 36);
+    this.questHelp.setPosition(x + 18, y + 111).setWordWrapWidth(panelW - 36);
+    this.questCount.setPosition(x + panelW - 12, y + 12);
+    this.questHit.setPosition(x + panelW / 2, y + panelH / 2).setSize(panelW, panelH);
+    this.mapGuide?.setPosition(this.mapBtn?.x ?? width - 66, (this.mapBtn?.y ?? 150) - 34);
+  }
+
+  private cycleQuest() {
+    const list = activeQuests();
+    if (list.length < 2) return;
+    this.questIndex = (this.questIndex + 1) % list.length;
+    this.refreshQuests();
+    store.toast(`Guiding: ${list[this.questIndex].def.title}`, "#2f6fd0");
+  }
+
+  private questExplanation(q: ActiveQuest) {
+    const { step } = q;
+    if (step.type === "visit") return "Use the Map button to travel to the next place.";
+    if (step.type === "talk") {
+      const npc = NPCS.find((person) => person.id === step.target);
+      const name = npc?.name ?? step.target.replace(/_/g, " ");
+      if (npc && npc.location !== store.state.currentLocation) return `Open Map, travel to ${npc.location.replace(/_/g, " ")}, then look for ${name}.`;
+      return `Follow the gold guide marker to ${name}.`;
+    }
+    if (step.type === "collect") return "Look for the floating gold guide marker, then use Action nearby.";
+    if (step.type === "interact") return "Follow the gold guide marker and use the Action button nearby.";
+    if (step.type === "giveItem") return "Open your phone inventory if you need to check what you are carrying.";
+    if (step.type === "takePhoto") return "Stand near the landmark, then use Action to open the camera moment.";
+    if (step.type === "playMinigame") return "Find the highlighted activity spot and follow the on-screen instructions.";
+    return "Your next step is saved here whenever you return.";
+  }
+
+  private needsMapGuide(q: ActiveQuest) {
+    if (q.step.type === "visit") return true;
+    if (q.step.type !== "talk") return false;
+    return NPCS.find((npc) => npc.id === q.step.target)?.location !== store.state.currentLocation;
   }
 
   private buildMinimap() {
@@ -512,8 +653,8 @@ export class UIScene extends Phaser.Scene {
 
   // -------------------------------------------------------------------------
   private buildJoystick() {
-    this.joyBase = this.add.image(0, 0, "ui_joy_base").setScrollFactor(0).setAlpha(0.85).setDepth(10);
-    this.joyThumb = this.add.image(0, 0, "ui_joy_thumb").setScrollFactor(0).setDepth(11);
+    this.joyBase = this.add.image(0, 0, "ui_joy_base").setScrollFactor(0).setScale(1.18).setAlpha(0.9).setDepth(10);
+    this.joyThumb = this.add.image(0, 0, "ui_joy_thumb").setScrollFactor(0).setScale(1.1).setDepth(11);
     this.positionJoystick();
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
@@ -528,6 +669,14 @@ export class UIScene extends Phaser.Scene {
       }
       if (!this.gameplayActive() || this.anyModal()) return;
       const { width, height } = this.scale.gameSize;
+      const overButton = [
+        [width - 76, height - 78],
+        [width - 76, height - 168],
+        [width - 164, height - 76],
+        [width - 252, height - 76],
+        [width - 164, height - 168],
+      ].some(([x, y]) => Math.hypot(p.x - x, p.y - y) < 44);
+      if (overButton) return;
       // left ~half, lower ~65% => joystick zone
       if (p.x < width * 0.5 && p.y > height * 0.32 && this.joyPointerId === -1) {
         this.joyPointerId = p.id;
@@ -562,8 +711,8 @@ export class UIScene extends Phaser.Scene {
 
   private positionJoystick() {
     const { height } = this.scale.gameSize;
-    const cx = 92;
-    const cy = height - 92;
+    const cx = 108;
+    const cy = height - 108;
     this.joyCenter.set(cx, cy);
     this.joyBase.setPosition(cx, cy);
     this.joyThumb.setPosition(cx, cy);
@@ -598,12 +747,14 @@ export class UIScene extends Phaser.Scene {
   private buildButtons() {
     const { width, height } = this.scale.gameSize;
     // the action button drives both world interactions and dialogue advance
-    this.actionBtn = this.makeButton(width - 66, height - 70, "A", 1.1, () => uiEvents.emit("action"));
-    this.mapBtn = this.makeButton(width - 66, height - 150, "Map", 0.75, () => uiEvents.emit("openMap"));
-    this.fitBtn = this.makeButton(width - 140, height - 66, "Fit", 0.75, () => this.openWardrobe());
-    this.phoneBtn = this.makeButton(width - 214, height - 66, "Ph", 0.75, () => this.phone.show());
+    this.actionBtn = this.makeButton(width - 76, height - 78, "A", 1.2, () => uiEvents.emit("action"));
+    this.mapBtn = this.makeButton(width - 76, height - 168, "Map", 0.92, () => uiEvents.emit("openMap"));
+    this.fitBtn = this.makeButton(width - 164, height - 76, "Fit", 0.88, () => this.openWardrobe());
+    this.phoneBtn = this.makeButton(width - 252, height - 76, "Ph", 0.88, () => this.phone.show());
+    this.ultimateBtn = this.makeButton(width - 164, height - 168, "Q\nULT", 0.92, () => uiEvents.emit("shoppingUltimate"));
+    this.setButtonVisible(this.ultimateBtn, false);
     this.phoneBadge = this.add
-      .text(width - 188, height - 92, "", {
+      .text(width - 220, height - 106, "", {
         fontFamily: FONT,
         fontSize: "10px",
         color: "#fff",
@@ -697,9 +848,18 @@ export class UIScene extends Phaser.Scene {
       } else {
         controls.locked = false;
       }
+      uiEvents.emit("dialogueClosed");
+      this.time.delayedCall(180, () => this.showPendingMilestone());
     } else {
       this.dlgText.setText(this.dlgLines[this.dlgIndex]);
     }
+  }
+
+  private showPendingMilestone() {
+    if (!this.pendingMilestone || this.anyModal()) return;
+    const milestone = this.pendingMilestone;
+    this.pendingMilestone = undefined;
+    this.openDialogue(milestone.title, [milestone.dialogue, "This can become a little outing, visit, or keepsake—not another obligation."]);
   }
 
   private onAction() {
@@ -888,148 +1048,14 @@ export class UIScene extends Phaser.Scene {
     this.miniGameOpen = true;
     controls.locked = true;
 
-    if (spec.kind === "coffee" || spec.kind === "bouquet" || spec.kind === "photo" || spec.kind === "stairs" || spec.kind === "shopping" || spec.kind === "safe") {
-      const wrap: MiniSpec = {
-        ...spec,
-        onDone: (ok) => {
-          this.closeMiniGame(true);
-          spec.onDone(ok);
-        },
-      };
-      this.miniGame = openActivity(this, wrap);
-      return;
-    }
-
-    const { width, height } = this.scale.gameSize;
-    const panelW = Math.min(width - 40, 340);
-    const panelH = spec.kind === "salon" ? 320 : 280;
-    const need = spec.taps ?? 10;
-    let progress = 0;
-    let mode = spec.kind === "salon" ? "" : "climb";
-
-    const items: Phaser.GameObjects.GameObject[] = [];
-    const bgCatch = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
-    const panel = this.add.graphics();
-    const px = (width - panelW) / 2;
-    const py = (height - panelH) / 2;
-    panel.fillStyle(0xfff9f0, 1).fillRoundedRect(px, py, panelW, panelH, 14);
-    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect(px, py, panelW, panelH, 14);
-    const title = this.add
-      .text(width / 2, py + 16, spec.title, { fontFamily: FONT, fontSize: "18px", color: "#e46d94", fontStyle: "bold", resolution: 2 })
-      .setOrigin(0.5, 0);
-    const hint = this.add
-      .text(width / 2, py + 44, spec.hint, {
-        fontFamily: FONT,
-        fontSize: "12px",
-        color: "#3a2b3a",
-        align: "center",
-        wordWrap: { width: panelW - 36 },
-        resolution: 2,
-      })
-      .setOrigin(0.5, 0);
-    items.push(bgCatch, panel, title, hint);
-
-    const barG = this.add.graphics();
-    items.push(barG);
-    const status = this.add
-      .text(width / 2, py + (spec.kind === "salon" ? 168 : 130), "", {
-        fontFamily: FONT,
-        fontSize: "13px",
-        color: "#3a2b3a",
-        resolution: 2,
-      })
-      .setOrigin(0.5);
-    items.push(status);
-
-    const drawBar = () => {
-      barG.clear();
-      const bw = panelW - 48;
-      const bx = px + 24;
-      const by = py + (spec.kind === "salon" ? 148 : 110);
-      barG.fillStyle(0xe8dcc8, 1).fillRoundedRect(bx, by, bw, 14, 6);
-      barG.fillStyle(0xe46d94, 1).fillRoundedRect(bx, by, Math.max(4, (bw * progress) / need), 14, 6);
-      status.setText(mode ? `${progress} / ${need}` : "Pick one to start");
+    const wrap: MiniSpec = {
+      ...spec,
+      onDone: (ok) => {
+        this.closeMiniGame(true);
+        spec.onDone(ok);
+      },
     };
-    drawBar();
-
-    const finish = () => {
-      this.closeMiniGame(true);
-      spec.onDone();
-    };
-
-    const tap = () => {
-      if (!mode) return;
-      progress += 1;
-      drawBar();
-      if (progress >= need) finish();
-    };
-
-    if (spec.kind === "salon") {
-      const nails = this.add
-        .text(width / 2 - 60, py + 108, "Nails", {
-          fontFamily: FONT,
-          fontSize: "14px",
-          color: "#fff",
-          backgroundColor: "#e46d94",
-          padding: { x: 12, y: 6 },
-          resolution: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      const brows = this.add
-        .text(width / 2 + 60, py + 108, "Brows", {
-          fontFamily: FONT,
-          fontSize: "14px",
-          color: "#fff",
-          backgroundColor: "#7be0a3",
-          padding: { x: 12, y: 6 },
-          resolution: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      nails.on("pointerdown", () => {
-        mode = "nails";
-        drawBar();
-      });
-      brows.on("pointerdown", () => {
-        mode = "brows";
-        drawBar();
-      });
-      items.push(nails, brows);
-    }
-
-    const tapBtn = this.add
-      .text(width / 2, py + panelH - 78, "Tap", {
-        fontFamily: FONT,
-        fontSize: "16px",
-        color: "#fff",
-        backgroundColor: "#2f6fd0",
-        padding: { x: 18, y: 8 },
-        resolution: 2,
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    tapBtn.on("pointerdown", tap);
-    items.push(tapBtn);
-
-    const skip = this.add
-      .text(width / 2, py + panelH - 28, spec.skipLabel ?? "Skip", {
-        fontFamily: FONT,
-        fontSize: "13px",
-        color: "#fff",
-        backgroundColor: "#8a7a6a",
-        padding: { x: 12, y: 5 },
-        resolution: 2,
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    skip.on("pointerdown", finish);
-    items.push(skip);
-
-    this.miniGame = this.add.container(0, 0, items).setScrollFactor(0).setDepth(80);
-    // The shared action button and keyboard should advance simple activities too.
-    uiEvents.on("minigameAction", tap);
-    this.miniGame.once(Phaser.GameObjects.Events.DESTROY, () => uiEvents.off("minigameAction", tap));
+    this.miniGame = openActivity(this, wrap);
   }
 
   private closeMiniGame(unlock: boolean) {
@@ -1121,6 +1147,172 @@ export class UIScene extends Phaser.Scene {
       controls.locked = false;
   }
 
+  private openFoodOrder(spec: import("../systems/controls").FoodOrderSpec) {
+    if (this.anyModal()) return;
+    const { width, height } = this.scale.gameSize;
+    const panelW = Math.min(width - 36, 360);
+    const panelH = Math.min(height - 72, 330);
+    const top = (height - panelH) / 2;
+    const children: Phaser.GameObjects.GameObject[] = [];
+    const catcher = this.add.rectangle(width / 2, height / 2, width, height, 0x2b2233, 0.55).setInteractive();
+    const panel = this.add.graphics();
+    panel.fillStyle(0xfff9f0, 1).fillRoundedRect((width - panelW) / 2, top, panelW, panelH, 14);
+    panel.lineStyle(3, 0xcaa27a).strokeRoundedRect((width - panelW) / 2, top, panelW, panelH, 14);
+    children.push(catcher, panel);
+    children.push(this.add.text(width / 2, top + 18, spec.title, { fontFamily: FONT, fontSize: "18px", color: "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5));
+    children.push(this.add.text(width / 2, top + 44, spec.subtitle, { fontFamily: FONT, fontSize: "11px", color: "#a08a70", align: "center", wordWrap: { width: panelW - 42 }, resolution: 2 }).setOrigin(0.5, 0));
+    spec.items.slice(0, 4).forEach((item, index) => {
+      const y = top + 92 + index * 44;
+      children.push(this.add.text((width - panelW) / 2 + 20, y, `${item.name}\n${item.description}`, { fontFamily: FONT, fontSize: "10px", color: "#3a2b3a", wordWrap: { width: panelW - 130 }, resolution: 2 }));
+      const order = this.add.text(width / 2 + panelW / 2 - 50, y + 8, `${item.price} coins`, {
+        fontFamily: FONT,
+        fontSize: "10px",
+        color: "#fff",
+        backgroundColor: "#2f6fd0",
+        padding: { x: 6, y: 4 },
+        resolution: 2,
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      order.on("pointerdown", () => {
+        if (!store.spendCoins(item.price)) {
+          store.toast("Not enough coins", "#e46d94");
+          return;
+        }
+        this.closeFoodOrder();
+        spec.onOrder(item.id);
+      });
+      children.push(order);
+    });
+    const close = this.add.text(width / 2, top + panelH - 22, "Maybe later", { fontFamily: FONT, fontSize: "12px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 10, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    close.on("pointerdown", () => this.closeFoodOrder());
+    catcher.on("pointerdown", () => this.closeFoodOrder());
+    children.push(close);
+    this.foodMenu = this.add.container(0, 0, children).setScrollFactor(0).setDepth(75);
+    controls.locked = true;
+  }
+
+  private closeFoodOrder() {
+    this.foodMenu?.destroy(true);
+    this.foodMenu = undefined;
+    if (!this.dialogueOpen && !this.wardrobeOpen && !this.shopOpen && !this.miniGameOpen && !this.phone.open && !this.giftMenu)
+      controls.locked = false;
+  }
+
+  private openChoice(spec: import("../systems/controls").ChoiceSpec) {
+    if (this.anyModal()) return;
+    const { width, height } = this.scale.gameSize;
+    const panelW = Math.min(width - 30, 390);
+    const panelH = Math.min(height - 42, 330);
+    const top = (height - panelH) / 2;
+    const children: Phaser.GameObjects.GameObject[] = [];
+    const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x1a1420, 0.6).setInteractive();
+    const panel = this.add.graphics();
+    panel.fillStyle(0xfff9f0, 1).fillRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
+    const accent = Phaser.Display.Color.HexStringToColor(spec.accent ?? "#e46d94").color;
+    panel.lineStyle(3, accent).strokeRoundedRect((width - panelW) / 2, top, panelW, panelH, 16);
+    children.push(shade, panel);
+    if (spec.kicker) children.push(this.add.text(width / 2, top + 11, spec.kicker, { fontFamily: FONT, fontSize: "8px", color: "#8a7a6a", letterSpacing: 1, resolution: 2 }).setOrigin(0.5));
+    children.push(this.add.text(width / 2, top + (spec.kicker ? 26 : 20), spec.title, { fontFamily: FONT, fontSize: "18px", color: spec.accent ?? "#e46d94", fontStyle: "bold", resolution: 2 }).setOrigin(0.5));
+    const prompt = this.add.text(width / 2, top + 50, spec.prompt, { fontFamily: FONT, fontSize: "11px", color: "#3a2b3a", align: "center", wordWrap: { width: panelW - 42 }, resolution: 2 }).setOrigin(0.5, 0);
+    children.push(prompt);
+    const choiceStartY = Math.max(top + 103, prompt.y + prompt.height + 12);
+    spec.choices.slice(0, 4).forEach((choice, index) => {
+      const y = choiceStartY + index * 47;
+      const leading = choice.icon ? `${choice.icon}  ` : "";
+      const trailing = choice.badge ? `   ${choice.badge}` : "";
+      const button = this.add.text(width / 2, y, choice.description ? `${leading}${choice.label}${trailing}\n${choice.description}` : `${leading}${choice.label}${trailing}`, {
+        fontFamily: FONT, fontSize: choice.description ? "11px" : "13px", color: "#fff", align: "center",
+        backgroundColor: index === 0 ? (spec.accent ?? "#2f6fd0") : "#6f6274", padding: { x: 12, y: 7 }, fixedWidth: panelW - 54, resolution: 2,
+      }).setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
+      button.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
+        event?.stopPropagation?.();
+        this.closeChoice();
+        spec.onChoose(choice.id);
+      });
+      children.push(button);
+    });
+    const later = this.add.text(width / 2, top + panelH - 24, spec.cancelLabel ?? "Maybe later", { fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#8a7a6a", padding: { x: 9, y: 4 }, resolution: 2 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    later.on("pointerdown", () => this.closeChoice());
+    children.push(later);
+    shade.on("pointerdown", () => this.closeChoice());
+    this.choiceMenu = this.add.container(0, 0, children).setScrollFactor(0).setDepth(88);
+    controls.locked = true;
+  }
+
+  private closeChoice() {
+    this.choiceMenu?.destroy(true);
+    this.choiceMenu = undefined;
+    if (!this.dialogueOpen && !this.miniGameOpen && !this.phone.open) controls.locked = false;
+  }
+
+  private showCameraHud(pose: typeof controls.cameraPose) {
+    if (!controls.cameraMode) return;
+    this.hideCameraHud();
+    const { width, height } = this.scale.gameSize;
+    const frame = this.add.graphics();
+    frame.lineStyle(4, 0xffffff, 0.9).strokeRoundedRect(24, 54, width - 48, height - 140, 12);
+    frame.lineStyle(2, 0xffffff, 0.52)
+      .lineBetween(width / 2 - 10, height / 2, width / 2 + 10, height / 2)
+      .lineBetween(width / 2, height / 2 - 10, width / 2, height / 2 + 10);
+    const title = this.add.text(34, 66, `CAMERA · ${pose.toUpperCase()}`, {
+      fontFamily: FONT, fontSize: "12px", color: "#fff", backgroundColor: "rgba(43,34,51,0.76)", padding: { x: 7, y: 4 }, resolution: 2,
+    });
+    const hint = this.add.text(width / 2, height - 73, "MOVE VIEW · ACTION TO TAKE PHOTO", {
+      fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "rgba(43,34,51,0.82)", padding: { x: 8, y: 4 }, resolution: 2,
+    }).setOrigin(0.5);
+    const exit = this.add.text(width - 34, 66, "EXIT", {
+      fontFamily: FONT, fontSize: "11px", color: "#fff", backgroundColor: "#e46d94", padding: { x: 9, y: 5 }, resolution: 2,
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    exit.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, event?: Phaser.Types.Input.EventData) => {
+      event?.stopPropagation?.();
+      controls.cameraMode = false;
+      this.hideCameraHud();
+      uiEvents.emit("cameraExit");
+    });
+    this.cameraHud = this.add.container(0, 0, [frame, title, hint, exit]).setScrollFactor(0).setDepth(155);
+  }
+
+  private hideCameraHud() {
+    this.cameraHud?.destroy(true);
+    this.cameraHud = undefined;
+  }
+
+  private buildShoppingHud() {
+    this.shoppingHud?.destroy(true);
+    this.shoppingHudG = this.add.graphics();
+    this.shoppingHudStress = this.add.text(0, 0, "", { fontFamily: FONT, fontSize: "10px", color: "#fff", fontStyle: "bold", resolution: 2 });
+    this.shoppingHudUltimate = this.add.text(0, 0, "", { fontFamily: FONT, fontSize: "10px", color: "#fff", fontStyle: "bold", resolution: 2 });
+    this.shoppingHudMeta = this.add.text(0, 0, "", { fontFamily: FONT, fontSize: "9px", color: "#fff4e6", align: "right", resolution: 2 }).setOrigin(1, 0);
+    this.shoppingHud = this.add.container(0, 0, [this.shoppingHudG, this.shoppingHudStress, this.shoppingHudUltimate, this.shoppingHudMeta]).setScrollFactor(0).setDepth(140).setVisible(false);
+  }
+
+  private updateShoppingHud(spec: import("../systems/controls").ShoppingHudSpec | null) {
+    this.shoppingHudState = spec ?? undefined;
+    if (!spec) {
+      this.shoppingHud?.setVisible(false);
+      return;
+    }
+    const { width } = this.scale.gameSize;
+    const panelW = Math.max(270, Math.min(600, width - 170));
+    const x = 12;
+    const y = 10;
+    const half = (panelW - 28) / 2;
+    const stress = Phaser.Math.Clamp(spec.stress / 100, 0, 1);
+    const ultimate = Phaser.Math.Clamp(spec.ultimate / 100, 0, 1);
+    const stressColor = spec.stress >= 75 ? 0xff426d : spec.stress >= 50 ? 0xf49a45 : 0x7be0a3;
+    this.shoppingHudG?.clear();
+    this.shoppingHudG?.fillStyle(0x201a27, 0.94).fillRoundedRect(x, y, panelW, 61, 11);
+    this.shoppingHudG?.lineStyle(2, spec.stress >= 75 ? 0xff6d91 : 0xcaa27a, 1).strokeRoundedRect(x, y, panelW, 61, 11);
+    this.shoppingHudG?.fillStyle(0x4a3f50, 1).fillRoundedRect(x + 10, y + 25, half, 10, 5);
+    this.shoppingHudG?.fillStyle(stressColor, 1).fillRoundedRect(x + 10, y + 25, half * stress, 10, 5);
+    this.shoppingHudG?.fillStyle(0x4a3f50, 1).fillRoundedRect(x + 18 + half, y + 25, half, 10, 5);
+    this.shoppingHudG?.fillStyle(spec.ultimateActive ? 0xffffff : 0x63c6e8, 1).fillRoundedRect(x + 18 + half, y + 25, half * ultimate, 10, 5);
+    this.shoppingHudStress?.setPosition(x + 10, y + 8).setText(`BABA STRESS  ${Math.round(spec.stress)}%`);
+    this.shoppingHudUltimate?.setPosition(x + 18 + half, y + 8).setText(spec.ultimateActive ? "MOCK LIGHT SPEED" : `MOOMOO RESCUE  ${Math.round(spec.ultimate)}%`);
+    const boss = spec.boss ? ` · ${spec.boss}${spec.receipts === undefined ? "" : ` · RECEIPTS ${spec.receipts}`}` : "";
+    this.shoppingHudMeta?.setPosition(x + panelW - 10, y + 43).setText(`${spec.stores}/${spec.storeTotal ?? 8} STORES · ${spec.bags} BAGS · ${spec.time}${boss}`);
+    this.shoppingHud?.setVisible(true);
+  }
+
   private buyFurniture(tex: string, price: number) {
     if (!store.spendCoins(price)) {
       store.toast("Not enough coins", "#e46d94");
@@ -1151,14 +1343,38 @@ export class UIScene extends Phaser.Scene {
 
   // -------------------------------------------------------------------------
   private refreshQuests() {
-    const list = activeQuests();
-    if (!list.length) {
-      this.questBox.setText("");
+    if (this.dedicatedHud) {
+      for (const item of [this.questPanel, this.questIcon, this.questKicker, this.questTitle, this.questNext, this.questHelp, this.questCount]) item.setVisible(false);
+      this.questHit.setVisible(false).disableInteractive();
+      this.mapGuide?.setVisible(false);
       return;
     }
-    const lines = ["- Quests -"];
-    for (const q of list) lines.push(`${q.def.title}`, `  ${q.hint}`);
-    this.questBox.setText(lines.join("\n"));
+    const list = activeQuests();
+    if (!list.length) {
+      this.questPanel.setVisible(false);
+      this.questIcon.setVisible(false);
+      this.questKicker.setVisible(false);
+      this.questTitle.setVisible(false);
+      this.questNext.setVisible(false);
+      this.questHelp.setVisible(false);
+      this.questCount.setVisible(false);
+      this.questHit.setVisible(false);
+      this.mapGuide?.setVisible(false);
+      return;
+    }
+    this.questIndex %= list.length;
+    const q = list[this.questIndex];
+    this.questPanel.setVisible(true);
+    this.questIcon.setVisible(true);
+    this.questKicker.setVisible(true);
+    this.questTitle.setVisible(true).setText(q.def.title);
+    this.questNext.setVisible(true).setText(`NEXT  ${q.hint}`);
+    this.questHelp.setVisible(true).setText(this.questExplanation(q));
+    this.questCount.setVisible(true).setText(list.length > 1 ? `${this.questIndex + 1} / ${list.length}  TAP TO SWITCH` : "FOCUSED");
+    this.questHit.setVisible(true);
+    this.mapGuide?.setVisible(this.needsMapGuide(q));
+    uiEvents.emit("questFocus", q.def.id);
+    this.layoutQuestCard();
   }
 
   private setPrompt(p: string | null) {
@@ -1186,6 +1402,40 @@ export class UIScene extends Phaser.Scene {
     this.tweens.add({ targets: t, y: t.y - 26, alpha: 0, duration: 1300, ease: "Cubic.out", onComplete: () => t.destroy() });
   }
 
+  private showObjectiveComplete(def: QuestDef, step: QuestStep) {
+    if (this.questCelebration?.active) return;
+    const { width, height } = this.scale.gameSize;
+    const box = this.add.rectangle(0, 0, Math.min(width - 32, 390), 66, 0x2b2233, 0.94).setStrokeStyle(2, 0x7be0a3);
+    const check = this.add.text(-box.width / 2 + 22, 0, "✓", { fontFamily: FONT, fontSize: "24px", color: "#7be0a3", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    const title = this.add.text(-box.width / 2 + 43, -15, "OBJECTIVE COMPLETE", { fontFamily: FONT, fontSize: "10px", color: "#7be0a3", fontStyle: "bold", resolution: 2 });
+    const line = this.add.text(-box.width / 2 + 43, 3, step.hint, { fontFamily: FONT, fontSize: "11px", color: "#fff4e6", wordWrap: { width: box.width - 58 }, resolution: 2 });
+    const c = this.add.container(width / 2, height * 0.2 - 12, [box, check, title, line]).setScrollFactor(0).setDepth(180).setAlpha(0).setScale(0.92);
+    this.tweens.add({ targets: c, alpha: 1, scale: 1, y: height * 0.2, duration: 220, ease: "Back.out", hold: 950, yoyo: true, onComplete: () => c.destroy() });
+    this.tweens.add({ targets: check, angle: 10, duration: 120, yoyo: true, repeat: 1 });
+    void def;
+  }
+
+  private showQuestComplete(def: QuestDef) {
+    this.questCelebration?.destroy(true);
+    const { width, height } = this.scale.gameSize;
+    const shade = this.add.rectangle(0, 0, width, height, 0x2b2233, 0.34).setOrigin(0);
+    const panelW = Math.min(width - 34, 430);
+    const panel = this.add.rectangle(width / 2, height * 0.36, panelW, 142, 0xfff9f0, 0.98).setStrokeStyle(4, 0xf4c95d);
+    const crown = this.add.text(width / 2, height * 0.36 - 51, "♥  ✦  ♥", { fontFamily: FONT, fontSize: "19px", color: "#e46d94", resolution: 2 }).setOrigin(0.5);
+    const kicker = this.add.text(width / 2, height * 0.36 - 20, "QUEST COMPLETE", { fontFamily: FONT, fontSize: "11px", color: "#2f6fd0", fontStyle: "bold", resolution: 2 }).setOrigin(0.5);
+    const title = this.add.text(width / 2, height * 0.36 + 4, def.title, { fontFamily: FONT, fontSize: "20px", color: "#3a2b3a", fontStyle: "bold", align: "center", wordWrap: { width: panelW - 34 }, resolution: 2 }).setOrigin(0.5);
+    const reward = this.add.text(width / 2, height * 0.36 + 41, `+${def.rewardHearts} hearts${def.rewardCoins ? `  ·  +${def.rewardCoins} coins` : ""}`, { fontFamily: FONT, fontSize: "12px", color: "#e46d94", resolution: 2 }).setOrigin(0.5);
+    const bits: Phaser.GameObjects.Text[] = [];
+    for (let i = 0; i < 18; i += 1) {
+      const bit = this.add.text(Phaser.Math.Between(20, Math.max(21, width - 20)), height * 0.28, i % 3 === 0 ? "♥" : "✦", { fontFamily: FONT, fontSize: `${Phaser.Math.Between(9, 17)}px`, color: i % 2 ? "#f4c95d" : "#ff8fae", resolution: 2 }).setOrigin(0.5);
+      bits.push(bit);
+      this.tweens.add({ targets: bit, x: bit.x + Phaser.Math.Between(-45, 45), y: height * 0.66 + Phaser.Math.Between(-35, 80), angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: Phaser.Math.Between(1800, 2600), ease: "Quad.in" });
+    }
+    this.questCelebration = this.add.container(0, 0, [shade, panel, crown, kicker, title, reward, ...bits]).setScrollFactor(0).setDepth(190).setAlpha(0).setScale(0.94);
+    this.tweens.add({ targets: this.questCelebration, alpha: 1, scale: 1, duration: 260, ease: "Back.out", hold: 2200, yoyo: true, onComplete: () => { this.questCelebration?.destroy(true); this.questCelebration = undefined; } });
+    this.cameras.main.shake(120, 0.002);
+  }
+
   private showLocationTitle(name: string, sub: string) {
     const { width, height } = this.scale.gameSize;
     const c = this.add.container(width / 2, height * 0.4).setScrollFactor(0).setDepth(70).setAlpha(0);
@@ -1197,11 +1447,11 @@ export class UIScene extends Phaser.Scene {
 
   private gameplayActive() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Driving);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Mall) || m.isActive(SceneKeys.Driving) || m.isActive(SceneKeys.PirateVoyage) || m.isActive(SceneKeys.SisterHeist) || m.isActive(SceneKeys.AdnocHQ) || m.isActive(SceneKeys.AdnocTask) || m.isActive(SceneKeys.QuestActivity) || m.isActive(SceneKeys.BabaShopping) || m.isActive(SceneKeys.Romance) || m.isActive(SceneKeys.Wedding) || m.isActive(SceneKeys.TigorMission) || m.isActive(SceneKeys.TigorAirport);
   }
   private walkableScene() {
     const m = this.scene.manager;
-    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House);
+    return m.isActive(SceneKeys.World) || m.isActive(SceneKeys.House) || m.isActive(SceneKeys.Mall);
   }
   private resetOverlays() {
     try {
@@ -1213,24 +1463,66 @@ export class UIScene extends Phaser.Scene {
       if (this.localMapOpen) this.closeLocalMap();
       if (this.miniGameOpen) this.closeMiniGame(true);
       this.closeGiftMenu();
+      this.closeFoodOrder();
+      this.closeChoice();
       if (this.phone.open) this.phone.close();
+      if (this.cameraHud || controls.cameraMode) {
+        controls.cameraMode = false;
+        this.hideCameraHud();
+        uiEvents.emit("cameraExit");
+      }
+      this.updateShoppingHud(null);
+      controls.shoppingUltimateReady = false;
+      controls.shoppingUltimateActive = false;
     } catch {
       /* stale overlay after a scene hop */
     }
     controls.locked = false;
     controls.moveX = 0;
     controls.moveY = 0;
+    this.joyPointerId = -1;
+    this.positionJoystick();
+  }
+
+  private onReplayEnded(replay: { returnLocation: string; returnInJeep: boolean; originScene?: string }) {
+    this.resetOverlays();
+    const active = this.scene.manager.getScenes(true).find((candidate) => candidate.scene.key !== SceneKeys.UI);
+    if (!active) return;
+    if (replay.originScene === SceneKeys.House) {
+      active.scene.start(SceneKeys.House, { propertyId: store.state.activeHomeId, title: "Home" });
+      return;
+    }
+    if (replay.originScene === SceneKeys.Mall) {
+      const mallId = replay.returnLocation === "dubai_hills" ? "dubai_hills_mall" : replay.returnLocation === "abudhabi_yasmall" ? "yas_mall" : "dubai_mall";
+      active.scene.start(SceneKeys.Mall, { mallId });
+      return;
+    }
+    active.scene.start(SceneKeys.World, { locationId: replay.returnLocation, driving: replay.returnInJeep });
   }
 
   private anyModal() {
-    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu;
+    return this.dialogueOpen || this.wardrobeOpen || this.shopOpen || this.localMapOpen || this.miniGameOpen || this.phone.open || !!this.giftMenu || !!this.foodMenu || !!this.choiceMenu;
+  }
+
+  private setDedicatedHud(hidden: boolean) {
+    if (this.dedicatedHud === hidden) return;
+    this.dedicatedHud = hidden;
+    const common = [this.heartIcon, this.heartText, this.coinIcon, this.coinText, this.clockText, this.questPanel, this.questIcon, this.questKicker, this.questTitle, this.questNext, this.questHelp, this.questCount];
+    for (const item of common) item.setVisible(!hidden);
+    if (hidden) {
+      this.questHit.setVisible(false).disableInteractive();
+      this.mapGuide?.setVisible(false);
+    } else {
+      this.questHit.setVisible(true).setInteractive({ useHandCursor: true });
+      this.refreshQuests();
+    }
   }
 
   private layout() {
     // reposition size-dependent elements on resize/rotate
     const { width, height } = this.scale.gameSize;
-    this.questBox.setPosition(width - 12, 12);
-    this.promptText.setPosition(width / 2, height - 150);
+    this.promptText.setPosition(width / 2, height - 180);
+    this.dedicatedStatus.setPosition(width / 2, 64).setWordWrapWidth(Math.max(220, width - 32), true);
     this.placeMinimap();
     if (this.localMapOpen) this.refreshLocalMap();
     if (this.joyPointerId === -1) this.positionJoystick();
@@ -1238,11 +1530,15 @@ export class UIScene extends Phaser.Scene {
       btn.setPosition(x, y);
       (btn as ButtonImage).label?.setPosition(x, y);
     };
-    place(this.actionBtn, width - 66, height - 70);
-    place(this.mapBtn, width - 66, height - 150);
-    place(this.fitBtn, width - 140, height - 66);
-    place(this.phoneBtn, width - 214, height - 66);
-    this.phoneBadge?.setPosition(width - 188, height - 92);
+    place(this.actionBtn, width - 76, height - 78);
+    place(this.mapBtn, width - 76, height - 168);
+    place(this.fitBtn, width - 164, height - 76);
+    place(this.phoneBtn, width - 252, height - 76);
+    place(this.ultimateBtn, width - 164, height - 168);
+    this.phoneBadge?.setPosition(width - 220, height - 106);
+    if (this.cameraHud && controls.cameraMode) this.showCameraHud(controls.cameraPose);
+    if (this.shoppingHudState) this.updateShoppingHud(this.shoppingHudState);
+    this.layoutQuestCard();
   }
 
   update() {
@@ -1250,6 +1546,7 @@ export class UIScene extends Phaser.Scene {
     if (this.localMapOpen && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.closeLocalMap();
     if (this.miniGameOpen && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.closeMiniGame(true);
     if (this.phone.open && Phaser.Input.Keyboard.JustDown(this.keys.ESC)) this.phone.close();
+    if (this.cameraHud && !controls.cameraMode) this.hideCameraHud();
     this.clockText?.setText(store.clockLabel());
 
     if (this.dialogueOpen) {
@@ -1264,18 +1561,29 @@ export class UIScene extends Phaser.Scene {
     const gp = this.gameplayActive();
     const modal = this.anyModal();
     const driving = this.scene.manager.isActive(SceneKeys.Driving);
+    const questActivity = this.scene.manager.isActive(SceneKeys.QuestActivity);
+    const babaShopping = this.scene.manager.isActive(SceneKeys.BabaShopping);
+    const tigorCampaign = this.scene.manager.isActive(SceneKeys.TigorMission) || this.scene.manager.isActive(SceneKeys.TigorAirport);
+    const dedicated = controls.buildModeActive || this.scene.manager.isActive(SceneKeys.PirateVoyage) || this.scene.manager.isActive(SceneKeys.SisterHeist) || this.scene.manager.isActive(SceneKeys.AdnocHQ) || this.scene.manager.isActive(SceneKeys.AdnocTask) || this.scene.manager.isActive(SceneKeys.Romance) || this.scene.manager.isActive(SceneKeys.Wedding) || questActivity || babaShopping || tigorCampaign;
+    this.setDedicatedHud(dedicated);
+    this.dedicatedStatus.setY(questActivity ? 24 : 64);
+    this.dedicatedStatus.setVisible(dedicated && this.dedicatedStatusActive && !modal);
+    this.shoppingHud?.setVisible(!!this.shoppingHudState && babaShopping && !modal);
 
-    const showTouch = gp && !modal;
+    const showTouch = gp && !controls.buildModeActive && (!modal || this.miniGameOpen);
     this.setButtonVisible(this.actionBtn, showTouch);
-    const showJoy = showTouch && this.joyPointerId !== -1;
+    this.actionBtn.setDepth(this.miniGameOpen ? 90 : 12);
+    (this.actionBtn as ButtonImage).label?.setDepth(this.miniGameOpen ? 91 : 13);
+    this.setButtonVisible(this.ultimateBtn, babaShopping && controls.shoppingUltimateReady && !controls.shoppingUltimateActive && !modal);
+    const showJoy = showTouch && !tigorCampaign;
     this.joyBase.setVisible(showJoy);
     this.joyThumb.setVisible(showJoy);
     // map + fit only in walkable scenes (not while driving)
-    const showNav = this.walkableScene() && !modal && !driving;
+    const showNav = this.walkableScene() && !controls.buildModeActive && !modal && !driving && !controls.cameraMode;
     this.setButtonVisible(this.mapBtn, showNav);
     this.setButtonVisible(this.fitBtn, showNav);
-    this.setButtonVisible(this.phoneBtn, showNav);
-    this.phoneBadge?.setVisible(showNav && store.unreadCount() > 0);
+    this.setButtonVisible(this.phoneBtn, showNav || (tigorCampaign && store.isQuestReplay && !modal));
+    this.phoneBadge?.setVisible((showNav || (tigorCampaign && store.isQuestReplay && !modal)) && store.unreadCount() > 0);
     this.drawMinimap();
   }
 }

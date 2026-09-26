@@ -7,16 +7,22 @@ export const controls = {
   moveX: 0,
   moveY: 0,
   locked: false, // true while a dialogue/menu is open -> freeze movement
+  cameraMode: false,
+  cameraPose: "smile" as "smile" | "peace" | "silly" | "hug",
+  shoppingUltimateReady: false,
+  shoppingUltimateActive: false,
+  buildModeActive: false,
 };
 
 // Global UI event bus (button presses, dialogue requests, menu toggles).
 export const uiEvents = new EventEmitter();
 
 export interface MiniGameSpec {
-  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "shopping" | "safe" | "lab" | "pitch";
+  kind: "stairs" | "salon" | "coffee" | "bouquet" | "photo" | "showdown" | "shopping" | "safe" | "lab" | "pitch" | "lockpick" | "badge_photo" | "timing";
   title: string;
   hint: string;
   taps?: number;
+  difficulty?: number;
   skipLabel?: string;
   photoLabel?: string;
   photoTex?: string;
@@ -24,9 +30,42 @@ export interface MiniGameSpec {
   onDone: (ok?: boolean) => void;
 }
 
+export interface FoodOrderSpec {
+  title: string;
+  subtitle: string;
+  items: { id: string; name: string; description: string; price: number }[];
+  onOrder: (itemId: string) => void;
+}
+
+export interface ChoiceSpec {
+  title: string;
+  prompt: string;
+  kicker?: string;
+  cancelLabel?: string;
+  accent?: string;
+  choices: { id: string; label: string; description?: string; icon?: string; badge?: string }[];
+  onChoose: (id: string) => void;
+}
+
+export interface ShoppingHudSpec {
+  stress: number;
+  ultimate: number;
+  bags: number;
+  stores: number;
+  storeTotal?: number;
+  time: string;
+  boss?: string;
+  receipts?: number;
+  ultimateActive?: boolean;
+}
+
 export function resetControls() {
   controls.moveX = 0;
   controls.moveY = 0;
+  controls.cameraMode = false;
+  controls.shoppingUltimateReady = false;
+  controls.shoppingUltimateActive = false;
+  controls.buildModeActive = false;
 }
 
 export type MiniKind = "npc" | "landmark" | "home" | "exit" | "shop" | "jeep";

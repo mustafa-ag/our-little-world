@@ -11,7 +11,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Our World" />
     <meta name="theme-color" content="#f4a6c0" />
-    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <!-- Use an absolute, versioned icon so iOS does not reuse an old shortcut icon. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-heart.png" />
     <link rel="icon" type="image/png" href="./icons/favicon.png" />
     <title>Our Little World (2D)</title>
     <style>
@@ -44,10 +45,32 @@
       #game canvas {
         display: block;
       }
+      #try-3d {
+        position: fixed;
+        left: 50%;
+        bottom: calc(6px + env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        z-index: 10;
+        padding: 5px 12px;
+        border-radius: 999px;
+        background: rgba(16, 19, 28, 0.72);
+        border: 1px solid rgba(244, 166, 192, 0.8);
+        color: #fff;
+        font: 600 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-decoration: none;
+        letter-spacing: 0.02em;
+        touch-action: manipulation;
+      }
+      #try-3d:hover,
+      #try-3d:focus-visible {
+        background: rgba(244, 166, 192, 0.9);
+        color: #10131c;
+      }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <a id="try-3d" href="./">Try 3D Preview</a>
     <script type="module" src="/src/legacy2d.ts"></script>
   </body>
 </html>

@@ -11,12 +11,14 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs",
+    "audit:hd": "node scripts/audit-hd-assets.mjs",
     "assets:build": "node scripts/build-hero-assets.mjs",
     "assets:blender": "node tools/blender/build.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.28.0",
     "@babylonjs/loaders": "^9.28.0",
+    "@supabase/supabase-js": "^2.115.0",
     "phaser": "^3.88.2"
   },
   "devDependencies": {

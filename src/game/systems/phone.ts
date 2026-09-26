@@ -12,6 +12,7 @@ function unlocked(def: MessageDef) {
   if (u.flag && !store.hasFlag(u.flag)) return false;
   if (u.memory && !store.hasMemory(u.memory)) return false;
   if (u.questDone && store.state.quests[u.questDone]?.status !== "done") return false;
+  if (u.questsDone && !u.questsDone.every((id) => store.state.quests[id]?.status === "done")) return false;
   if (u.questActive && store.state.quests[u.questActive]?.status !== "active") return false;
   if (u.relationship && store.getRelationship(u.relationship.npc) < u.relationship.min) return false;
   if (u.location && store.state.currentLocation !== u.location) return false;
@@ -19,6 +20,13 @@ function unlocked(def: MessageDef) {
     const loc = getLocation(store.state.currentLocation);
     if (loc.cityId !== u.city) return false;
   }
+  if (u.eventDone && !store.hasFlag(`world_event_done_${u.eventDone}`)) return false;
+  if (u.stat && store.getStat(u.stat.id) < u.stat.min) return false;
+  if (u.career && store.state.career !== u.career) return false;
+  if (u.outfit && store.state.outfit !== u.outfit) return false;
+  if (u.time && store.state.timeOfDay !== u.time) return false;
+  if (u.catStage !== undefined && store.state.cat.stage < u.catStage) return false;
+  if (u.relationshipStage && store.state.relationshipStage !== u.relationshipStage) return false;
   return true;
 }
 
@@ -32,6 +40,18 @@ export function deliverMessage(def: MessageDef) {
     read: false,
     questId: def.questId,
   });
+  if (!store.state.chatEntries.some((entry) => entry.id === `story:${def.id}`)) {
+    store.state.chatEntries.push({
+      id: `story:${def.id}`,
+      contactId: def.sender,
+      direction: "incoming",
+      body: def.body,
+      day: store.state.currentDay,
+      timeOfDay: store.state.timeOfDay,
+      read: false,
+      questId: def.questId,
+    });
+  }
   store.emit("message", def.id);
   store.emit("toast", "New text", "#8ecae6");
   store.save();
@@ -56,12 +76,15 @@ export function markRead(id: string) {
   const m = store.state.messages.find((x) => x.id === id);
   if (!m || m.read) return;
   m.read = true;
+  const chat = store.state.chatEntries.find((entry) => entry.id === `story:${id}` || entry.id === `legacy:${id}`);
+  if (chat) chat.read = true;
   store.emit("message", id);
   store.save();
 }
 
 export function markAllRead() {
   for (const m of store.state.messages) m.read = true;
+  for (const entry of store.state.chatEntries) if (entry.direction === "incoming") entry.read = true;
   store.emit("message", "*");
   store.save();
 }

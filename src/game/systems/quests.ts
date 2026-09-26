@@ -1,7 +1,9 @@
 import { QUESTS, questById, type QuestDef, type StepType } from "../data/quests";
+import { adnocRankAtLeast } from "../data/adnoc";
 import type { QuestProgress } from "./save";
 import { store } from "./store";
 import { tryDeliverMessages } from "./phone";
+import { recordQuestLifeConsequences } from "./lifeProgress";
 
 // Quest logic layered on top of the store. Scenes call the on* hooks when the
 // player does something; this returns any dialogue to show and fires store
@@ -12,6 +14,15 @@ export interface TalkResult {
   completedQuest?: QuestDef;
   acceptedQuest?: QuestDef;
 }
+
+export interface ActiveQuest {
+  def: QuestDef;
+  step: QuestDef["steps"][number];
+  hint: string;
+  progress: number;
+}
+
+const MAX_ACTIVE_QUESTS = 2;
 
 function ensure(id: string): QuestProgress {
   let p = store.state.quests[id];
@@ -36,20 +47,63 @@ export function currentStep(id: string) {
   return progress && def ? def.steps[progress.step] : undefined;
 }
 
-function prerequisitesMet(def: QuestDef) {
-  return (def.requiresQuests ?? []).every((id) => statusOf(id) === "done");
+export function prerequisitesMet(def: QuestDef) {
+  if (!(def.requiresQuests ?? []).every((id) => statusOf(id) === "done")) return false;
+  if (def.requiresAdnocRank && !adnocRankAtLeast(store.state.adnocRank, def.requiresAdnocRank)) return false;
+  if (def.requiresAdnocXp && store.state.adnocXp < def.requiresAdnocXp) return false;
+  if (def.requiresAdnocWorkdays && store.state.adnocWorkdays < def.requiresAdnocWorkdays) return false;
+  if (def.requiresMinDay && store.state.currentDay < def.requiresMinDay) return false;
+  if (def.requiresRelationship && store.getRelationship(def.requiresRelationship.npc) < def.requiresRelationship.min) return false;
+  if (def.requiresRelationshipStage && store.state.relationshipStage !== def.requiresRelationshipStage) return false;
+  return true;
 }
 
-export function activeQuests(): { def: QuestDef; hint: string }[] {
-  const out: { def: QuestDef; hint: string }[] = [];
-  for (const def of QUESTS) {
+export function prerequisiteHint(def: QuestDef) {
+  const missing = (def.requiresQuests ?? []).filter((id) => statusOf(id) !== "done");
+  if (missing.length) return `Finish: ${missing.map((id) => questById(id)?.title ?? id).join(" + ")}`;
+  if (def.requiresAdnocRank && !adnocRankAtLeast(store.state.adnocRank, def.requiresAdnocRank)) return `ADNOC rank required: ${def.requiresAdnocRank.replace(/_/g, " ")}`;
+  if (def.requiresAdnocXp && store.state.adnocXp < def.requiresAdnocXp) return `${def.requiresAdnocXp} ADNOC XP required`;
+  if (def.requiresAdnocWorkdays && store.state.adnocWorkdays < def.requiresAdnocWorkdays) return `${def.requiresAdnocWorkdays} workdays required`;
+  if (def.requiresMinDay && store.state.currentDay < def.requiresMinDay) return `Available on day ${def.requiresMinDay}`;
+  if (def.requiresRelationship && store.getRelationship(def.requiresRelationship.npc) < def.requiresRelationship.min) return `Grow closer to ${def.requiresRelationship.npc}`;
+  if (def.requiresRelationshipStage && store.state.relationshipStage !== def.requiresRelationshipStage) return `Relationship stage required: ${def.requiresRelationshipStage}`;
+  return "Ready to begin";
+}
+
+export function canStartQuest(id: string) {
+  const def = questById(id);
+  return !store.isQuestReplay && !!def && statusOf(id) === "available" && prerequisitesMet(def);
+}
+
+/** Start one known quest explicitly, without accepting a different quest from the same giver. */
+export function startQuest(id: string) {
+  const def = questById(id);
+  if (!def || !canStartQuest(id) || activeQuests().length >= MAX_ACTIVE_QUESTS) return undefined;
+  const p = ensure(id);
+  p.status = "active";
+  p.step = 0;
+  p.progress = 0;
+  store.emit("questUpdated");
+  store.save();
+  store.toast(`New quest: ${def.title}`, "#f4c95d");
+  return def;
+}
+
+function eligibleQuestDefs() {
+  const replayId = store.questReplay?.questId;
+  return replayId ? QUESTS.filter((def) => def.id === replayId) : QUESTS;
+}
+
+export function activeQuests(): ActiveQuest[] {
+  const out: ActiveQuest[] = [];
+  for (const def of eligibleQuestDefs()) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
     if (!step) continue;
     let hint = step.hint;
     if (step.type === "collect" && step.count) hint = `${step.hint} (${p.progress}/${step.count})`;
-    out.push({ def, hint });
+    out.push({ def, step, hint, progress: p.progress });
   }
   return out;
 }
@@ -68,11 +122,19 @@ function completeQuest(def: QuestDef, p: QuestProgress) {
   store.addHearts(def.rewardHearts);
   store.addCoins(def.rewardCoins);
   grantExtras(def);
+  recordQuestLifeConsequences(def.id);
+  // Consequence flags/memories can unlock a second, delayed-feeling reaction.
+  // Delivery is still capped, so finishing a pillar never floods the phone.
+  tryDeliverMessages({ limit: 1 });
+  store.emit("questCompleted", def);
   store.emit("questUpdated");
   store.save();
+  if (store.questReplay?.questId === def.id) store.finishQuestReplaySoon(def.id === "q_retrieve_tigor" ? 6000 : 100);
 }
 
 function advance(def: QuestDef, p: QuestProgress) {
+  const finishedStep = def.steps[p.step];
+  if (finishedStep) store.emit("questStepComplete", def, finishedStep);
   p.step += 1;
   p.progress = 0;
   if (p.step >= def.steps.length) {
@@ -92,7 +154,7 @@ function matchTarget(stepTarget: string, target: string) {
 
 // Try to advance any active quest whose current step matches (type,target).
 function tryAdvance(type: StepType, target: string): QuestDef | undefined {
-  for (const def of QUESTS) {
+  for (const def of eligibleQuestDefs()) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
@@ -119,7 +181,7 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
   const result: TalkResult = { lines: [] };
 
   // 1) advance an active talk-step targeting this npc
-  for (const def of QUESTS) {
+  for (const def of eligibleQuestDefs()) {
     const p = store.state.quests[def.id];
     if (p?.status !== "active") continue;
     const step = def.steps[p.step];
@@ -135,20 +197,25 @@ export function onTalk(npcId: string, defaultLines: string[]): TalkResult {
     }
   }
 
-  // 2) offer ONE new quest from this npc if available
-  for (const def of QUESTS) {
-    if (def.giver !== npcId) continue;
-    const p = ensure(def.id);
-    if (p.status === "available" && prerequisitesMet(def)) {
-      p.status = "active";
-      p.step = 0;
-      p.progress = 0;
-      store.emit("questUpdated");
-      store.save();
-      result.lines.push(def.intro);
-      result.acceptedQuest = def;
-      store.toast(`New quest: ${def.title}`, "#f4c95d");
-      break;
+  // 2) Offer one new story only when the player has room to follow it.
+  // This keeps conversations warm instead of silently filling the tracker.
+  if (!store.isQuestReplay && activeQuests().length < MAX_ACTIVE_QUESTS) {
+    for (const def of QUESTS) {
+      if (def.giver !== npcId) continue;
+      if (statusOf(def.id) === "available" && prerequisitesMet(def)) {
+        const accepted = startQuest(def.id);
+        if (!accepted) continue;
+        if (def.id === "q_family_jewel_heist") {
+          result.lines.push(
+            "Fadwa still has my gold bangles...",
+            "And Grandma's jewelry.",
+            "Juju: ...she has WHAT?",
+            "Juju. Do not get any ideas.",
+          );
+        } else result.lines.push(def.intro);
+        result.acceptedQuest = def;
+        break;
+      }
     }
   }
 
@@ -200,17 +267,12 @@ export function onDriveWith(npcId: string): QuestDef | undefined {
   return tryAdvance("driveWithPassenger", npcId);
 }
 
+export function onBuyProperty(propertyId: string): QuestDef | undefined {
+  return tryAdvance("buyProperty", propertyId);
+}
+
 export function activateFromMessage(questId: string) {
-  const def = questById(questId);
-  if (!def) return;
-  const p = ensure(def.id);
-  if (p.status !== "available") return;
-  p.status = "active";
-  p.step = 0;
-  p.progress = 0;
-  store.emit("questUpdated");
-  store.toast(`New quest: ${def.title}`, "#f4c95d");
-  store.save();
+  return startQuest(questId);
 }
 
 export { questById };

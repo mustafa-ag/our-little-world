@@ -41,7 +41,13 @@ export function mountTitle(ctx: UIContext) {
     store.reset();
     render();
   });
-  actions.append(play, newGame, el("p", { class: "olw-title-keys", text: "Press Space or Enter to begin" }));
+  // The complete pixel game (every quest, scene and save feature) lives at /legacy.html.
+  const legacy = el("a", {
+    class: "olw-btn olw-btn--gold olw-title-legacy",
+    text: "Play Full Pixel Game",
+    attrs: { href: "./legacy.html", "aria-label": "Play the full pixel game" },
+  });
+  actions.append(play, newGame, legacy, el("p", { class: "olw-title-keys", text: "Press Space or Enter to begin" }));
 
   const render = () => {
     const started = store.state.started;

@@ -67,12 +67,21 @@ export const Outfits: Record<string, { top: string; topShade: string; bottom: st
   pink_dress: { label: "Pink Dress", top: "#ff8fb8", topShade: "#e46d94", bottom: "#ff8fb8", shoes: "#fff4e6" },
   edi_hoodie: { label: "Edinburgh Hoodie", top: "#3d8b6e", topShade: "#2d6b54", bottom: "#333a45", shoes: "#2a2230" },
   sneakers: { label: "Mall sneakers", top: "#fff4e6", topShade: "#e8d6be", bottom: "#5b6ee1", shoes: "#ffffff" },
+  red_bottom_boots: { label: "Red-bottom boots", top: "#f28ab2", topShade: "#d96e98", bottom: "#5b6ee1", shoes: "#cf1737" },
   city_bag: { label: "City bag", top: "#c9a27a", topShade: "#a8845c", bottom: "#3a2b3a", shoes: "#2a2230" },
   secret_gold: { label: "Golden hour", top: "#f4c95d", topShade: "#d4a83a", bottom: "#3a2b3a", shoes: "#fff4e6" },
   mall_dress: { label: "Mall Dress", top: "#ff7eaa", topShade: "#d9588a", bottom: "#ff7eaa", shoes: "#fff4e6" },
   sparkle_set: { label: "Sparkle Set", top: "#a06de2", topShade: "#7d4fbd", bottom: "#3d5a80", shoes: "#f4c95d" },
   weekend_jacket: { label: "Weekend Jacket", top: "#6a9ed8", topShade: "#4779b5", bottom: "#2a334d", shoes: "#fff4e6" },
+  shopping_heels: { label: "Evening Heels", top: "#36263d", topShade: "#241a2b", bottom: "#d98ba7", shoes: "#d7a44b" },
+  shopping_sandals: { label: "Golden Sandals", top: "#fff0c7", topShade: "#e6c67f", bottom: "#e46d94", shoes: "#f4c95d" },
   pirate_chic: { label: "Pirate Chic", top: "#d84652", topShade: "#a82d39", bottom: "#2a2230", shoes: "#f4c95d" },
+  engineer_blue: { label: "Engineering Blue", top: "#2f6fd0", topShade: "#22539f", bottom: "#2a334d", shoes: "#1a2230" },
+  executive_blue: { label: "Executive Blue", top: "#244f9d", topShade: "#183a78", bottom: "#232b3b", shoes: "#111827" },
+  ceo_blue: { label: "CEO Blue", top: "#173f83", topShade: "#102e62", bottom: "#1d2533", shoes: "#f4c95d" },
+  wedding_moroccan: { label: "Moroccan Celebration", top: "#198754", topShade: "#11633e", bottom: "#d4af37", shoes: "#fff4e6" },
+  wedding_jordanian: { label: "Jordanian Celebration", top: "#9f1f37", topShade: "#721528", bottom: "#17131c", shoes: "#d4af37" },
+  wedding_white: { label: "Wedding White", top: "#fffdf7", topShade: "#eadfe4", bottom: "#fffdf7", shoes: "#f4c95d" },
 };
 
 export type OutfitId = keyof typeof Outfits;

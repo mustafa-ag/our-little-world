@@ -2,10 +2,16 @@ import Phaser from "phaser";
 import { SceneKeys } from "../constants";
 import { buildAllTextures, rebuildPlayerTexture } from "../textures";
 import { store } from "../systems/store";
+import { applyVisualFilters, diagnoseVisualAssets, queueVisualAssets } from "../visual";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
     super(SceneKeys.Preload);
+  }
+
+  preload() {
+    // External HD art must finish loading before legacy procedural fallback is built in create().
+    queueVisualAssets(this);
   }
 
   create() {
@@ -20,11 +26,26 @@ export class PreloadScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // all art is generated procedurally, so "loading" is instant
+    // Legacy procedural visuals remain active until each gameplay key is migrated.
     store.init();
     buildAllTextures(this);
     rebuildPlayerTexture(this, store.state.outfit); // apply saved outfit
+    applyVisualFilters(this);
+    diagnoseVisualAssets(this);
 
-    this.time.delayedCall(120, () => this.scene.start(SceneKeys.Title));
+    let titleStarted = false;
+    const startTitle = () => {
+      if (titleStarted) return;
+      titleStarted = true;
+      this.scene.start(SceneKeys.Title);
+    };
+
+    // Let an existing account reconcile its saves before showing story cards,
+    // but never make an offline game wait on a network request.
+    const fallback = this.time.delayedCall(900, startTitle);
+    void store.syncCloud().finally(() => {
+      fallback.remove(false);
+      this.time.delayedCall(120, startTitle);
+    });
   }
 }

@@ -104,7 +104,9 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (title.visible) {
         if (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter") {
-          const onButton = e.target instanceof HTMLButtonElement && layer.contains(e.target);
+          // focused buttons / links (e.g. "Play Full Pixel Game") keep their own activation
+          const onButton =
+            (e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement) && layer.contains(e.target);
           if (!onButton) {
             consume(e);
             title.start();

@@ -1285,6 +1285,10 @@
   margin-top: 26px;
 }
 
+.olw-title-legacy {
+  text-decoration: none;
+}
+
 .olw-title-play {
   animation: olw-breathe 1.8s ease-in-out infinite;
 }

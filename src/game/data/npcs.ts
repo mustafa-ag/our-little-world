@@ -28,8 +28,8 @@ export const PLAYER: { id: string; name: string; colors: CharColors } = {
   id: "her",
   name: "Juju",
   colors: baseColors({
-    skin: "#f0c49a",
-    skinShade: "#daa87c",
+    skin: "#dca77d",
+    skinShade: "#bd805b",
     hair: "#3a251b",
     hairShade: "#26160f",
     top: "#f28ab2",
@@ -98,6 +98,26 @@ export const NPCS: NpcDef[] = [
     ty: 62,
     facing: "down",
     dialogue: ["Hey from Frankfurt!", "Miss you, sis. Stay for a coffee?"],
+  },
+  {
+    id: "jad",
+    name: "Jad",
+    colors: baseColors({ hair: "#2b1b13", hairShade: "#190e09", skin: "#dba477", skinShade: "#bd8059", top: "#4b83d1", topShade: "#3269b1", bottom: "#30343c" }),
+    location: "abudhabi_yas",
+    tx: 84,
+    ty: 56,
+    facing: "down",
+    dialogue: ["Juju! You picked the loudest possible time to come home.", "Family chaos championship? You are not ready."],
+  },
+  {
+    id: "shan",
+    name: "Shan",
+    colors: baseColors({ hair: "#20140e", hairShade: "#120a06", skin: "#d7a178", skinShade: "#ba8058", top: "#77b5d9", topShade: "#5695ba", bottom: "#3a4150" }),
+    location: "abudhabi_yas",
+    tx: 84,
+    ty: 56,
+    facing: "down",
+    dialogue: ["Juju! The house was peaceful until exactly now.", "Tap race? Winner gets bragging rights."],
   },
 
   // ---- Friends ----
