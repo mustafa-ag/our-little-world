@@ -22,6 +22,7 @@ import { mountMall } from "./mall";
 import { mountBabaShopping } from "./babaShopping";
 import { mountAdnoc } from "./adnoc";
 import { mountDrive } from "./drive";
+import { mountChoice } from "./choice";
 
 const FONT_HREF =
   "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Nunito:wght@500;700;800&display=swap";
@@ -73,6 +74,7 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
   mountBabaShopping(ctx, modals.host);
   mountAdnoc(ctx, modals.host);
   mountDrive(ctx, modals.host);
+  mountChoice(ctx, modals.host);
   const dialogue = mountDialogue(ctx, (npcId) => {
     if (npcId) modals.openGift(npcId);
   });

@@ -5,7 +5,7 @@
 
 import { uiEvents } from "../../game/systems/controls";
 
-export type InteractableKind = "npc" | "zone" | "collectible" | "secret" | "quest" | "vehicle";
+export type InteractableKind = "npc" | "zone" | "collectible" | "secret" | "quest" | "vehicle" | "event";
 
 export interface Interactable {
   id: string;

@@ -5,6 +5,7 @@
 // the same `uiEvents "action"` that the on-screen A button emits.
 
 import { controls, uiEvents } from "../../game/systems/controls";
+import { store } from "../../game/systems/store";
 import type { Facing } from "../../game/data/npcs";
 import type { GridCollider } from "../world/gridCollider";
 import { lerpAngle, yawFor } from "../world/coords";
@@ -23,6 +24,14 @@ export const BASE_SPEED = JOG_SPEED;
 /** Keyboard input magnitude without Shift (STROLL / JOG). */
 const KEYBOARD_STROLL = STROLL_SPEED / JOG_SPEED;
 export const PLAYER_RADIUS = 0.28;
+/** Outfit that makes Juju sprint (WorldScene: red_bottom_boots walk at 1.65x). */
+export const SPRINT_OUTFIT = "red_bottom_boots";
+export const SPRINT_BONUS = 1.65;
+
+/** Top ground speed for the current outfit (+65% in the red-bottom boots). */
+export function outfitSpeed(outfit: string = store.state.outfit): number {
+  return outfit === SPRINT_OUTFIT ? BASE_SPEED * SPRINT_BONUS : BASE_SPEED;
+}
 
 export interface PlayerState {
   x: number;
@@ -63,25 +72,34 @@ export class PlayerController {
     this.keys.delete(k);
   };
   private onBlur = () => this.keys.clear();
+  /** Outfit swaps (wardrobe / phone Style) or a loaded save retune the top speed. */
+  private onOutfit = () => {
+    this.state.speed = outfitSpeed();
+  };
 
   constructor(
     private collider: GridCollider,
     x: number,
     z: number,
   ) {
-    this.state = { x, z, vx: 0, vz: 0, yaw: Math.PI, moving: 0, facing: "down", speed: BASE_SPEED };
+    this.state = { x, z, vx: 0, vz: 0, yaw: Math.PI, moving: 0, facing: "down", speed: outfitSpeed() };
   }
 
   attach(target: Window = window) {
     target.addEventListener("keydown", this.onKeyDown);
     target.addEventListener("keyup", this.onKeyUp);
     target.addEventListener("blur", this.onBlur);
+    store.on("outfit", this.onOutfit);
+    store.on("changed", this.onOutfit);
+    this.onOutfit();
   }
 
   detach(target: Window = window) {
     target.removeEventListener("keydown", this.onKeyDown);
     target.removeEventListener("keyup", this.onKeyUp);
     target.removeEventListener("blur", this.onBlur);
+    store.off("outfit", this.onOutfit);
+    store.off("changed", this.onOutfit);
     this.keys.clear();
   }
 
