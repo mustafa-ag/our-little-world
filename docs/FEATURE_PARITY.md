@@ -2,11 +2,11 @@
 
 _Generated from source on 2026-09-26 (branch `claude/adoring-edison-jb16c3`, HEAD `99da49a`)_
 
-**Last updated: 2026-09-26 — after Phases 1A, 1B, 2A, 2B, 3, 4A, 4B, 4C, 4D and 5C** (5A phone tabs and 5B driving/photos were still in flight when this revision was written; rows they touch are marked accordingly). Statuses were updated from source and commit history; nothing was play-tested, so no row is 🔍 VERIFIED.
+**Last updated: 2026-09-26 — after Phases 1A, 1B, 2A, 2B, 3, 4A, 4B, 4C, 4D, 5A and 5C** (5B driving was still in flight when this revision was written; rows it touches are marked accordingly). Statuses were updated from source and commit history; nothing was play-tested, so no row is 🔍 VERIFIED.
 
 ## Summary
 
-The legacy Phaser build (`/legacy.html`, `src/legacy2d.ts`) registers 19 scenes and carries the whole game: 35 quests, 23 districts in 9 cities, 13 minigame kinds, a 12-tab phone, housing/build mode, ADNOC career, romance/wedding, Tigor and Baba-shopping campaigns. The Babylon 3D build (`/`, `src/app3d/`) now covers **all 23 of 23 locations** (`PORTED_LOCATIONS`), each with a regional art profile (`world/artProfile.ts`: Scotland, UAE Modern/Coastal/Dubai, London, England town, Amman, Italy, Greece, Germany). Travel works through the world map modal (phone › Map) and district edges, and the Jeep opens a drive menu to the other districts of the city. All 13 minigame kinds are real DOM games that report success or failure. Title has save slots and a new-game confirmation; sleep advances the day. House interiors (bed, wardrobe, photo wall), the mall and Baba Shopping, the ADNOC career modal, and the story scenes (Romance, Wedding, Tigor Mission/Airport, Sister Heist, Pirate Voyage, Quest Activities) are ported as DOM/Babylon modals rather than 1:1 Phaser scenes. Remaining gaps: the top-down DrivingScene (the drive menu skips straight to the travel fade), build mode, property purchase/tours, companions, world events, several phone tabs (Ppl, Car, Stats, Notes, Cam, chat threads), cloud-save UI, the Yas sibling showdown trigger, and landmark meshes for the newer regions.
+The legacy Phaser build (`/legacy.html`, `src/legacy2d.ts`) registers 19 scenes and carries the whole game: 35 quests, 23 districts in 9 cities, 13 minigame kinds, a 12-tab phone, housing/build mode, ADNOC career, romance/wedding, Tigor and Baba-shopping campaigns. The Babylon 3D build (`/`, `src/app3d/`) now covers **all 23 of 23 locations** (`PORTED_LOCATIONS`), each with a regional art profile (`world/artProfile.ts`: Scotland, UAE Modern/Coastal/Dubai, London, England town, Amman, Italy, Greece, Germany). Travel works through the world map modal (phone › Map) and district edges, and the Jeep opens a drive menu to the other districts of the city. All 13 minigame kinds are real DOM games that report success or failure. Title has save slots and a new-game confirmation; sleep advances the day. House interiors (bed, wardrobe, photo wall), the mall and Baba Shopping, the ADNOC career modal, and the story scenes (Romance, Wedding, Tigor Mission/Airport, Sister Heist, Pirate Voyage, Quest Activities) are ported as DOM/Babylon modals rather than 1:1 Phaser scenes. Remaining gaps: the top-down DrivingScene (the drive menu skips straight to the travel fade), build mode, property purchase/tours, companions, world events, the Car phone tab and chat threads, cloud-save UI, the Yas sibling showdown trigger, and landmark meshes for the newer regions.
 
 ## Status Key
 
@@ -71,7 +71,7 @@ Score: 23 of 23 locations are walkable in 3D; 18 are marked ported and 5 partial
 | Hearts / coins | store | ✅ PORTED | HUD (`ui/hud.ts`). |
 | Fuel | `store.refuel` | 🔶 PARTIAL | ADNOC Oasis fuel zone works (`dubai_damac` is ported). Driving is a menu + travel fade, so fuel is not consumed per drive. |
 | Inventory | store | ✅ PORTED | Phone › Bag. |
-| Relationships | store, `data/relationships.ts` | 🔶 PARTIAL | Talk, gifts and story scenes change values. No contacts/bands view yet (Phase 5A). |
+| Relationships | store, `data/relationships.ts` | ✅ PORTED | Talk, gifts and story scenes change values; Phone › People shows bands (Phase 5A). |
 | Messages | `systems/phone.ts` | 🔶 PARTIAL | Delivered on arrival; tapping activates the quest. No chat threads or replies (`systems/chat.ts` unused). |
 | Quests engine | `systems/quests.ts` | ✅ PORTED | Shared. Hook targets fixed in Phases 1A/4B/4D. |
 | Quest accept / browse | Phone › Quests | ✅ PORTED | Phase 1A Quests tab with Active/Available/Completed. |
@@ -83,12 +83,12 @@ Score: 23 of 23 locations are walkable in 3D; 18 are marked ported and 5 partial
 | Outfit reactions | `systems/outfitReactions.ts` | ✅ PORTED | Used by `ui/wardrobe.ts` and `worldController.ts`. |
 | Companions | `systems/companions.ts` | ❌ MISSING | No follower NPC or invite in the world (story scenes use companion IDs for photos only). |
 | Encounters | `systems/encounters.ts` | ✅ PORTED | `maybeEncounter()`. |
-| Secrets / notes | `data/secrets.ts` | 🔶 PARTIAL | Pickups and memory unlocks. No Notes tab. |
+| Secrets / notes | `data/secrets.ts` | ✅ PORTED | Pickups, memory unlocks and Phone › Notes (Phase 5A). |
 | World events | `systems/worldEvents.ts` | ❌ MISSING | Not imported by 3D. |
-| Photos / camera | `systems/photos.ts` | 🔶 PARTIAL | Landmark `photo` minigame and story scenes call `store.capturePhoto`; the house photo wall shows them. Camera/album tabs in progress (Phase 5A/5B `systems/photoCapture.ts`). |
+| Photos / camera | `systems/photos.ts` | 🔶 PARTIAL | Landmark `photo` minigame and story scenes call `store.capturePhoto`; the house photo wall shows them. Phone › Camera and Album (Phase 5A, `systems/photoCapture.ts`). |
 | Memories | `data/memories.ts` | ✅ PORTED | Phone › Memories. |
 | ADNOC career | `systems/adnoc.ts` | ✅ PORTED | Phase 4B: `ui/adnoc.ts` HQ, task board, career tab, control room, boardroom. |
-| Life progress / stats | `systems/lifeProgress.ts` | 🔶 PARTIAL | Shared side effects run. No Stats tab. |
+| Life progress / stats | `systems/lifeProgress.ts` | ✅ PORTED | Shared side effects plus Phone › Stats (Phase 5A). |
 | Minimap / district map | `systems/minimapAtlas.ts` | ✅ PORTED | Phase 2A: `systems/mapFeed.ts` + `ui/minimap.ts` live overhead map with player/NPC dots (replaces `fillCityMinimap`). |
 | Shop (home / ADNOC) | UIScene.buildShop | ✅ PORTED | `ui/shop.ts`. |
 
@@ -96,20 +96,20 @@ Score: 23 of 23 locations are walkable in 3D; 18 are marked ported and 5 partial
 
 ## 3. Phone
 
-Legacy is `src/game/ui/PhoneOverlay.ts` (12 tabs plus a DEV Debug tab). 3D is `src/app3d/ui/phone.ts` (Texts, Quests, Bag, Wardrobe, Homes, Memories, Map; more tabs arriving in Phase 5A `ui/phoneTabs.ts`).
+Legacy is `src/game/ui/PhoneOverlay.ts` (12 tabs plus a DEV Debug tab). 3D is `src/app3d/ui/phone.ts` + `ui/phoneTabs.ts` (Texts, Quests, Camera, Album, Stats, People, Notes, Bag, Wardrobe, Homes, Memories, Map).
 
 | Tab | Legacy source | 3D Status | Notes |
 |-----|---------------|-----------|-------|
 | Msgs (chats) | `drawMessages` / `drawConversation` | 🔶 PARTIAL | Flat list of recent messages; no threads or replies. |
 | Quests | `drawQuests` | ✅ PORTED | Phase 1A. Active/Available/Completed and accept. `retrieve_tigor_campaign` routes to the Tigor story scene. |
-| Cam | `drawCamera` | 🔶 PARTIAL | Phase 5A/5B in progress (`systems/photoCapture.ts`). |
-| Album | `drawAlbum` / `drawMemories` | 🔶 PARTIAL | Memories list plus the house photo wall. |
-| Stats | `drawStats` | ❌ MISSING | Phase 5A target. |
+| Cam | `drawCamera` | ✅ PORTED | Phase 5A: screenshot capture into a saved photo. |
+| Album | `drawAlbum` / `drawMemories` | ✅ PORTED | Phase 5A polaroid grid with detail view, plus Memories and the house photo wall. |
+| Stats | `drawStats` | ✅ PORTED | Phase 5A life-stat bars. |
 | Map | `drawMap` | ✅ PORTED | World map (travel) and live district map. |
-| Ppl (contacts) | `drawContacts` | ❌ MISSING | Phase 5A target. |
+| Ppl (contacts) | `drawContacts` | 🔶 PARTIAL | Phase 5A People tab (relationship list, detail, message). Companion invite depends on the companions system. |
 | Car | `drawCar` | ❌ MISSING | The Jeep in the world opens the drive menu; no "CALL JEEP". |
 | Homes | `drawHomes` | 🔶 PARTIAL | Phase 3: property list and set active/primary home. No buy or tour. |
-| Notes | `drawNotes` | ❌ MISSING | |
+| Notes | `drawNotes` | ✅ PORTED | Phase 5A discovered notes. |
 | Bag | `drawBag` | ✅ PORTED | |
 | Fit (style) | `drawStyle` | ✅ PORTED | Phone › Wardrobe. |
 | Debug (DEV) | `drawQuestTour` | ❌ MISSING | Dev-only. Low priority. |
@@ -151,7 +151,7 @@ Hand-off events from the 3D world (`enterHouse`, `enterMall`, `enterAdnoc`, `dri
 | UIScene | `scenes/UIScene.ts` | ✅ PORTED | Replaced by the DOM UI in `app3d/ui/*`. |
 | HouseScene | `scenes/HouseScene.ts` | 🔶 PARTIAL | Phase 3: `scenes/interiorScene.ts` + `ui/house.ts` (bed/sleep, wardrobe, photo wall, shelf prop). Missing: build mode, visitor hangout, home activities, Tigor at home, property tours. |
 | WorldMapScene | `scenes/WorldMapScene.ts` | 🔶 PARTIAL | Phase 2A: `ui/worldMap.ts` grouped list with lock rules and travel. No globe visual. |
-| DrivingScene | `scenes/DrivingScene.ts` | 🔶 PARTIAL | Phase 5C: the Jeep opens a drive menu (districts of the city, `onDriveWith` hook) and travels via the fade. No top-down highway drive or "Cruise around here". |
+| DrivingScene | `scenes/DrivingScene.ts` | 🔶 PARTIAL | Phase 5C wired the Jeep to a drive menu (districts of the city, `onDriveWith`) so it no longer shows a placeholder toast. Phase 5B (in flight) replaces it with `ui/drive.ts` + `scenes/drivingScene.ts`, a 3D road trip with HUD. |
 | MallScene | `scenes/MallScene.ts` | ✅ PORTED | Phase 4C: `ui/mall.ts` store directory, buy/browse, fashion try-on. |
 | PirateVoyageScene | `scenes/PirateVoyageScene.ts` | ✅ PORTED | Phase 4D: node-graph voyage. |
 | SisterHeistScene | `scenes/SisterHeistScene.ts` | ✅ PORTED | Phase 4D: grid stealth with lockpick/safe. |
@@ -272,14 +272,14 @@ Phase 5C sweep of `src/app3d/**` (plus the shared Amman subtitle):
 | "Play (coming soon)" (minigame stub) | Removed in Phase 2B (real minigames). |
 | "The heist scene isn't in 3D yet" | Removed in Phase 4D (heist story scene). |
 | "The mall isn't in 3D yet" | Removed in Phase 4C (mall modal). |
-| "The Jeep isn't road-ready in 3D yet" | Removed in Phase 5C: the Jeep opens the drive menu (`ui/modals.ts`). |
+| "The Jeep isn't road-ready in 3D yet" | Removed in Phase 5C: the Jeep always emits `driveMenu` (answered by the drive menu; Phase 5B moves it to `ui/drive.ts`). |
 | `` `${title} — interiors aren't in 3D yet` `` | Removed in Phase 5C (the `enterHouse` listener in `ui/house.ts` always answers). |
 | `` `${dest.name} isn't built in 3D yet` `` | Removed in Phase 5C (every location ported; unknown IDs are ignored with a `TODO(3d)` comment). |
 | World map "Not built in 3D yet" / "Soon" chip / "coming soon" city count | Removed in Phase 5C: unported locations are hidden and the count reads "N places". |
 | `locations.ts` Amman subtitle "Coming soon (beta)" | Replaced with "Jordan · Citadel hill above the old city". |
 | "Play Full Pixel Game" (`ui/title.ts`, link to `/legacy.html`) | Kept on purpose until full parity; `legacy.html` keeps its "Try 3D Preview" link to `/`. |
 
-Remaining `TODO(3d)` comments (not user-facing): drive menu "Cruise around here" (`ui/modals.ts`), non-ported location guard (`systems/worldController.ts`).
+Remaining `TODO(3d)` comment (not user-facing): the non-ported location guard in `systems/worldController.ts`.
 
 ---
 
@@ -296,13 +296,13 @@ Completed:
 7. ✅ **Phase 4B** — ADNOC career.
 8. ✅ **Phase 4C** — mall and Baba Shopping.
 9. ✅ **Phase 4D** — Romance, Wedding, Tigor, Heist, Pirate, Quest Activities.
-10. ✅ **Phase 5C** — remaining locations (Noya, Yas Mall, Amman, Frankfurt, Positano, Santorini), Jeep drive menu, placeholder sweep.
+10. ✅ **Phase 5A** — phone parity: Camera, Album, Stats, People, Notes.
+11. ✅ **Phase 5C** — remaining locations (Noya, Yas Mall, Amman, Frankfurt, Positano, Santorini), Jeep drive menu, placeholder sweep.
 
 In flight / next:
 
-- **Phase 5A** — phone parity (Ppl/companions, Stats, Notes, Cam/Album, chat threads).
-- **Phase 5B** — driving and photos (`systems/photoCapture.ts`).
-- Then: build mode and property purchase/tours, Yas sibling showdown, companions, world events, cloud-save UI, landmark meshes for Germany/Amman/Italy/Greece/Leicester/Westminster, and finally removing the legacy link.
+- **Phase 5B** — 3D driving (`ui/drive.ts`, `scenes/drivingScene.ts`).
+- Then: chat threads, Car tab, build mode and property purchase/tours, Yas sibling showdown, companions, world events, cloud-save UI, landmark meshes for Germany/Amman/Italy/Greece/Leicester/Westminster, and finally removing the legacy link.
 
 ---
 
