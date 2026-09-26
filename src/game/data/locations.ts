@@ -191,6 +191,14 @@ const TERRACE = ["b_terrace_brick", "b_townhouse_red", "b_townhouse_cream", "b_t
 const GLASS = ["b_glass_a", "b_glass_b", "b_glass_c"];
 const TENEMENT = ["b_tenement", "b_townhouse_cream", "b_tenement", "b_townhouse_red"];
 
+/**
+ * Hand-placed deco buildings as `[ty, [[tex, tx], …]]` rows. The keys in each
+ * row were picked so the 3D kit's deterministic (tex, tx, ty) preset suits the
+ * region (whitewash in Oia, rose / cream render in Positano, sand stone in Amman).
+ */
+const rows = (spec: [number, [string, number][]][]): Poi[] =>
+  spec.flatMap(([ty, items]) => items.map(([tex, tx]) => ({ tex, tx, ty, role: "deco" as const })));
+
 // ===========================================================================
 // DUBAI — north = Gulf / Downtown; south-west = Damac Lagoons; south-east =
 // Silicon Oasis. Sheikh Zayed Road is the long walk between them.
@@ -294,9 +302,14 @@ const DUBAI_SZR: CityDef = {
   border: "fence",
   dense: true,
   surfaces: [
+    // street-level strips between the service roads and SZR itself
+    plaza(18, 6, 7, 156, "t_plaza_stone"),
+    plaza(56, 6, 11, 156, "t_plaza_stone"),
     bed(36, 4, 8, 160, "t_grass"),
-    plaza(6, 112, 16, 16, "t_paving_dark"),
-    plaza(62, 112, 16, 16, "t_paving_dark"),
+    plaza(6, 112, 16, 16, "t_plaza_stone"),
+    plaza(62, 112, 16, 16, "t_plaza_stone"),
+    // Financial Centre: the pedestrian plaza at the heart of the strip
+    plaza(56, 76, 11, 28, "t_plaza_stone"),
   ],
   paths: [
     street([pt(32, 4), pt(32, 164)], 5),
@@ -315,11 +328,88 @@ const DUBAI_SZR: CityDef = {
     street([pt(38, 106), pt(42, 110)], 3, "t_crossing"),
   ],
   pois: [
-    ...mixCol(["b_glass_a", "b_tower", "b_glass_c", "b_residence", "b_glass_b", "b_glass_a", "b_tower", "b_glass_c"], 8, 14, 8, 18),
-    ...mixCol(["b_glass_b", "b_residence", "b_glass_a", "b_tower", "b_glass_c", "b_glass_b", "b_residence", "b_glass_a"], 76, 18, 8, 18),
+    // the tower wall: glass curtain walls alternating with stone-banded blocks,
+    // two per block and clear of the cross streets
+    ...rows([
+      [12, [["b_glass_b", 8], ["b_residence", 76]]],
+      [24, [["b_tower", 8], ["b_glass_c", 76]]],
+      [48, [["b_glass_b", 8], ["b_residence", 76]]],
+      [60, [["b_tower", 8], ["b_glass_a", 76]]],
+      [84, [["b_glass_a", 8], ["b_tower", 76]]],
+      [96, [["b_tower", 8], ["b_glass_b", 76]]],
+      [120, [["b_glass_a", 8], ["b_residence", 76]]],
+      [132, [["b_tower", 8], ["b_glass_c", 76]]],
+      [156, [["b_glass_a", 8], ["b_tower", 76]]],
+      [50, [["b_glass_b", 61]]],
+      [120, [["b_glass_c", 59]]],
+      [160, [["b_tower", 61]]],
+    ]),
+    {
+      tex: "lm_burj",
+      tx: 61,
+      ty: 28,
+      role: "landmark",
+      name: "Burj Khalifa",
+      desc: "Downtown's needle, one exit north. It follows you down every lane of SZR.",
+    },
+    // west strip: tower-lobby retail
+    { tex: "b_cafe", tx: 21, ty: 28, role: "cafe", name: "Tower-lobby café", tag: "szr_cafe", desc: "Flat whites in a marble lobby, air-con set to arctic." },
+    { tex: "b_shop", tx: 22, ty: 64, role: "shop", name: "24h mini-mart", tag: "szr_minimart", desc: "Water, gum, phone charger. Open whenever you need it." },
+    { tex: "b_cafe", tx: 21, ty: 100, role: "cafe", name: "Shawarma counter", tag: "szr_shawarma", desc: "Garlic sauce, pickles, 2am energy." },
+    { tex: "b_shop", tx: 21, ty: 136, role: "shop", name: "Corner pharmacy", tag: "szr_pharmacy", desc: "Sunscreen, plasters and a very calm pharmacist." },
+    // east strip: café, the Financial Centre plaza, sweets
+    { tex: "b_cafe", tx: 61, ty: 64, role: "cafe", name: "Boulevard café", tag: "szr_boulevard_cafe", desc: "Iced latte on the terrace, towers going up in every direction." },
+    { tex: "o_foodtruck", tx: 61, ty: 81, role: "cafe", name: "Karak kiosk", tag: "szr_karak", desc: "Sweet tea with cardamom, handed through a window." },
+    {
+      tex: "o_fountain",
+      tx: 61,
+      ty: 90,
+      role: "landmark",
+      name: "Financial Centre Plaza",
+      desc: "A pocket of shade between the towers: a fountain, benches, and the metro one crossing away.",
+    },
+    { tex: "b_shop", tx: 61, ty: 102, role: "shop", name: "Metro mini-mart", tag: "szr_shop", desc: "Grab a snack for the Red Line." },
+    { tex: "b_cafe", tx: 61, ty: 136, role: "cafe", name: "Arabic sweets & coffee", tag: "szr_sweets", desc: "Kunafa, luqaimat and gahwa in tiny cups." },
+    { tex: "o_bench", tx: 57, ty: 86, role: "deco" },
+    { tex: "o_bench", tx: 65, ty: 86, role: "deco" },
+    { tex: "o_bench", tx: 57, ty: 95, role: "deco" },
+    { tex: "o_bench", tx: 65, ty: 95, role: "deco" },
+    { tex: "o_planter", tx: 57, ty: 79, role: "deco" },
+    { tex: "o_planter", tx: 65, ty: 79, role: "deco" },
+    { tex: "o_palm", tx: 57, ty: 99, role: "deco" },
+    { tex: "o_palm", tx: 65, ty: 99, role: "deco" },
+    // seating along the strips
+    { tex: "o_bench", tx: 19, ty: 46, role: "deco" },
+    { tex: "o_bench", tx: 23, ty: 46, role: "deco" },
+    { tex: "o_bench", tx: 19, ty: 118, role: "deco" },
+    { tex: "o_bench", tx: 23, ty: 118, role: "deco" },
+    { tex: "o_bench", tx: 57, ty: 58, role: "deco" },
+    { tex: "o_bench", tx: 65, ty: 58, role: "deco" },
+    { tex: "o_bench", tx: 63, ty: 116, role: "deco" },
+    { tex: "o_bench", tx: 63, ty: 124, role: "deco" },
+    // palms: the median, then the pavements on both strips
     ...mixCol(["o_palm"], 36, 16, 8, 18),
     ...mixCol(["o_palm"], 44, 24, 8, 18),
+    ...mixCol(["o_palm"], 23, 8, 3, 6),
+    ...mixCol(["o_palm"], 23, 50, 3, 6),
+    ...mixCol(["o_palm"], 23, 80, 3, 6),
+    ...mixCol(["o_palm"], 23, 150, 2, 6),
+    ...mixRow(["o_palm"], 58, 10, 2, 6),
+    ...mixRow(["o_palm"], 58, 17, 2, 6),
+    ...mixCol(["o_palm"], 58, 150, 2, 6),
+    ...dotsAlong([pt(26, 6), pt(26, 162)], "o_lamp", 12, { solid: false }),
+    ...dotsAlong([pt(54, 6), pt(54, 162)], "o_lamp", 12, { solid: false }),
+    // Red Line stations in the median
     { tex: "o_sign", tx: 40, ty: 108, role: "plain", name: "Metro", desc: "SZR flyover — the long drive south." },
+    {
+      tex: "o_sign",
+      tx: 40,
+      ty: 78,
+      role: "plain",
+      name: "Metro — Financial Centre",
+      desc: "Red Line. The train runs right up the middle of SZR, gold class if you're feeling it.",
+    },
+    ...mixRow(["o_bollard"], 37, 81, 4, 2),
     jeep(40, 84),
   ],
   spawn: { tx: 40, ty: 12 },
@@ -783,16 +873,56 @@ const AD_LAST_EXIT: CityDef = {
   road: "t_road",
   border: "fence",
   dense: true,
-  surfaces: [plaza(16, 26, 76, 20, "t_paving_light"), parking(20, 50, 68, 12)],
+  surfaces: [
+    lawn(12, 12, 84, 12),
+    plaza(16, 26, 76, 20, "t_paving_light"),
+    // the majlis: a stone court in the middle of the truck ring
+    plaza(36, 38, 36, 6, "t_plaza_stone"),
+    parking(20, 50, 68, 12),
+  ],
   paths: [
     ...boulevard([pt(8, 48), pt(100, 48)], 3, 2),
     walkPath([pt(24, 48), pt(24, 36), pt(84, 36)], 2, "t_paving_light"),
   ],
   pois: [
+    // the truck line-up, facing the court
     { tex: "o_foodtruck", tx: 28, ty: 32, role: "cafe", name: "Last Exit burgers", tag: "last_exit_burgers", desc: "A proper road-trip burger stop." },
+    { tex: "o_foodtruck", tx: 40, ty: 32, role: "cafe", name: "Last Exit shawarma", tag: "last_exit_shawarma", desc: "Wrapped tight, extra toum, eaten on the bonnet." },
     { tex: "o_foodtruck", tx: 52, ty: 32, role: "cafe", name: "Last Exit coffee", tag: "last_exit_coffee", desc: "Coffee before the drive home." },
+    { tex: "o_foodtruck", tx: 64, ty: 32, role: "cafe", name: "Last Exit karak", tag: "last_exit_karak", desc: "Karak so sweet it counts as dessert. Almost." },
     { tex: "o_foodtruck", tx: 76, ty: 32, role: "cafe", name: "Last Exit dessert", tag: "last_exit_dessert", desc: "One last sweet thing for the road." },
+    // seating court between the trucks and the road; (54,38) stays clear for the photo spot
+    {
+      tex: "o_bench",
+      tx: 54,
+      ty: 42,
+      role: "landmark",
+      name: "The Last Exit majlis",
+      tag: "last_exit_hangout",
+      desc: "Benches under the palms, the truck lights on, and nowhere you have to be.",
+    },
+    ...mixRow(["o_bench"], 34, 39, 4, 12),
+    ...mixRow(["o_bench"], 34, 41, 4, 12),
+    ...mixRow(["o_planter"], 40, 40, 3, 12),
+    ...mixRow(["o_palm"], 36, 43, 4, 12),
+    { tex: "o_palm", tx: 20, ty: 30, role: "deco" },
+    { tex: "o_palm", tx: 88, ty: 30, role: "deco" },
+    // light strings: lamp runs behind the trucks and along the court
+    ...dotsAlong([pt(20, 28), pt(88, 28)], "o_lamp", 6, { solid: false }),
+    ...dotsAlong([pt(20, 44), pt(88, 44)], "o_lamp", 8, { solid: false }),
+    { tex: "o_sign", tx: 12, ty: 44, role: "plain", name: "Last Exit", desc: "The last stop before the long drive: trucks, lights, and one more coffee." },
+    // shade and planting around the edge
     ...palms(14, 18, 6, 14),
+    ...dotsAlong([pt(16, 24), pt(92, 24)], "o_bush", 4),
+    ...dotsAlong([pt(14, 27), pt(14, 43)], "o_bush", 4),
+    ...dotsAlong([pt(94, 27), pt(94, 43)], "o_bush", 4),
+    ...dotsAlong([pt(20, 63), pt(46, 63)], "o_bush", 5),
+    ...dotsAlong([pt(62, 63), pt(88, 63)], "o_bush", 5),
+    // a few cars already parked up
+    { tex: "v_car_red", tx: 28, ty: 57, role: "deco" },
+    { tex: "v_car_blue", tx: 34, ty: 57, role: "deco" },
+    { tex: "v_car_blue", tx: 72, ty: 57, role: "deco" },
+    { tex: "v_car_red", tx: 80, ty: 57, role: "deco" },
     jeep(54, 54),
   ],
   spawn: { tx: 54, ty: 64 },
@@ -1277,6 +1407,8 @@ const GERMANY: CityDef = {
   entry: { north: { tx: 56, ty: 12 } },
 };
 
+// Jabal Amman: limestone blocks stepping down from the Citadel to Rainbow
+// Street, the Balad souk below, and the Roman Theatre cut into the hill.
 const AMMAN: CityDef = {
   w: 104,
   h: 88,
@@ -1285,64 +1417,288 @@ const AMMAN: CityDef = {
   road: "t_path",
   border: "rock",
   dense: true,
-  districts: [{ name: "Amman (beta)", x: 14, y: 14, w: 76, h: 60, ground: "t_sand" }],
-  surfaces: [plaza(36, 20, 28, 16, "t_paving_light")],
+  districts: [{ name: "Jabal Amman", x: 10, y: 10, w: 84, h: 70, ground: "t_plaza_stone", alt: "t_cobble" }],
+  surfaces: [
+    bed(12, 12, 18, 16, "t_grass2"),
+    bed(70, 12, 22, 16, "t_grass2"),
+    plaza(32, 10, 36, 18, "t_plaza_stone"), // Citadel hilltop
+    plaza(12, 56, 30, 16, "t_cobble"), // the Balad souk
+    plaza(62, 56, 28, 16, "t_plaza_stone"), // Roman Theatre
+  ],
   paths: [
-    ...boulevard([pt(8, 44), pt(96, 44)], 3, 2, "t_path", "t_paving_light"),
-    ...boulevard([pt(50, 10), pt(50, 78)], 3, 2, "t_path", "t_paving_light"),
-    walkPath([pt(50, 44), pt(50, 28)], 2, "t_paving_light"),
+    ...boulevard([pt(8, 44), pt(96, 44)], 3, 2, "t_cobble", "t_paving_light"), // Rainbow Street
+    ...boulevard([pt(50, 30), pt(50, 82)], 3, 2, "t_path", "t_paving_light"),
+    walkPath([pt(50, 30), pt(50, 26)], 2, "t_plaza_stone"),
+    // the city's stairways down the jabal
+    alley([pt(28, 28), pt(28, 56)], 2, "t_paving_light"),
+    alley([pt(76, 28), pt(76, 56)], 2, "t_paving_light"),
+    walkPath([pt(14, 64), pt(42, 64)], 2, "t_cobble"),
+    walkPath([pt(52, 64), pt(62, 64)], 2, "t_paving_light"),
+    crossing(pt(34, 42), pt(34, 46)),
   ],
   pois: [
-    { tex: "lm_citadel", tx: 50, ty: 24, role: "landmark", name: "Amman Citadel" },
-    ...mixRow(["b_sandstone", "b_sandstone", "b_sandstone"], 20, 50, 3, 22),
-    ...mixRow(["b_sandstone", "b_sandstone"], 30, 64, 2, 28),
-    ...palms(18, 36, 5, 16),
+    // the kit's columned civic hall reads as the Temple of Hercules
+    {
+      tex: "lm_citadel",
+      tx: 50,
+      ty: 24,
+      role: "landmark",
+      name: "Amman Citadel",
+      desc: "Jabal al-Qal'a: the Temple of Hercules' columns, the Umayyad palace, and all of Amman below.",
+    },
+    {
+      tex: "o_bench",
+      tx: 38,
+      ty: 25,
+      role: "landmark",
+      name: "Citadel viewpoint",
+      tag: "amman_view",
+      desc: "Seven hills of white stone in one look. The Roman Theatre sits right below.",
+    },
+    { tex: "o_bench", tx: 62, ty: 25, role: "deco" },
+    { tex: "o_sign", tx: 60, ty: 16, role: "plain", name: "Hand of Hercules", desc: "Three stone fingers the size of a person. The rest of the statue is still missing." },
+    ...mixRow(["o_rock"], 36, 14, 4, 3),
+    ...mixRow(["o_rock"], 56, 20, 3, 4),
+    // pine and olive slopes either side of the hill
+    ...mixRow(["o_pine", "o_tree", "o_pine", "o_tree"], 14, 16, 4, 4),
+    ...mixRow(["o_tree", "o_bush", "o_pine", "o_tree"], 16, 24, 4, 4),
+    ...mixRow(["o_pine", "o_tree", "o_pine", "o_tree", "o_pine"], 72, 16, 5, 4),
+    ...mixRow(["o_tree", "o_bush", "o_tree", "o_pine"], 74, 24, 4, 4),
+    ...mixRow(["o_pine", "o_tree", "o_pine"], 14, 31, 3, 6),
+    ...mixRow(["o_tree", "o_pine"], 36, 31, 2, 6),
+    ...mixRow(["o_tree", "o_pine", "o_tree"], 58, 31, 3, 6),
+    ...mixRow(["o_pine", "o_tree"], 82, 31, 2, 6),
+    // Rainbow Street: limestone both sides, a café and a bookshop on the street
+    ...rows([
+      [39, [["b_townhouse_cream", 15], ["b_sandstone", 20], ["b_villa_sand", 24], ["b_cream_comm", 38], ["b_townhouse_cream", 43], ["b_townhouse_cream", 63], ["b_cream_comm", 68], ["b_cream_comm", 72], ["b_cream_comm", 81], ["b_cream_comm", 86], ["b_tenement", 91]]],
+      [53, [["b_sandstone", 15], ["b_sandstone", 20], ["b_sandstone", 24], ["b_villa_sand", 33], ["b_villa_sand", 38], ["b_tenement", 43], ["b_villa_sand", 58], ["b_sandstone", 63], ["b_villa_sand", 68], ["b_tenement", 72], ["b_tenement", 81], ["b_cream_comm", 86], ["b_cream_comm", 91]]],
+    ]),
+    { tex: "b_cafe", tx: 33, ty: 39, role: "cafe", name: "Rainbow Street café", tag: "amman_cafe", desc: "Mint lemonade on the terrace, the whole jabal spilling downhill." },
+    { tex: "b_shop", tx: 58, ty: 39, role: "shop", name: "Rainbow Street crafts", tag: "amman_shop", desc: "Embroidered cushions, olive-oil soap, a stack of old postcards." },
+    { tex: "o_sign", tx: 55, ty: 49, role: "plain", name: "Rainbow Street", desc: "Jabal Amman's café street. Downhill to the Balad, uphill to the Citadel." },
+    ...dotsAlong([pt(14, 41), pt(94, 41)], "o_lamp", 8, { solid: false }),
+    ...dotsAlong([pt(12, 47), pt(94, 47)], "o_lamp", 8, { solid: false }),
+    { tex: "o_bench", tx: 24, ty: 48, role: "deco" },
+    { tex: "o_bench", tx: 62, ty: 48, role: "deco" },
+    { tex: "o_bench", tx: 80, ty: 48, role: "deco" },
+    // the Balad: souk, knafeh, a coffee cart and crates of produce
+    { tex: "b_shop", tx: 20, ty: 62, role: "shop", name: "Souk al-Balad", tag: "amman_souk", desc: "Spices, olive wood, za'atar by the kilo and a man who insists you try everything." },
+    { tex: "b_cafe", tx: 34, ty: 62, role: "cafe", name: "Knafeh corner", tag: "amman_knafeh", desc: "Hot knafeh, orange and stretchy, eaten standing up in the lane." },
+    { tex: "o_foodtruck", tx: 27, ty: 69, role: "cafe", name: "Cardamom coffee cart", tag: "amman_coffee_cart", desc: "A tiny cup of qahwa, poured from a brass dallah." },
+    ...mixRow(["o_bin"], 14, 68, 4, 2, { solid: false }),
+    ...mixRow(["o_bin", "o_bin", "o_planter"], 32, 69, 3, 3),
+    { tex: "o_lamp", tx: 13, ty: 58, role: "deco", solid: false },
+    { tex: "o_lamp", tx: 40, ty: 58, role: "deco", solid: false },
+    { tex: "o_bush", tx: 13, ty: 70, role: "deco" },
+    { tex: "o_bush", tx: 40, ty: 70, role: "deco" },
+    // the Roman Theatre: two rings of stone seats opening south onto the stage
+    ...dotsAlong(arcPts(76, 70, 6, Math.PI, Math.PI * 2, 12), "o_bench", 2.2),
+    ...dotsAlong(arcPts(76, 70, 9, Math.PI, Math.PI * 2, 16), "o_bench", 2.4),
+    {
+      tex: "o_sign",
+      tx: 76,
+      ty: 69,
+      role: "landmark",
+      name: "Roman Theatre",
+      tag: "amman_theatre",
+      desc: "Cut into the hillside in the 2nd century. Six thousand seats, still used for concerts.",
+    },
+    { tex: "o_bush", tx: 64, ty: 58, role: "deco" },
+    { tex: "o_bush", tx: 88, ty: 58, role: "deco" },
+    { tex: "o_tree", tx: 64, ty: 70, role: "deco" },
+    { tex: "o_tree", tx: 88, ty: 70, role: "deco" },
+    ...mixCol(["o_palm"], 45, 56, 3, 8),
+    ...mixCol(["o_tree", "o_palm"], 56, 58, 2, 12),
     jeep(52, 48),
   ],
-  spawn: { tx: 50, ty: 74 },
-  entry: { north: { tx: 50, ty: 14 } },
+  spawn: { tx: 50, ty: 76 },
+  entry: { north: { tx: 50, ty: 30 } },
 };
 
+// Positano: pastel houses stacked up the cliff in terraces, stairways down to
+// Spiaggia Grande, the majolica-domed church just above the beach.
 const POSITANO: CityDef = {
-  w: 112, h: 92, base: "t_sand", baseAlt: "t_grass2", road: "t_cobble", border: "rock", dense: true,
+  w: 112,
+  h: 92,
+  base: "t_sand",
+  baseAlt: "t_grass2",
+  road: "t_cobble",
+  border: "rock",
+  dense: true,
   water: [{ x: 0, y: 72, w: 112, h: 20 }],
-  districts: [{ name: "Positano", x: 8, y: 8, w: 96, h: 62, ground: "t_paving_light", alt: "t_cobble" }],
-  surfaces: [plaza(40, 20, 30, 18, "t_paving_light")],
+  districts: [{ name: "Positano", x: 6, y: 6, w: 100, h: 58, ground: "t_plaza_stone", alt: "t_cobble" }],
+  surfaces: [
+    bed(84, 6, 22, 14, "t_grass2"), // lemon terraces
+    bed(6, 6, 6, 10, "t_grass2"),
+    plaza(58, 50, 20, 11, "t_plaza_stone"), // church piazza
+    plaza(6, 64, 100, 8, "t_sand"), // Spiaggia Grande
+  ],
   paths: [
-    ...boulevard([pt(8, 48), pt(104, 48)], 3, 2, "t_cobble", "t_paving_light"),
-    walkPath([pt(54, 12), pt(54, 68)], 2, "t_paving_light"),
-    promenade([pt(10, 67), pt(102, 67)], 3, "t_paving_light"),
-    alley([pt(30, 20), pt(30, 62)], 2, "t_cobble"),
-    alley([pt(78, 18), pt(78, 62)], 2, "t_cobble"),
+    ...boulevard([pt(4, 48), pt(108, 48)], 3, 2, "t_cobble", "t_paving_light"),
+    // terrace lanes between the stacked rows
+    alley([pt(6, 19), pt(106, 19)], 2, "t_cobble"),
+    alley([pt(6, 28), pt(106, 28)], 2, "t_cobble"),
+    alley([pt(6, 37), pt(106, 37)], 2, "t_cobble"),
+    // the stairways down the cliff
+    walkPath([pt(54, 8), pt(54, 66)], 2, "t_paving_light"),
+    alley([pt(26, 8), pt(26, 62)], 2, "t_cobble"),
+    alley([pt(84, 20), pt(84, 62)], 2, "t_cobble"),
+    promenade([pt(6, 62), pt(106, 62)], 3, "t_paving_light"),
+    // a jetty out over the water
+    walkPath([pt(62, 64), pt(62, 80)], 2, "t_brick_path"),
   ],
   pois: [
-    { tex: "b_townhouse_cream", tx: 30, ty: 22, role: "home", name: "Positano Lemon House", desc: "A bright home above the water.", tag: "positano_home" },
-    { tex: "b_cafe", tx: 76, ty: 46, role: "cafe", name: "Lemon Terrace Café", tag: "positano_cafe" },
-    { tex: "b_townhouse_red", tx: 80, ty: 22, role: "shop", name: "Coastal Market", tag: "positano_market" },
+    { tex: "b_villa_terra", tx: 30, ty: 25, role: "home", name: "Positano Lemon House", desc: "A bright home above the water.", tag: "positano_home" },
+    { tex: "b_cafe", tx: 76, ty: 42, role: "cafe", name: "Lemon Terrace Café", tag: "positano_cafe" },
+    { tex: "b_shop", tx: 80, ty: 25, role: "shop", name: "Coastal Market", tag: "positano_market" },
     { tex: "o_bench", tx: 54, ty: 65, role: "landmark", name: "Amalfi Viewpoint", desc: "Boats below. Bougainvillea above. Take the photo.", tag: "positano_view" },
-    ...mixRow(["b_townhouse_cream", "b_townhouse_red", "b_townhouse_cream"], 18, 56, 3, 30),
-    ...palms(12, 62, 6, 16), jeep(58, 52),
+    {
+      tex: "lm_clocktower",
+      tx: 67,
+      ty: 58,
+      role: "landmark",
+      name: "Santa Maria Assunta",
+      tag: "positano_church",
+      desc: "The majolica dome over the beach: green, yellow and blue tiles catching the sun.",
+    },
+    { tex: "b_cafe", tx: 80, ty: 58, role: "cafe", name: "Trattoria sul Mare", tag: "positano_trattoria", desc: "Spaghetti alle vongole, a jug of white, the sea right there." },
+    { tex: "b_cafe", tx: 46, ty: 58, role: "cafe", name: "Gelateria", tag: "positano_gelato", desc: "Lemon sorbetto served in a hollowed-out lemon." },
+    { tex: "o_sign", tx: 56, ty: 64, role: "plain", name: "Beach steps", desc: "Down the last flight to Spiaggia Grande. Sandals off." },
+    // cliff terraces, stacked uphill and offset row to row
+    ...rows([
+      [16, [["b_villa_terra2", 10], ["b_cream_comm", 15], ["b_villa_terra2", 20], ["b_villa_terra2", 31], ["b_villa_terra2", 36], ["b_front_cream", 41], ["b_villa_terra2", 46], ["b_stucco", 59], ["b_villa_terra2", 64], ["b_villa_terra3", 69], ["b_villa_terra2", 74], ["b_stucco", 79]]],
+      [25, [["b_villa_terra2", 11], ["b_stucco", 16], ["b_villa_terra2", 21], ["b_cream_comm", 35], ["b_villa_terra3", 40], ["b_villa_terra2", 46], ["b_villa_terra3", 59], ["b_villa_terra", 64], ["b_villa_terra2", 69], ["b_villa_sand", 74], ["b_villa_terra3", 89], ["b_villa_terra2", 94], ["b_tenement", 99]]],
+      [34, [["b_villa_terra", 9], ["b_stucco", 14], ["b_villa_terra2", 19], ["b_stucco", 31], ["b_front_cream", 36], ["b_stucco", 41], ["b_villa_terra3", 47], ["b_villa_terra2", 60], ["b_villa_sand", 65], ["b_villa_sand", 70], ["b_front_cream", 75], ["b_front_cream", 79], ["b_villa_terra2", 88], ["b_stucco", 93], ["b_front_cream", 98], ["b_villa_terra2", 103]]],
+      [42, [["b_cream_comm", 11], ["b_villa_terra3", 16], ["b_stucco", 21], ["b_villa_sand", 30], ["b_villa_terra2", 35], ["b_villa_terra3", 40], ["b_villa_terra2", 46], ["b_villa_sand", 60], ["b_villa_terra2", 65], ["b_villa_terra2", 70], ["b_villa_sand", 89], ["b_front_cream", 94], ["b_stucco", 99]]],
+      [58, [["b_villa_sand", 10], ["b_villa_terra", 15], ["b_stucco", 20], ["b_villa_terra", 30], ["b_stucco", 35], ["b_villa_sand", 40], ["b_cream_comm", 89], ["b_stucco", 94], ["b_villa_terra2", 99], ["b_villa_terra2", 104]]],
+    ]),
+    // lemon groves and cypress on the upper terraces
+    ...mixRow(["o_tree"], 87, 9, 5, 4),
+    ...mixRow(["o_tree"], 89, 14, 4, 4),
+    { tex: "o_sign", tx: 86, ty: 17, role: "plain", name: "Lemon terraces", desc: "Sfusato lemons the size of your fist. Limoncello starts here." },
+    ...mixCol(["o_pine"], 8, 8, 2, 4),
+    { tex: "o_pine", tx: 52, ty: 10, role: "deco" },
+    { tex: "o_pine", tx: 56, ty: 10, role: "deco" },
+    // flowerpots along the stairways and the terrace lanes
+    ...dotsAlong([pt(52, 12), pt(52, 44)], "o_planter", 8),
+    ...dotsAlong([pt(24, 12), pt(24, 44)], "o_planter", 8),
+    ...dotsAlong([pt(8, 21), pt(104, 21)], "o_flower_pink", 7, { solid: false }),
+    ...dotsAlong([pt(8, 30), pt(104, 30)], "o_flower_yellow", 9, { solid: false }),
+    // the seafront: lamps on the promenade, loungers on the sand, a few palms
+    ...dotsAlong([pt(8, 61), pt(104, 61)], "o_lamp", 8, { solid: false }),
+    ...dotsAlong([pt(10, 45), pt(104, 45)], "o_lamp", 12, { solid: false }),
+    ...mixRow(["o_bench"], 12, 68, 8, 4),
+    ...mixRow(["o_bench"], 68, 68, 8, 4),
+    ...mixRow(["o_palm"], 10, 65, 3, 34),
+    jeep(58, 52),
   ],
   spawn: { tx: 54, ty: 60 },
 };
 
+// Oia: whitewashed houses packed along the caldera rim, the blue-dome church on
+// the square, the castle ruins at the tip, and the steps down to Ammoudi Bay.
 const SANTORINI_CITY: CityDef = {
-  w: 112, h: 92, base: "t_sand", baseAlt: "t_paving_light", road: "t_pavement", border: "rock", dense: true,
-  water: [{ x: 0, y: 0, w: 18, h: 92 }],
-  districts: [{ name: "Oia", x: 20, y: 8, w: 84, h: 74, ground: "t_paving_light", alt: "t_cobble" }],
-  surfaces: [plaza(48, 18, 30, 20, "t_paving_light")],
+  w: 112,
+  h: 92,
+  base: "t_sand",
+  baseAlt: "t_paving_light",
+  road: "t_pavement",
+  border: "rock",
+  dense: true,
+  water: [
+    { x: 0, y: 0, w: 18, h: 92 },
+    { x: 0, y: 86, w: 60, h: 6 }, // Ammoudi Bay
+  ],
+  districts: [{ name: "Oia", x: 20, y: 6, w: 86, h: 78, ground: "t_plaza_stone", alt: "t_cobble" }],
+  surfaces: [
+    plaza(44, 16, 26, 18, "t_plaza_stone"), // church square
+    plaza(20, 76, 20, 10, "t_plaza_stone"), // castle ruins, the sunset spot
+    bed(88, 54, 18, 26, "t_grass2"), // vineyard
+  ],
   paths: [
-    ...boulevard([pt(24, 50), pt(104, 50)], 3, 2, "t_pavement", "t_paving_light"),
-    walkPath([pt(62, 10), pt(62, 82)], 2, "t_paving_light"),
-    promenade([pt(22, 14), pt(22, 80)], 3, "t_paving_light"),
-    alley([pt(40, 22), pt(40, 70)], 2, "t_cobble"),
+    promenade([pt(22, 6), pt(22, 84)], 3, "t_paving_light"), // the caldera walk
+    ...boulevard([pt(24, 50), pt(106, 50)], 3, 2, "t_pavement", "t_paving_light"),
+    walkPath([pt(62, 6), pt(62, 84)], 2, "t_paving_light"), // the marble main lane
+    alley([pt(39, 8), pt(39, 84)], 2, "t_cobble"),
+    // the donkey steps zig-zagging down to the bay
+    walkPath([pt(36, 84), pt(46, 86), pt(36, 88), pt(46, 90)], 2, "t_cobble"),
   ],
   pois: [
     { tex: "b_town_blue", tx: 42, ty: 22, role: "home", name: "Santorini Blue-Door Villa", desc: "White rooms and blue sea light.", tag: "santorini_villa" },
-    { tex: "b_cafe", tx: 82, ty: 48, role: "cafe", name: "Oia Coffee Steps", tag: "santorini_cafe" },
-    { tex: "b_shop", tx: 82, ty: 24, role: "shop", name: "Cyclades Market", tag: "santorini_market" },
+    { tex: "b_cafe", tx: 30, ty: 45, role: "cafe", name: "Oia Coffee Steps", tag: "santorini_cafe", desc: "Freddo espresso on a terrace hanging over the caldera." },
+    { tex: "b_shop", tx: 83, ty: 24, role: "shop", name: "Cyclades Market", tag: "santorini_market" },
     { tex: "o_bench", tx: 24, ty: 40, role: "landmark", name: "Caldera Sunset", desc: "A blue-and-gold edge of the world.", tag: "santorini_view" },
-    ...mixRow(["b_town_blue", "b_town_blue2", "b_town_blue"], 34, 64, 3, 26), jeep(66, 55),
+    {
+      tex: "lm_clocktower",
+      tx: 56,
+      ty: 28,
+      role: "landmark",
+      name: "Blue-dome church",
+      tag: "santorini_church",
+      desc: "Anastasi church: white walls, a blue dome, and three bells over the caldera.",
+    },
+    {
+      tex: "o_bench",
+      tx: 28,
+      ty: 82,
+      role: "landmark",
+      name: "Oia Castle sunset",
+      tag: "santorini_sunset",
+      desc: "The castle ruins at the tip of Oia. Everyone claps when the sun goes down.",
+    },
+    { tex: "b_cafe", tx: 33, ty: 74, role: "cafe", name: "Sunset taverna", tag: "santorini_taverna", desc: "Grilled octopus, cold Assyrtiko, front-row seats for the sunset." },
+    {
+      tex: "b_shop",
+      tx: 97,
+      ty: 58,
+      role: "shop",
+      name: "Oia winery",
+      tag: "santorini_winery",
+      desc: "Assyrtiko from basket-woven vines on volcanic soil. Tastings by the barrel.",
+    },
+    { tex: "o_sign", tx: 42, ty: 83, role: "plain", name: "Ammoudi Bay steps", desc: "Three hundred steps down to the fish tavernas. The donkeys know the way." },
+    // whitewashed cubes, packed tight down the rim
+    ...rows([
+      [12, [["b_house_blue", 27], ["b_villa_modern", 31], ["b_house_red", 35], ["b_town_blue2", 45], ["b_house_green", 49], ["b_house_blue", 53], ["b_house_green", 57], ["b_villa_modern", 67], ["b_villa_terra", 75], ["b_house_green", 79], ["b_villa_terra", 83], ["b_villa_terra", 87], ["b_villa_modern", 91], ["b_villa_modern", 95], ["b_house_green", 99]]],
+      [17, [["b_villa_terra", 27], ["b_villa_terra", 31], ["b_house_purple", 35], ["b_villa_terra", 75], ["b_villa_terra", 79], ["b_house_purple", 83], ["b_villa_modern", 87], ["b_house_blue", 91], ["b_villa_modern", 95], ["b_villa_modern", 99]]],
+      [22, [["b_house_green", 27], ["b_villa_modern", 31], ["b_villa_modern", 35], ["b_house_green", 75], ["b_villa_modern", 88], ["b_villa_terra", 92], ["b_house_red", 96], ["b_villa_terra", 100]]],
+      [27, [["b_villa_terra", 27], ["b_house_green", 31], ["b_house_blue", 35]]],
+      [32, [["b_house_red", 27], ["b_villa_terra", 31], ["b_villa_modern", 35], ["b_villa_terra", 75], ["b_villa_terra", 79], ["b_villa_modern", 83], ["b_house_red", 87], ["b_villa_modern", 91], ["b_villa_modern", 95], ["b_house_purple", 99]]],
+      [37, [["b_villa_terra", 27], ["b_house_red", 31], ["b_house_green", 35], ["b_house_purple", 75], ["b_house_red", 79], ["b_house_green", 83], ["b_villa_modern", 87], ["b_villa_terra", 91], ["b_villa_modern", 95], ["b_house_purple", 99]]],
+      [41, [["b_house_red", 43], ["b_villa_modern", 47], ["b_villa_terra", 51], ["b_house_red", 55], ["b_house_purple", 59], ["b_house_blue", 67], ["b_villa_terra", 71], ["b_house_blue", 75], ["b_house_green", 79], ["b_house_blue", 83]]],
+      [45, [["b_villa_terra", 35], ["b_villa_modern", 43], ["b_villa_modern", 47], ["b_villa_modern", 51], ["b_villa_terra", 55], ["b_villa_terra", 59], ["b_villa_terra", 67], ["b_villa_modern", 71], ["b_house_green", 75], ["b_villa_modern", 79]]],
+      [58, [["b_villa_modern", 27], ["b_house_purple", 31], ["b_villa_terra", 35], ["b_villa_modern", 43], ["b_house_purple", 47], ["b_villa_terra", 51], ["b_house_blue", 55], ["b_villa_terra", 59], ["b_house_red", 67], ["b_villa_modern", 71], ["b_villa_terra", 75], ["b_villa_modern", 79], ["b_house_green", 83]]],
+      [63, [["b_villa_terra", 27], ["b_house_green", 31], ["b_house_blue", 35], ["b_town_blue2", 43], ["b_villa_terra", 47], ["b_house_blue", 51], ["b_villa_modern", 55], ["b_house_purple", 59], ["b_house_red", 67], ["b_house_green", 71], ["b_house_purple", 75], ["b_house_purple", 79], ["b_house_green", 83]]],
+      [68, [["b_villa_modern", 27], ["b_villa_modern", 31], ["b_house_blue", 35], ["b_villa_modern", 43], ["b_villa_terra", 47], ["b_villa_terra", 51], ["b_house_red", 55], ["b_house_blue", 59], ["b_villa_terra", 67], ["b_house_blue", 71], ["b_house_red", 75], ["b_villa_modern", 79], ["b_villa_modern", 83]]],
+      [73, [["b_house_blue", 27], ["b_house_blue", 43], ["b_house_blue", 47], ["b_villa_modern", 51], ["b_house_green", 55], ["b_villa_terra", 59], ["b_house_blue", 67], ["b_villa_terra", 71], ["b_villa_modern", 75], ["b_villa_modern", 79], ["b_house_purple", 83]]],
+    ]),
+    // the caldera rim: a broken line of rock, benches looking west
+    ...dotsAlong([pt(19, 4), pt(19, 84)], "o_rock", 3),
+    { tex: "o_bench", tx: 24, ty: 18, role: "deco" },
+    { tex: "o_bench", tx: 24, ty: 28, role: "deco" },
+    { tex: "o_bench", tx: 24, ty: 54, role: "deco" },
+    { tex: "o_bench", tx: 24, ty: 64, role: "deco" },
+    ...dotsAlong([pt(24, 10), pt(24, 84)], "o_lamp", 12, { solid: false }),
+    // castle ruins
+    ...mixRow(["o_rock"], 25, 78, 4, 4),
+    { tex: "o_rock", tx: 36, ty: 84, role: "deco" },
+    // flowerpots on the lanes and the square
+    ...dotsAlong([pt(37, 9), pt(37, 44)], "o_planter", 5),
+    ...dotsAlong([pt(64, 8), pt(64, 44)], "o_planter", 6),
+    ...dotsAlong([pt(64, 56), pt(64, 84)], "o_planter", 7),
+    { tex: "o_planter", tx: 48, ty: 30, role: "deco" },
+    { tex: "o_planter", tx: 64, ty: 30, role: "deco" },
+    { tex: "o_bench", tx: 50, ty: 32, role: "deco" },
+    { tex: "o_bench", tx: 66, ty: 20, role: "deco" },
+    // vines in rows, a few olives at the edge
+    ...mixRow(["o_bush"], 90, 62, 8, 2),
+    ...mixRow(["o_bush"], 90, 66, 8, 2),
+    ...mixRow(["o_bush"], 90, 70, 8, 2),
+    ...mixRow(["o_bush"], 90, 74, 8, 2),
+    ...mixRow(["o_bush"], 90, 78, 8, 2),
+    { tex: "o_tree", tx: 89, ty: 56, role: "deco" },
+    { tex: "o_tree", tx: 104, ty: 56, role: "deco" },
+    jeep(66, 55),
   ],
   spawn: { tx: 62, ty: 76 },
 };
@@ -1588,7 +1944,7 @@ export const LOCATIONS: Record<string, LocationDef> = {
   italy_positano: loc({
     id: "italy_positano", cityId: "italy", name: "Positano", subtitle: "Southern Italy · cliff streets and lemon light",
     ground: "t_sand", groundAlt: "t_paving_light", path: "t_cobble", border: "rock", hasWater: true, hasHome: true,
-    homeName: "Positano Lemon House", homeTex: "b_townhouse_cream", city: POSITANO, geo: { lat: 40.63, lng: 14.49 },
+    homeName: "Positano Lemon House", homeTex: "b_villa_terra", city: POSITANO, geo: { lat: 40.63, lng: 14.49 },
   }),
   greece_santorini: loc({
     id: "greece_santorini", cityId: "greece", name: "Oia, Santorini", subtitle: "Greece · white lanes above the caldera",
