@@ -44,6 +44,16 @@ export const PORTED_LOCATIONS = new Set([
   "abudhabi_corniche",
   "abudhabi_last_exit",
   "abudhabi_hudayriyat",
+  // Dubai (Phase 4A): Mama lives at DAMAC, Moomoo roams Hills / Downtown / Oasis
+  "dubai_downtown",
+  "dubai_szr",
+  "dubai_damac",
+  "dubai_oasis",
+  "dubai_hills",
+  // England (Phase 4A)
+  "london_westminster",
+  "london_westend",
+  "leicester",
 ]);
 
 export const TIME_TICK_MS = 90_000;
@@ -374,7 +384,8 @@ export class WorldController {
           title: d.name ?? "Stairs",
           hint: brown ? "20 steps. 13 seconds. There is no skip button in this building." : "Climb quickly to the lobby.",
           taps: brown ? 20 : 10,
-          onDone: () => {
+          onDone: (ok?: boolean) => {
+            if (!ok) return;
             // q_edinburgh's Well Court step is a playMinigame("well_court_race")
             // step, not an interact step (matches WorldScene).
             if (brown) quests.onMinigame("well_court_race");
@@ -447,8 +458,9 @@ export class WorldController {
         title: "ADNOC HQ · SAMPLE CHECK",
         hint: "Balance the tiny blue samples. Calm hands, clear notes, chemical-engineer energy.",
         taps: 12,
-        skipLabel: "Submit notes",
-        onDone: () => {
+        skipLabel: "Not yet",
+        onDone: (ok?: boolean) => {
+          if (!ok) return;
           quests.onInteract("adnoc_lab");
           store.advanceTime();
           uiEvents.emit("dialogue", "Alya", ["Clean results. Take these to the recruiter."]);
@@ -463,8 +475,9 @@ export class WorldController {
         title: "BLUE BOARDROOM PITCH",
         hint: "Tap through the slides: safer systems, smarter labs, and a very compelling snack budget.",
         taps: 14,
-        skipLabel: "Present",
-        onDone: () => {
+        skipLabel: "Not yet",
+        onDone: (ok?: boolean) => {
+          if (!ok) return;
           quests.onInteract("adnoc_boardroom");
           uiEvents.emit("dialogue", "Boardroom", ["The board has never seen a slide about snacks this persuasive."]);
         },
