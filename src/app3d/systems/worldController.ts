@@ -9,7 +9,7 @@ import { secretsFor } from "../../game/data/secrets";
 import { store } from "../../game/systems/store";
 import { controls, uiEvents } from "../../game/systems/controls";
 import * as quests from "../../game/systems/quests";
-import { npcInLocation, npcWorldPos, linesFor, homeComment } from "../../game/systems/life";
+import { getNpcsAtLocation, npcWorldPos, linesFor, homeComment } from "../../game/systems/life";
 import { tryDeliverMessages } from "../../game/systems/phone";
 import { pickEncounter, applyEncounter } from "../../game/systems/encounters";
 import { outfitReaction } from "../../game/systems/outfitReactions";
@@ -21,6 +21,10 @@ export type PickupKind = "flower_pink" | "flower_yellow" | "heart" | "coins" | "
 
 export interface WorldViewHooks {
   spawnNpc(def: NpcDef, x: number, z: number): void;
+  /** Remove a spawned NPC (their schedule moved them elsewhere). */
+  despawnNpc(npcId: string): void;
+  /** The set of spawned NPCs changed after setup (minimap / world map refresh). */
+  npcsChanged(): void;
   npcFacePlayer(npcId: string): void;
   spawnPickup(id: string, kind: PickupKind, x: number, z: number): void;
   removePickup(id: string): void;
@@ -80,6 +84,8 @@ export class WorldController {
   /** Inside a house interior: exterior rules, prompts and time ticks pause. */
   private indoors = false;
   private timeAcc = 0;
+  /** NPCs currently spawned here (per their schedule). */
+  private spawnedNpcs = new Set<string>();
   private arriveAt = 0;
   private now = 0;
   // assigned in the constructor: a field initializer would run before the
@@ -135,6 +141,8 @@ export class WorldController {
     // "openMap" is handled by the UI layer (map panel); the world only emits it.
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("uiClosed", this.onUiClosed, this);
+    // schedules move people between districts as the clock advances
+    store.on("time", this.refreshNpcs, this);
 
     quests.onVisit(def.id);
     quests.onVisit(def.cityId);
@@ -168,6 +176,7 @@ export class WorldController {
   dispose() {
     uiEvents.off("action", this.tryInteract, this);
     uiEvents.off("uiClosed", this.onUiClosed, this);
+    store.off("time", this.refreshNpcs, this);
     this.interaction.clear();
   }
 
@@ -201,53 +210,72 @@ export class WorldController {
     }
   }
 
+  /** Spawn everyone whose schedule puts them in this district right now. */
   private buildNpcs() {
-    const here = npcInLocation(this.locationId);
-    const placed = new Set<string>();
-    const place = (def: NpcDef, px: number, py: number) => {
-      if (placed.has(def.id)) return;
-      placed.add(def.id);
-      const p = pxToXZ(px, py);
-      this.hooks.spawnNpc(def, p.x, p.z);
-      this.interaction.add({
-        id: `npc:${def.id}`,
-        x: p.x,
-        z: p.z,
-        radius: pxToUnits(26),
-        prompt: `Talk to ${def.name}`,
-        kind: "npc",
-        trigger: () => {
-          this.hooks.npcFacePlayer(def.id);
-          store.state.lastPassenger = def.id;
-          store.save();
-          // story hand-offs (WorldScene: companion Moomoo → Romance/Wedding, Nour/Chloe → QuestActivity)
-          if (def.id === "moomoo" && this.startRomanceIfReady()) return;
-          if (def.id === "nour" && ["nour", "nour_snacks"].includes(quests.currentStep("q_nour")?.target ?? "")) {
-            if (this.startStory({ scene: "questActivity", activity: "nour_visit" })) return;
-          }
-          if (def.id === "chloe" && ["chloe", "chloe_thesis"].includes(quests.currentStep("q_chloe")?.target ?? "")) {
-            if (this.startStory({ scene: "questActivity", activity: "chloe_thesis" })) return;
-          }
-          const lines = linesFor(def.id, def.dialogue);
-          const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
-          // once-a-day outfit acknowledgement (WorldScene's styleNote)
-          const styleNote = outfitReaction(def.id);
-          const res = quests.onTalk(def.id, [...lines, ...(styleNote ? [styleNote] : []), ...(extra ? [extra] : [])]);
-          uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
-          if (res.acceptedQuest?.id === "q_family_jewel_heist") this.startPirateIdea();
-        },
-      });
-    };
-    for (const spot of this.world.npcSpots) {
-      const def = here.find((n) => n.id === spot.id) ?? NPCS.find((n) => n.id === spot.id);
-      if (!def || !here.some((n) => n.id === def.id)) continue;
-      place(def, spot.x, spot.y);
+    for (const id of getNpcsAtLocation(this.locationId)) this.spawnScheduledNpc(id);
+  }
+
+  /** Time advanced: despawn NPCs who left, spawn the ones who just arrived. */
+  private refreshNpcs() {
+    if (this.transitioning) return;
+    const want = new Set(getNpcsAtLocation(this.locationId));
+    let changed = false;
+    for (const id of [...this.spawnedNpcs]) {
+      if (want.has(id)) continue;
+      this.spawnedNpcs.delete(id);
+      this.interaction.remove(`npc:${id}`);
+      this.hooks.despawnNpc(id);
+      changed = true;
     }
-    for (const def of here) {
-      if (placed.has(def.id)) continue;
-      const p = npcWorldPos(def);
-      place(def, p.x, p.y);
+    for (const id of want) {
+      if (this.spawnedNpcs.has(id)) continue;
+      this.spawnScheduledNpc(id);
+      changed = true;
     }
+    if (changed) this.hooks.npcsChanged();
+  }
+
+  /** Map-authored spot for this NPC if the district has one, else their schedule's tile. */
+  private spawnScheduledNpc(npcId: string) {
+    const def = NPCS.find((n) => n.id === npcId);
+    if (!def || this.spawnedNpcs.has(def.id)) return;
+    const spot = this.world.npcSpots.find((sp) => sp.id === def.id);
+    const pos = spot ? { x: spot.x, y: spot.y } : npcWorldPos(def);
+    this.placeNpc(def, pos.x, pos.y);
+  }
+
+  private placeNpc(def: NpcDef, px: number, py: number) {
+    this.spawnedNpcs.add(def.id);
+    const p = pxToXZ(px, py);
+    this.hooks.spawnNpc(def, p.x, p.z);
+    this.interaction.add({
+      id: `npc:${def.id}`,
+      x: p.x,
+      z: p.z,
+      radius: pxToUnits(26),
+      prompt: `Talk to ${def.name}`,
+      kind: "npc",
+      trigger: () => {
+        this.hooks.npcFacePlayer(def.id);
+        store.state.lastPassenger = def.id;
+        store.save();
+        // story hand-offs (WorldScene: companion Moomoo → Romance/Wedding, Nour/Chloe → QuestActivity)
+        if (def.id === "moomoo" && this.startRomanceIfReady()) return;
+        if (def.id === "nour" && ["nour", "nour_snacks"].includes(quests.currentStep("q_nour")?.target ?? "")) {
+          if (this.startStory({ scene: "questActivity", activity: "nour_visit" })) return;
+        }
+        if (def.id === "chloe" && ["chloe", "chloe_thesis"].includes(quests.currentStep("q_chloe")?.target ?? "")) {
+          if (this.startStory({ scene: "questActivity", activity: "chloe_thesis" })) return;
+        }
+        const lines = linesFor(def.id, def.dialogue);
+        const extra = store.getRelationship(def.id) >= 20 ? homeComment() : null;
+        // once-a-day outfit acknowledgement (WorldScene's styleNote)
+        const styleNote = outfitReaction(def.id);
+        const res = quests.onTalk(def.id, [...lines, ...(styleNote ? [styleNote] : []), ...(extra ? [extra] : [])]);
+        uiEvents.emit("dialogue", def.name, res.lines, { npcId: def.id });
+        if (res.acceptedQuest?.id === "q_family_jewel_heist") this.startPirateIdea();
+      },
+    });
   }
 
   /** WorldScene: "FADWA'S HOUSE · EXTREMELY NORMAL ENTRANCE" in the West End while the heist is on. */

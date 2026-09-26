@@ -258,6 +258,56 @@
   box-shadow: 0 2px 6px rgba(74, 52, 38, 0.12);
 }
 
+/* who's travelling with Juju (hud.ts) */
+.olw-companion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  background: rgba(251, 243, 228, 0.92);
+  border: 1px solid var(--olw-brown-soft);
+  box-shadow: 0 2px 6px rgba(74, 52, 38, 0.12);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--olw-ink);
+  max-width: min(260px, calc(100vw - 32px));
+}
+
+.olw-companion-heart {
+  width: 15px;
+  height: 15px;
+  color: #e46d94;
+  flex: none;
+}
+
+.olw-companion-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.olw-companion-drop {
+  min-height: 36px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.olw-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.olw-contact-row > .olw-contact {
+  flex: 1;
+  min-width: 0;
+}
+
+.olw-contact-invite {
+  flex: none;
+}
+
 .olw-rest {
   min-height: 36px;
   padding: 6px 16px;

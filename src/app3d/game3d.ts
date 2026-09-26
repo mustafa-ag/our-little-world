@@ -249,6 +249,11 @@ export class Game3D {
       const groundY = (x: number, z: number) => env.heightAt(Math.floor(x), Math.floor(-z));
       const controller = new WorldController(id, built.world, interaction, {
         spawnNpc: (ndef: NpcDef, x, z) => loaded.npcs.set(ndef.id, new NpcView(this.kit, ndef, x, z, groundY(x, z))),
+        despawnNpc: (npcId) => {
+          loaded.npcs.get(npcId)?.dispose();
+          loaded.npcs.delete(npcId);
+        },
+        npcsChanged: () => mapFeed.setNpcs([...loaded.npcs.values()].map((n) => ({ id: n.def.id, name: n.def.name, x: n.x, z: n.z }))),
         npcFacePlayer: (npcId) => loaded.npcs.get(npcId)?.faceTowards(player.state.x, player.state.z),
         spawnPickup: (pid, kind: PickupKind, x, z) => loaded.pickups.set(pid, new PickupView(this.kit, kind, x, groundY(x, z), z)),
         removePickup: (pid) => {

@@ -35,6 +35,7 @@ import { propertyById } from "../../game/data/properties";
 import { ACTIVE_REGION, PALETTE } from "../rendering/materials";
 import type { GridCollider } from "../world/gridCollider";
 import { InteractionSystem } from "../systems/interaction";
+import { createLabel, type Label } from "../entities/Label";
 
 /** Far from every map (maps are < 200 tiles), beyond the camera's maxZ from any exterior view. */
 export const INTERIOR_ORIGIN = { x: 2400, z: 2400 } as const;
@@ -143,6 +144,9 @@ export class InteriorScene {
   private excludedFrom: Light[] = [];
   private lastInteract = 0;
   private disposed = false;
+  /** Tigor curled up on the rug (only built once he's part of the family). */
+  private tigor: TransformNode | null = null;
+  private tigorLabel: Label | null = null;
 
   constructor(
     private scene: Scene,
@@ -302,6 +306,37 @@ export class InteriorScene {
     casters.push(this.sphere("leaf0", 0.62, leaf, -3.45, 0.72, -2.35));
     casters.push(this.sphere("leaf1", 0.42, this.mat("leaf", PALETTE.sage), -3.3, 0.98, -2.28));
 
+    // ---- Tigor (HouseScene.spawnHomeTigor): a little orange cat on the rug, home only ----
+    const tigorAt = { x: -1.0, z: 0.25 };
+    if (!brown && store.state.tigor.unlocked) {
+      const node = new TransformNode("int:tigor", scene);
+      node.parent = this.root;
+      node.position.set(tigorAt.x, 0, tigorAt.z);
+      node.rotation.y = 0.5;
+      this.tigor = node;
+      const fur = this.mat("tigorFur", "#e98a3a");
+      const stripe = this.mat("tigorStripe", "#b8601f");
+      const cream = this.mat("tigorBelly", PALETTE.creamLight);
+      const cat: Mesh[] = [
+        this.box("tigorBody", 0.42, 0.2, 0.26, fur, 0, 0.12, 0),
+        this.box("tigorStripe0", 0.05, 0.205, 0.265, stripe, -0.08, 0.121, 0),
+        this.box("tigorStripe1", 0.05, 0.205, 0.265, stripe, 0.06, 0.121, 0),
+        this.box("tigorHead", 0.2, 0.18, 0.2, fur, 0.26, 0.2, 0),
+        this.box("tigorMuzzle", 0.04, 0.07, 0.1, cream, 0.37, 0.16, 0),
+        this.box("tigorEarL", 0.05, 0.08, 0.05, fur, 0.26, 0.32, -0.06),
+        this.box("tigorEarR", 0.05, 0.08, 0.05, fur, 0.26, 0.32, 0.06),
+        this.box("tigorTail", 0.3, 0.06, 0.06, stripe, -0.3, 0.07, 0.1),
+      ];
+      for (const m of cat) m.parent = node;
+      casters.push(cat[0], cat[3]);
+      const label = createLabel(scene, "Tigor 🐱", { scale: 0.8 });
+      label.mesh.parent = this.root;
+      label.setPosition(tigorAt.x, 0.72, tigorAt.z);
+      this.tigorLabel = label;
+      this.showTigor();
+      store.on("petChanged", this.showTigor, this);
+    }
+
     // ---- lights: warm ceiling + bedside + window (+ a soft warm hemi) ----
     const toWorld = (x: number, y: number, z: number) => new Vector3(O.x + x, y, O.z + z);
     const hemi = new HemisphericLight("int:hemi", new Vector3(0.1, 1, -0.2), scene);
@@ -359,6 +394,7 @@ export class InteriorScene {
       box(-3.7, -3.2, -2.6, -2.1), // plant
       box(1.5, 2.1, -1.3, -0.7), // pouf
       box(W / 2 - 0.32, W / 2, sz - 0.76, sz + 0.76), // shelf (head height, keep her off the wall)
+      ...(this.tigor ? [box(tigorAt.x - 0.28, tigorAt.x + 0.28, tigorAt.z - 0.22, tigorAt.z + 0.22)] : []), // Tigor
     ]);
     this.spawn = { x: ox(0), z: oz(-1.7) };
 
@@ -368,9 +404,32 @@ export class InteriorScene {
     hot("int:wardrobe", wardX, 1.75, 0.9, "Open the wardrobe", "openWardrobe");
     hot("int:photos", 1.25, 2.45, 0.85, "Look at the photo wall", "openPhotoWall");
     hot("int:door", 0, -2.5, 0.75, "Go outside", "leaveHouse");
+    if (!brown) {
+      // the pouf by the rug: ui/house.ts opens the "who's nearby?" picker
+      hot("int:invite", 1.8, -1.0, 1.0, "Invite someone over", "houseInvite");
+      if (this.tigor) {
+        this.interaction.add({
+          id: "int:tigor",
+          x: ox(tigorAt.x),
+          z: oz(tigorAt.z),
+          radius: 0.85,
+          prompt: "Pet Tigor",
+          kind: "zone",
+          enabled: () => store.state.tigor.atHome,
+          trigger: () => uiEvents.emit("petHomeTigor"),
+        });
+      }
+    }
 
     uiEvents.on("action", this.tryInteract, this);
     uiEvents.on("uiClosed", this.onUiClosed, this);
+  }
+
+  /** Tigor is only in the room while he's waiting at home (not out following Juju). */
+  private showTigor() {
+    const home = store.state.tigor.unlocked && store.state.tigor.atHome;
+    this.tigor?.setEnabled(home);
+    this.tigorLabel?.mesh.setEnabled(home);
   }
 
   /** The player's meshes cast the ceiling light's shadow while indoors. */
@@ -455,6 +514,7 @@ export class InteriorScene {
     this.disposed = true;
     uiEvents.off("action", this.tryInteract, this);
     uiEvents.off("uiClosed", this.onUiClosed, this);
+    store.off("petChanged", this.showTigor, this);
     if (this.interaction.currentPrompt) uiEvents.emit("prompt", null);
     this.interaction.clear();
     const mine = new Set<AbstractMesh>(this.meshes);
@@ -464,6 +524,10 @@ export class InteriorScene {
     for (const m of this.meshes) m.dispose();
     for (const m of this.mats.values()) m.dispose();
     for (const t of this.textures) t.dispose();
+    this.tigorLabel?.dispose();
+    this.tigorLabel = null;
+    this.tigor?.dispose();
+    this.tigor = null;
     this.root.dispose();
     this.meshes = [];
   }

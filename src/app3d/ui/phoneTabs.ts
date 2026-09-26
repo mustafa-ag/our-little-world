@@ -5,6 +5,7 @@
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { npcWhere } from "../../game/systems/life";
+import * as companions from "../../game/systems/companions";
 import type { SavedPhoto } from "../../game/systems/save";
 import { NPCS } from "../../game/data/npcs";
 import { QUESTS } from "../../game/data/quests";
@@ -261,6 +262,11 @@ export function statsView(): Node {
 
 // ---------------------------------------------------------------- contacts
 
+/** "Currently at: …" from the NPC's schedule (data/schedules.ts) for the current time of day. */
+function currentlyAt(where: { location: string; present: boolean }) {
+  return where.present ? `Currently at: ${placeName(where.location)}` : `Away · usually at ${placeName(where.location)}`;
+}
+
 function hearts(rel: number) {
   const n = Math.round((rel / REL_MAX) * 5);
   return "♥".repeat(n) + "♡".repeat(5 - n);
@@ -275,13 +281,28 @@ function metContacts() {
   );
 }
 
+/** Invite `npcId` along (or drop them off when they're already with Juju), with a toast. */
+function toggleCompanion(npcId: string) {
+  if (store.state.activeCompanionId === npcId) {
+    companions.release();
+    store.toast(`Dropped ${npcName(npcId)} off. Exploring solo for now.`, "#e46d94");
+    return;
+  }
+  if (companions.invite(npcId)) store.toast(`${npcName(npcId)} is coming along ♡`, "#e46d94");
+  else store.toast(`${npcName(npcId)} can't come along yet`, "#ffe08a");
+}
+
+/** Invitable: unlocked for travel and currently somewhere on the map we know. */
+function canInvite(npcId: string) {
+  const npc = NPCS.find((n) => n.id === npcId);
+  return !!npc && companions.canCompanionTravel(npcId) && !!LOCATIONS[npcWhere(npc).location];
+}
+
 function companionButton(md: Disposer, nav: PhoneNav, npcId: string) {
-  if (!store.state.unlockedCompanions.includes(npcId)) return null;
+  if (!canInvite(npcId)) return null;
   const active = store.state.activeCompanionId === npcId;
   return button(md, active ? "With you ♡" : "Invite along", `olw-btn olw-btn--small ${active ? "olw-btn--rose" : "olw-btn--ghost"}`, () => {
-    store.setActiveCompanion(active ? undefined : npcId);
-    uiEvents.emit("companionChanged");
-    store.toast(active ? "You are exploring solo for now." : `${npcName(npcId)} is coming along.`, "#e46d94");
+    toggleCompanion(npcId);
     nav.render();
   });
 }
@@ -325,7 +346,7 @@ function contactDetail(md: Disposer, nav: PhoneNav, npcId: string): Node {
     }),
     el("h3", { class: "olw-contact-name", text: npc?.name ?? npcId }),
     el("p", { class: "olw-contact-meta", text: `${hearts(rel)}  ${rel}/${REL_MAX} · ${bandFor(rel)}${npcId === "moomoo" ? ` · ${s.relationshipStage}` : ""}` }),
-    npc ? el("p", { class: "olw-contact-meta", text: where.present ? `Around ${placeName(where.location)} right now` : `Usually at ${placeName(where.location)}` }) : null,
+    npc ? el("p", { class: "olw-contact-meta", text: currentlyAt(where) }) : null,
     el("div", { class: "olw-photo-actions" }, [
       button(md, "Message", "olw-btn olw-btn--rose olw-btn--small", () => nav.messageContact(npcId)),
       companionButton(md, nav, npcId),
@@ -374,11 +395,19 @@ export function contactsView(md: Disposer, nav: PhoneNav): Node {
       el("span", { class: "olw-contact-text" }, [
         el("span", { class: "olw-contact-name", text: `${n.name}${s.activeCompanionId === n.id ? " · with you" : ""}` }),
         el("span", { class: "olw-contact-hearts", text: `${hearts(rel)} ${bandFor(rel)}${n.id === "moomoo" ? ` · ${s.relationshipStage}` : ""}` }),
-        el("span", { class: "olw-contact-meta", text: `Last seen: ${placeName(where.location)}` }),
+        el("span", { class: "olw-contact-meta", text: currentlyAt(where) }),
       ]),
       el("span", { class: "olw-contact-chev", text: "›", attrs: { "aria-hidden": "true" } }),
     );
-    ul.append(el("li", {}, [row]));
+    const active = s.activeCompanionId === n.id;
+    const invite = canInvite(n.id)
+      ? button(md, active ? "Drop off" : "Invite", `olw-btn olw-btn--small ${active ? "olw-btn--rose" : "olw-btn--ghost"} olw-contact-invite`, () => {
+          toggleCompanion(n.id);
+          nav.render();
+        })
+      : null;
+    if (invite) invite.setAttribute("aria-label", active ? `Drop ${n.name} off` : `Invite ${n.name} along`);
+    ul.append(el("li", { class: invite ? "olw-contact-row" : undefined }, [row, invite]));
   }
   wrap.append(ul, el("p", { class: "olw-home-hint", text: "Talk, gift, travel. Stronger bonds unlock outings." }));
   return wrap;

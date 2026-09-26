@@ -3,6 +3,8 @@
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { tryDeliverMessages } from "../../game/systems/phone";
+import * as companions from "../../game/systems/companions";
+import { NPCS } from "../../game/data/npcs";
 import { button, el, icon, prefersReducedMotion } from "./dom";
 import type { UIContext } from "./context";
 
@@ -12,6 +14,17 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
   const coins = el("span", { class: "olw-stat-value" });
   const clock = el("div", { class: "olw-clock", attrs: { "aria-live": "polite" } });
   const rest = button(d, "Rest for the night", "olw-btn olw-btn--ghost olw-rest", () => sleep());
+  // companion chip: who's travelling with Juju + "Drop off"
+  const companionName = el("span", { class: "olw-companion-name" });
+  const dropOff = button(d, "Drop off", "olw-btn olw-btn--ghost olw-btn--small olw-companion-drop", () => {
+    const was = companions.release();
+    if (was) store.toast(`Dropped ${NPCS.find((n) => n.id === was)?.name ?? was} off. Exploring solo for now.`, "#e46d94");
+  });
+  const companionChip = el("div", { class: "olw-companion-chip olw-hidden", attrs: { role: "status" } }, [
+    icon("heart", "olw-icon olw-companion-heart"),
+    companionName,
+    dropOff,
+  ]);
   const hud = d.node(
     el("div", { class: "olw-hud olw-play-only" }, [
       el("div", { class: "olw-panel olw-stats" }, [
@@ -19,6 +32,7 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
         el("span", { class: "olw-stat olw-stat--coins", attrs: { title: "Coins" } }, [icon("coin"), coins]),
       ]),
       clock,
+      companionChip,
       rest,
     ]),
   );
@@ -104,6 +118,19 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
     setClock();
     refreshRest();
   }, 1000);
+
+  const refreshCompanion = () => {
+    const id = companions.current();
+    const name = id ? (NPCS.find((n) => n.id === id)?.name ?? id) : "";
+    companionChip.classList.toggle("olw-hidden", !id);
+    companionName.textContent = name;
+    companionChip.setAttribute("aria-label", id ? `${name} is with you` : "");
+    dropOff.setAttribute("aria-label", `Drop ${name} off`);
+  };
+  refreshCompanion();
+  d.on(store, "companion", refreshCompanion);
+  d.on(store, "changed", refreshCompanion);
+  d.on(uiEvents, "companionChanged", refreshCompanion);
 
   // ---- location title ("locationTitle", name, subtitle) ----
   let titleNode: HTMLElement | null = null;

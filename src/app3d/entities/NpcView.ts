@@ -11,6 +11,12 @@ import { lerpAngle, yawFor, yawForFacing } from "../world/coords";
 import { createBlobShadow } from "./PlayerView";
 import { createLabel, type Label } from "./Label";
 
+/** Companion follow distances (world units) and top speed (units/s, a bit above Juju's jog). */
+const FOLLOW_NEAR = 2;
+const FOLLOW_FAR = 3;
+const FOLLOW_LOST = 9;
+const FOLLOW_MAX_SPEED = 4.2;
+
 export class NpcView {
   rig: CharacterRig;
   label: Label;
@@ -19,6 +25,7 @@ export class NpcView {
   private restYaw: number;
   private lookTimer = 0;
   private greeted = false;
+  private trailing = false;
 
   constructor(
     k: KitContext,
@@ -54,6 +61,44 @@ export class NpcView {
     this.rig.root.position.set(x, groundY, z);
     this.shadow.position.set(x, groundY + 0.015, z);
     this.label.setPosition(x, groundY + CHAR_HEIGHT + 0.32, z);
+  }
+
+  /**
+   * Companion follow (Phase 6B): trail loosely 2-3 units behind the player,
+   * walking with the run clip scaled to the actual ground speed, sliding along
+   * walls via `move`, and popping in behind Juju when left far behind.
+   */
+  follow(
+    dt: number,
+    player: { x: number; z: number; yaw: number },
+    groundAt: (x: number, z: number) => number,
+    move: (x: number, z: number, dx: number, dz: number) => { x: number; z: number },
+  ) {
+    const dx = player.x - this.x;
+    const dz = player.z - this.z;
+    const d = Math.hypot(dx, dz);
+    let v = 0;
+    if (d > FOLLOW_LOST) {
+      // lost behind a wall / after a warp: reappear just behind the player
+      const p = move(player.x, player.z, -Math.sin(player.yaw) * FOLLOW_NEAR, -Math.cos(player.yaw) * FOLLOW_NEAR);
+      this.moveTo(p.x, groundAt(p.x, p.z), p.z);
+    } else if (d > FOLLOW_FAR || (this.trailing && d > FOLLOW_NEAR)) {
+      this.trailing = true;
+      const speed = Math.min(FOLLOW_MAX_SPEED, 1.8 + (d - FOLLOW_NEAR) * 2.2);
+      const step = Math.min(d - FOLLOW_NEAR, speed * Math.min(dt, 0.1));
+      const p = move(this.x, this.z, (dx / d) * step, (dz / d) * step);
+      v = dt > 0 ? Math.hypot(p.x - this.x, p.z - this.z) / dt : 0;
+      this.moveTo(p.x, groundAt(p.x, p.z), p.z);
+      if (v > 0.05) this.targetYaw = yawFor(dx, dz);
+      this.lookTimer = 0;
+    } else {
+      this.trailing = false;
+      if (this.lookTimer > 0) this.lookTimer -= dt;
+      else this.targetYaw = yawFor(dx, dz);
+    }
+    const r = this.rig.root;
+    r.rotation.y = lerpAngle(r.rotation.y, this.targetYaw, Math.min(1, dt * 6));
+    this.rig.animate(dt, Math.min(1, v / FOLLOW_MAX_SPEED), v);
   }
 
   update(dt: number, px: number, pz: number) {

@@ -4,10 +4,13 @@ import { VOICES, bandFor, pickLine } from "../data/relationships";
 import { HOME_COMMENTS } from "../data/relationships";
 import { TILE } from "../constants";
 import { store } from "./store";
+import type { TimeOfDay } from "./save";
 
-export function npcWhere(npc: NpcDef) {
-  const day = store.state.currentDay;
-  const time = store.state.timeOfDay;
+/**
+ * Where an NPC is per data/schedules.ts. The game clock has no hours, only
+ * four time-of-day slots (store.state.timeOfDay), so `time`/`day` default to now.
+ */
+export function npcWhere(npc: NpcDef, time: TimeOfDay = store.state.timeOfDay, day: number = store.state.currentDay) {
   const wd = weekdayIndex(day);
   const hit = scheduleFor(npc.id, day, time);
   if (!hit) {
@@ -30,14 +33,19 @@ export function npcApproachEmote(npcId: string) {
   return { text: "...", color: "#d8cfe0" };
 }
 
-export function npcInLocation(locationId: string): NpcDef[] {
+export function npcInLocation(locationId: string, time: TimeOfDay = store.state.timeOfDay, day: number = store.state.currentDay): NpcDef[] {
   return NPCS.filter((n) => {
-    const w = npcWhere(n);
+    const w = npcWhere(n, time, day);
     if (n.id === "jad" || n.id === "shan") {
       return w.present && w.location === locationId && isYasBrotherVisiting(n.id);
     }
     return w.present && w.location === locationId;
   });
+}
+
+/** Ids of the NPCs whose schedule puts them at `locationId` at `time` (default: now). */
+export function getNpcsAtLocation(locationId: string, time: TimeOfDay = store.state.timeOfDay, day: number = store.state.currentDay): string[] {
+  return npcInLocation(locationId, time, day).map((n) => n.id);
 }
 
 function isYasBrotherVisiting(npcId: "jad" | "shan") {
