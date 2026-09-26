@@ -1636,9 +1636,30 @@
 }
 
 .olw-mg-result-icon {
-  font-size: 48px;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  font-size: 38px;
+  font-weight: 900;
   line-height: 1;
+  color: #fff;
   animation: olw-mg-pop 0.5s ease-out;
+}
+
+.olw-mg-result--win .olw-mg-result-icon {
+  background: linear-gradient(180deg, #8fdcae, #4fae78);
+  box-shadow: 0 0 0 6px rgba(123, 224, 163, 0.3);
+}
+
+.olw-mg-result--lose .olw-mg-result-icon {
+  background: linear-gradient(180deg, #eaa3ab, #d07a86);
+  box-shadow: 0 0 0 6px rgba(228, 140, 150, 0.25);
+}
+
+.olw-mg-result--lose {
+  animation: olw-fade 0.2s ease-out, olw-mg-gentle-shake 0.5s ease-in-out 0.1s;
 }
 
 .olw-mg-result-title {
@@ -1648,11 +1669,11 @@
 }
 
 .olw-mg-result--win .olw-mg-result-title {
-  color: var(--olw-sage-deep);
+  color: #3f9a66;
 }
 
 .olw-mg-result--lose .olw-mg-result-title {
-  color: var(--olw-rose-deep);
+  color: #c9707c;
 }
 
 .olw-mg-result-msg {
@@ -1879,11 +1900,20 @@
 
 /* coffee */
 .olw-mg-coffee {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 12px 18px;
+  width: 100%;
+}
+
+.olw-mg-coffee-bar {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 100%;
+  width: 170px;
   height: 210px;
 }
 
@@ -1916,11 +1946,18 @@
   position: relative;
   width: 96px;
   height: 110px;
-  border: 4px solid var(--olw-ink);
+  border: 4px dashed rgba(43, 34, 51, 0.35);
   border-top: 0;
   border-radius: 0 0 22px 22px;
-  background: #fffaf1;
+  background: transparent;
   overflow: visible;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+.olw-mg-cup.is-placed {
+  border-style: solid;
+  border-color: var(--olw-ink);
+  background: #fffaf1;
 }
 
 .olw-mg-cup-handle {
@@ -2120,12 +2157,19 @@
 }
 
 .olw-mg-photo-flash.is-flash {
-  animation: olw-mg-flash 0.32s ease-out;
+  animation: olw-mg-flash 0.2s ease-out;
 }
 
+/* shutter: 0 -> 0.6 -> 0 in 200ms */
 @keyframes olw-mg-flash {
-  from {
-    opacity: 0.95;
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
