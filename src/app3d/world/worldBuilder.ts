@@ -393,8 +393,10 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
       placer.add(lm.key, lm.variant, { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
     }
     else if (hero) placer.add(hero.key, "", { x: cx + hx, y, z: cz + hero.dz, scale: hero.scale }, { id, solid: true, occluder: true, src: "worldgen-hero", fp: { w: bx1 - bx0 + 1, d: by1 - by0 + 1 } });
-    // regional architecture (buildingKit) outside Scotland; Edinburgh keeps its cottage-kit presets
-    else placer.add("building", buildingVariant(spec!, profile, strHash(id)), { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
+    // regional architecture: buildingVariant → an "rg=…" variant that the "building" factory
+    // turns into buildRegionalBuilding(…) for the location's art profile (thin-instanced per
+    // variant); Germany and Edinburgh's non-tenement houses keep their cottage-kit presets
+    else placer.add("building", buildingVariant(spec!, profile, strHash(id), p.tex), { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
     const name = world.labels.find((l) => Math.abs(l.x - p.x) < 1 && !l.big)?.text;
     buildings.push({ tex: p.tex, tx: left(tx) + w / 2, ty, w, d, rotationY: 0, name, kind: isCastle ? "castle" : spec!.kind });
   };
