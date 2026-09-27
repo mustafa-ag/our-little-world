@@ -25,6 +25,7 @@ import { Scene as SceneClass } from "@babylonjs/core/scene";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
 import { store } from "../../game/systems/store";
 import type { TimeOfDay } from "../../game/systems/save";
+import type { RegionKind } from "../world/artProfile";
 
 /** Sky / horizon colours shared with sky.ts and backdrop.ts (linear-ish 0..1 RGB). */
 export interface Atmosphere {
@@ -569,4 +570,212 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
       hemi.dispose();
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Cinematic three-point lighting with per-region profiles.
+//
+// A standalone key (DirectionalLight) + fill (HemisphericLight) + rim
+// (DirectionalLight) rig. NOTE: createLighting() above already owns a sun +
+// hemi + shadow generator for the live game; setupLighting() creates its own
+// lights, so use one or the other on a given scene, not both.
+// ---------------------------------------------------------------------------
+
+export type LightingProfile = {
+  /** Warm key light (DirectionalLight). */
+  sunColor: string;
+  sunIntensity: number;
+  /** Direction the key light travels (normalised). */
+  sunDirection: [number, number, number];
+  /** Sky fill (HemisphericLight ground component). */
+  fillColor: string;
+  fillIntensity: number;
+  /** Rim backlight. */
+  rimColor: string;
+  rimIntensity: number;
+  /** Ambient hemisphere top. */
+  ambientColor: string;
+  ambientIntensity: number;
+  /** 0..1: 0 = no visible shadow, 1 = fully dark shadow. */
+  shadowIntensity: number;
+};
+
+export type LightingProfileKey = "gulf" | "levant" | "mediterranean" | "scotland" | "london" | "default" | "night";
+
+const norm3 = (x: number, y: number, z: number): [number, number, number] => {
+  const l = Math.hypot(x, y, z) || 1;
+  return [x / l, y / l, z / l];
+};
+
+export const LIGHTING_PROFILES: Record<LightingProfileKey, LightingProfile> = {
+  // Dubai / Abu Dhabi: harsh white near-overhead sun, deep blue sky, high contrast
+  gulf: {
+    sunColor: "#fffaf0",
+    sunIntensity: 2.0,
+    sunDirection: norm3(-0.35, -0.9, 0.25),
+    fillColor: "#2e5fa8",
+    fillIntensity: 0.55,
+    rimColor: "#8fb8ff",
+    rimIntensity: 0.6,
+    ambientColor: "#bcd6f5",
+    ambientIntensity: 0.8,
+    shadowIntensity: 0.85,
+  },
+  // Amman / Jordan: warm golden sun at a slight angle, warm sky fill
+  levant: {
+    sunColor: "#ffd9a0",
+    sunIntensity: 1.6,
+    sunDirection: norm3(-0.6, -0.65, 0.3),
+    fillColor: "#c9a27a",
+    fillIntensity: 0.5,
+    rimColor: "#9ab6e0",
+    rimIntensity: 0.45,
+    ambientColor: "#f0dcc0",
+    ambientIntensity: 0.6,
+    shadowIntensity: 0.7,
+  },
+  // Positano / Santorini: warm golden sun, azure sky fill, warm rim
+  mediterranean: {
+    sunColor: "#ffdca8",
+    sunIntensity: 1.8,
+    sunDirection: norm3(-0.55, -0.7, 0.35),
+    fillColor: "#3d8fd6",
+    fillIntensity: 0.5,
+    rimColor: "#ffc48a",
+    rimIntensity: 0.5,
+    ambientColor: "#cfe6fa",
+    ambientIntensity: 0.65,
+    shadowIntensity: 0.7,
+  },
+  // Scotland: cool blue-white sun, grey-teal fill, low contrast, soft shadows
+  scotland: {
+    sunColor: "#e6eef8",
+    sunIntensity: 1.2,
+    sunDirection: norm3(-0.7, -0.5, 0.3),
+    fillColor: "#7a9294",
+    fillIntensity: 0.65,
+    rimColor: "#a8c0e0",
+    rimIntensity: 0.3,
+    ambientColor: "#d4dfe8",
+    ambientIntensity: 0.7,
+    shadowIntensity: 0.4,
+  },
+  // London: as Scotland, slightly greyer
+  london: {
+    sunColor: "#e8edf4",
+    sunIntensity: 1.2,
+    sunDirection: norm3(-0.65, -0.55, 0.3),
+    fillColor: "#808f92",
+    fillIntensity: 0.65,
+    rimColor: "#a4b8d8",
+    rimIntensity: 0.3,
+    ambientColor: "#d2d9e0",
+    ambientIntensity: 0.7,
+    shadowIntensity: 0.4,
+  },
+  // Neutral daylight
+  default: {
+    sunColor: "#ffe8c8",
+    sunIntensity: 1.4,
+    sunDirection: norm3(-0.66, -0.7, 0.26),
+    fillColor: "#b09070",
+    fillIntensity: 0.5,
+    rimColor: "#a0c0ff",
+    rimIntensity: 0.4,
+    ambientColor: "#cddcea",
+    ambientIntensity: 0.6,
+    shadowIntensity: 0.6,
+  },
+  // Night: deep indigo ambient, cool moon key, no rim
+  night: {
+    sunColor: "#8ea4d8",
+    sunIntensity: 0.4,
+    sunDirection: norm3(0.35, -0.8, 0.45),
+    fillColor: "#2a2448",
+    fillIntensity: 0.3,
+    rimColor: "#000000",
+    rimIntensity: 0,
+    ambientColor: "#2c2a6a",
+    ambientIntensity: 0.3,
+    shadowIntensity: 0.3,
+  },
+};
+
+/** Art-profile region (world/artProfile.ts RegionKind) -> lighting profile key. */
+export const regionKindToLightingProfile = {
+  scotland: "scotland",
+  london: "london",
+  germany: "london",
+  uae_modern: "gulf",
+  uae_coastal: "gulf",
+  amman: "levant",
+  italy: "mediterranean",
+  greece: "mediterranean",
+} as const satisfies Record<RegionKind, LightingProfileKey>;
+
+export interface ThreePointLights {
+  keyLight: DirectionalLight;
+  fillLight: HemisphericLight;
+  rimLight: DirectionalLight;
+  shadowGenerator: ShadowGenerator;
+}
+
+type SceneWithLights = Scene & { _olwLights?: ThreePointLights };
+
+function resolveProfile(profile: LightingProfile | string): LightingProfile {
+  if (typeof profile !== "string") return profile;
+  return (LIGHTING_PROFILES as Record<string, LightingProfile>)[profile] ?? LIGHTING_PROFILES.default;
+}
+
+function applyProfile(lights: ThreePointLights, p: LightingProfile): void {
+  const { keyLight, fillLight, rimLight, shadowGenerator } = lights;
+  const dir = new Vector3(p.sunDirection[0], p.sunDirection[1], p.sunDirection[2]).normalize();
+  keyLight.direction.copyFrom(dir);
+  keyLight.position.copyFrom(dir.scale(-60));
+  keyLight.diffuse = Color3.FromHexString(p.sunColor);
+  keyLight.intensity = p.sunIntensity;
+  // hemisphere: sky (diffuse) = ambient top, ground = fill
+  fillLight.diffuse = Color3.FromHexString(p.ambientColor);
+  fillLight.groundColor = Color3.FromHexString(p.fillColor);
+  fillLight.specular = Color3.Black();
+  fillLight.intensity = Math.max(p.ambientIntensity, p.fillIntensity);
+  // rim: from behind/opposite the key, slightly downward
+  rimLight.direction.copyFromFloats(-dir.x, -0.35, -dir.z);
+  rimLight.direction.normalize();
+  rimLight.diffuse = Color3.FromHexString(p.rimColor);
+  rimLight.specular = Color3.Black();
+  rimLight.intensity = p.rimIntensity;
+  rimLight.setEnabled(p.rimIntensity > 0);
+  // Babylon darkness: 0 = black shadow, 1 = no shadow
+  shadowGenerator.darkness = 1 - Math.min(1, Math.max(0, p.shadowIntensity));
+}
+
+/** Create the key / fill / rim rig with a soft PCF shadow generator on the key light. */
+export function setupLighting(scene: Scene, profile: LightingProfile | string): ThreePointLights {
+  const s = scene as SceneWithLights;
+  if (s._olwLights) {
+    applyProfile(s._olwLights, resolveProfile(profile));
+    return s._olwLights;
+  }
+  const keyLight = new DirectionalLight("olwKey", new Vector3(0, -1, 0), scene);
+  const fillLight = new HemisphericLight("olwFill", new Vector3(0, 1, 0), scene);
+  const rimLight = new DirectionalLight("olwRim", new Vector3(0, -0.35, 1), scene);
+  keyLight.specular = Color3.Black();
+  const shadowGenerator = new ShadowGenerator(1024, keyLight);
+  shadowGenerator.usePercentageCloserFiltering = true;
+  shadowGenerator.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
+  shadowGenerator.bias = 0.0012;
+  shadowGenerator.normalBias = 0.02;
+  const lights: ThreePointLights = { keyLight, fillLight, rimLight, shadowGenerator };
+  applyProfile(lights, resolveProfile(profile));
+  s._olwLights = lights;
+  return lights;
+}
+
+/** Switch the rig created by setupLighting() to another profile (immediate). */
+export function updateLightingProfile(scene: Scene, profile: LightingProfile | string): ThreePointLights | null {
+  const lights = (scene as SceneWithLights)._olwLights;
+  if (!lights) return null;
+  applyProfile(lights, resolveProfile(profile));
+  return lights;
 }
