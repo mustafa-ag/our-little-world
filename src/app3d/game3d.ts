@@ -132,6 +132,8 @@ export class Game3D {
     const { scene, canvas, isMobile } = this.host;
     this.mats = new Materials(scene);
     this.lighting = createLighting(scene, isMobile);
+    // starting region base (loadLocation() re-applies it for every location)
+    this.lighting.setRegion(getArtProfile(Game3D.sessionLocation()).region);
     this.camera = new CameraController(scene, canvas, { isMobile });
     this.sky = createSky(scene);
     this.occlusion = createOcclusion(scene, {
@@ -199,6 +201,8 @@ export class Game3D {
       // regional art direction: palette, ground, vegetation, landmark, backdrop, sky
       const profile = getArtProfile(id);
       applyRegionPalette(profile);
+      // region key/fill/rim base under the time-of-day blend
+      this.lighting.setRegion(profile.region);
       this.sky.setRegion({ horizon: profile.skyHorizonColor, zenith: profile.skyZenithColor, fog: profile.fogColor, fogDensity: profile.fogDensity, strength: profile.atmosphereStrength });
       const world = generateWorld(def);
       const collider = createGridCollider(world.blocked.map((r) => r.slice()));

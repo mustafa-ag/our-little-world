@@ -279,10 +279,79 @@ interface PoolLight {
   f: number;
 }
 
+/**
+ * Region modulation applied on top of the blended time-of-day values. Built
+ * from a LightingProfile relative to LIGHTING_PROFILES.default, so the
+ * "default" profile is the identity (tints 1, scales 1, no shadow shift) and
+ * the presets above stay the neutral base every region blends from.
+ */
+interface RegionMod {
+  key: LightingProfileKey;
+  sunTint: Color3;
+  sunScale: number;
+  skyTint: Color3;
+  groundTint: Color3;
+  hemiScale: number;
+  /** Added to the preset's Babylon shadow darkness (negative = darker shadows). */
+  shadowShift: number;
+  rimColor: Color3;
+  rimIntensity: number;
+}
+
+/** How strongly a region pulls the time-of-day palette toward its profile (0..1). */
+const REGION_STRENGTH = 0.6;
+/** Per-channel tint ratio clamp, so e.g. a blue Gulf fill never turns the ground colour inside out. */
+const TINT_MIN = 0.6;
+const TINT_MAX = 1.5;
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** Ratio of `hex` to `baseHex` per channel, softened by REGION_STRENGTH and clamped. */
+function tintRatio(hex: string, baseHex: string): Color3 {
+  const a = Color3.FromHexString(hex);
+  const b = Color3.FromHexString(baseHex);
+  const ch = (x: number, y: number) => clamp(1 + ((x + 0.02) / (y + 0.02) - 1) * REGION_STRENGTH, TINT_MIN, TINT_MAX);
+  return new Color3(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b));
+}
+const scaleRatio = (v: number, base: number) => clamp(1 + (v / (base || 1) - 1) * REGION_STRENGTH, 0.5, 1.6);
+
+function regionModFor(key: LightingProfileKey): RegionMod {
+  const p = LIGHTING_PROFILES[key] ?? LIGHTING_PROFILES.default;
+  const d = LIGHTING_PROFILES.default;
+  return {
+    key,
+    sunTint: tintRatio(p.sunColor, d.sunColor),
+    sunScale: scaleRatio(p.sunIntensity, d.sunIntensity),
+    skyTint: tintRatio(p.ambientColor, d.ambientColor),
+    groundTint: tintRatio(p.fillColor, d.fillColor),
+    hemiScale: scaleRatio(Math.max(p.ambientIntensity, p.fillIntensity), Math.max(d.ambientIntensity, d.fillIntensity)),
+    // profile shadowIntensity: 1 = black; Babylon darkness: 0 = black
+    shadowShift: -(p.shadowIntensity - d.shadowIntensity) * REGION_STRENGTH,
+    rimColor: Color3.FromHexString(p.rimColor),
+    rimIntensity: p.rimIntensity,
+  };
+}
+
+/** Resolve an art-profile RegionKind (or a LightingProfileKey) to a lighting profile key. */
+function lightingKeyFor(kind: RegionKind | string): LightingProfileKey {
+  const byRegion = (regionKindToLightingProfile as Record<string, LightingProfileKey>)[kind];
+  if (byRegion) return byRegion;
+  return kind in LIGHTING_PROFILES ? (kind as LightingProfileKey) : "default";
+}
+
 export interface Lighting {
   hemi: HemisphericLight;
   sun: DirectionalLight;
+  /** Region rim backlight (opposite the sun, no shadows; fades out at night). */
+  rim: DirectionalLight;
   shadows: ShadowGenerator | null;
+  /**
+   * Switch the region base (LIGHTING_PROFILES via regionKindToLightingProfile,
+   * falling back to "default"). Tints/scales the sun, hemi and shadow on top of
+   * the time-of-day blend and drives the rim light. Returns the profile key used.
+   */
+  setRegion(kind: RegionKind | string): LightingProfileKey;
+  /** The active region lighting profile key. */
+  region(): LightingProfileKey;
   /** Add a shadow caster (buildings, trees, characters near the camera). */
   addCaster(mesh: AbstractMesh): void;
   removeCaster(mesh: AbstractMesh): void;
@@ -352,8 +421,16 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     l.falloffType = Light.FALLOFF_STANDARD;
     pool.push({ light: l, lamp: -1, f: 0 });
   }
-  // every material must accept hemi + sun + the pool
-  const maxLights = 2 + POOL;
+  // region rim backlight: always present (intensity 0 when unused) so the
+  // light count, and therefore the compiled shaders, never change
+  const rim = new DirectionalLight("rim", new Vector3(0.66, -0.35, -0.26).normalize(), scene);
+  rim.specular = Color3.Black();
+  rim.intensity = 0;
+  let reg = regionModFor("default");
+
+  // every material must accept hemi + sun + rim + the pool (Babylon's default
+  // maxSimultaneousLights is 4; raised here to 5 on mobile / 7 on desktop)
+  const maxLights = 3 + POOL;
   const bumpLights = (m: Material) => {
     const mm = m as Material & { maxSimultaneousLights?: number };
     if (typeof mm.maxSimultaneousLights === "number" && mm.maxSimultaneousLights < maxLights) mm.maxSimultaneousLights = maxLights;
@@ -404,16 +481,23 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
     scene.clearColor = new Color4(p.horizon.r, p.horizon.g, p.horizon.b, 1);
     scene.fogColor = p.fog.clone();
     scene.fogDensity = p.fogDensity;
-    scene.ambientColor = p.hemiSky.scale(0.2);
+    // time-of-day blend first, then the region base modulation on top
+    const sky = p.hemiSky.multiply(reg.skyTint);
+    scene.ambientColor = sky.scale(0.2);
     sun.direction.copyFrom(p.sunDir);
-    sun.diffuse = p.sunColor.clone();
+    sun.diffuse = p.sunColor.multiply(reg.sunTint);
     sun.specular = Color3.Black();
-    sun.intensity = p.sunIntensity;
-    hemi.diffuse = p.hemiSky.clone();
-    hemi.groundColor = p.hemiGround.clone();
+    sun.intensity = p.sunIntensity * reg.sunScale;
+    hemi.diffuse = sky;
+    hemi.groundColor = p.hemiGround.multiply(reg.groundTint);
     hemi.specular = Color3.Black();
-    hemi.intensity = p.hemiIntensity;
-    if (shadows) shadows.darkness = p.shadow;
+    hemi.intensity = p.hemiIntensity * reg.hemiScale;
+    if (shadows) shadows.darkness = clamp(p.shadow + reg.shadowShift, 0, 1);
+    // rim: from behind / opposite the sun, slightly downward; gone by night
+    rim.direction.copyFromFloats(-p.sunDir.x, -0.35, -p.sunDir.z);
+    rim.direction.normalize();
+    rim.diffuse = reg.rimColor.clone();
+    rim.intensity = reg.rimIntensity * (1 - p.night);
     ip.exposure = p.exposure;
     ip.contrast = p.contrast;
     ip.vignetteWeight = p.vignette;
@@ -510,8 +594,18 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
   return {
     hemi,
     sun,
+    rim,
     shadows,
     poolSize: POOL,
+    setRegion(kind) {
+      const key = lightingKeyFor(kind);
+      if (key !== reg.key) {
+        reg = regionModFor(key);
+        push();
+      }
+      return key;
+    },
+    region: () => reg.key,
     addCaster(mesh) {
       shadows?.addShadowCaster(mesh, false);
     },
@@ -566,6 +660,7 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
       atmoListeners.clear();
       for (const pl of pool) pl.light.dispose();
       shadows?.dispose();
+      rim.dispose();
       sun.dispose();
       hemi.dispose();
     },
@@ -576,9 +671,10 @@ export function createLighting(scene: Scene, isMobile: boolean): Lighting {
 // Cinematic three-point lighting with per-region profiles.
 //
 // A standalone key (DirectionalLight) + fill (HemisphericLight) + rim
-// (DirectionalLight) rig. NOTE: createLighting() above already owns a sun +
-// hemi + shadow generator for the live game; setupLighting() creates its own
-// lights, so use one or the other on a given scene, not both.
+// (DirectionalLight) rig. NOTE: the live game uses createLighting() above,
+// whose setRegion() folds these same profiles into its sun / hemi / rim on top
+// of the time-of-day blend. setupLighting() creates its own lights (handy for
+// tests / standalone scenes), so never use it on a createLighting() scene.
 // ---------------------------------------------------------------------------
 
 export type LightingProfile = {
