@@ -12,6 +12,7 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { KitContext } from "../../AssetManager";
+import { ACTIVE_REGION } from "../../../rendering/materials";
 
 export const SLOT_NAMES = ["olw_stone", "olw_roof_tile", "olw_slate", "olw_wood", "olw_glass_emissive", "olw_paint", "olw_foliage", "olw_metal"] as const;
 export type SlotName = (typeof SLOT_NAMES)[number];
@@ -44,19 +45,24 @@ export const SLOT_BASE = {
   wood: "#eadbc4",
 } as const;
 
-/** Runtime slots: hand-painted textures, light base, vertex-tinted. */
+/**
+ * Runtime slots: hand-painted textures, light base, vertex-tinted, on
+ * stylized PBR (roughness per region wall / roof type, see ACTIVE_REGION).
+ * Glass stays opaque: panes sit on solid walls, blending would only show the
+ * wall through them.
+ */
 export function runtimeSlots(k: KitContext): Slots {
-  const glass = k.mats.flat("#d6e4ea");
-  k.lighting?.registerGlow(glass as StandardMaterial, "#c49a52");
+  const glass = k.mats.pbrFlat("#d6e4ea", "glass");
+  k.lighting?.registerGlow(glass, "#c49a52");
   return {
-    stone: k.mats.textured("stone", SLOT_BASE.stone, 0.9),
-    roofTile: k.mats.textured("roof", SLOT_BASE.roofTile, 1.15),
-    slate: k.mats.textured("slate", SLOT_BASE.slate, 0.95),
-    wood: k.mats.textured("planks", SLOT_BASE.wood, 2),
+    stone: k.mats.pbrTextured("stone", SLOT_BASE.stone, 0.9, ACTIVE_REGION.wallSurface),
+    roofTile: k.mats.pbrTextured("roof", SLOT_BASE.roofTile, 1.15, ACTIVE_REGION.roofSurface),
+    slate: k.mats.pbrTextured("slate", SLOT_BASE.slate, 0.95, "slate"),
+    wood: k.mats.pbrTextured("planks", SLOT_BASE.wood, 2, "wood"),
     glass,
-    paint: k.mats.flat("#ffffff"),
+    paint: k.mats.pbrFlat("#ffffff", "paint"),
     foliage: k.mats.flat("#ffffff"),
-    metal: k.mats.flat("#ffffff"),
+    metal: k.mats.pbrFlat("#ffffff", "metal"),
   };
 }
 

@@ -21,14 +21,24 @@ import { box, cyl, gable, merge, parseVariant, sphere } from "./util";
 import { buildCottage } from "./architecture/cottage";
 import { specFromVariant, presetVariant } from "./architecture/presets";
 import { heroSlots, runtimeSlots } from "./architecture/slots";
+import { buildRegionalFromVariant, isRegionalVariant } from "../../world/buildingKit";
 
 export { PRESETS, COTTAGE_PRESETS, PRESET_1S, PRESET_2S, presetVariant, specFromVariant } from "./architecture/presets";
 export { SLOT_NAMES } from "./architecture/slots";
 export { kitDoorX } from "./architecture/cottage";
 export type { CottageSpec } from "./architecture/presets";
 
-/** Runtime building factory (hand-painted materials, registered as "building"). */
+/**
+ * Runtime building factory (hand-painted materials, registered as "building").
+ * "rg=…" variants build the region's own architecture (world/buildingKit.ts);
+ * preset variants ("p=…") build the Scottish cottage kit.
+ */
 export function buildBuilding(k: KitContext, variant: string): Mesh {
+  if (isRegionalVariant(variant)) {
+    // curtain-wall glass: semi-transparent, shared by every tower
+    const glassSkin = k.mats.flat("#ffffff", { alpha: 0.55 });
+    return buildRegionalFromVariant(k.scene, { ...runtimeSlots(k), glassSkin }, variant);
+  }
   return buildCottage(k.scene, runtimeSlots(k), specFromVariant(variant));
 }
 
@@ -53,12 +63,12 @@ export function buildCastle(k: KitContext, variant: string): Mesh {
   const d = parseFloat(v.d ?? "5");
   const s = k.scene;
   const parts: Mesh[] = [];
-  const stone = k.mats.textured("stone", PALETTE.greyStone);
-  const dark = k.mats.textured("stone", PALETTE.greyStoneDark);
-  const roof = k.mats.textured("slate", PALETTE.slate);
-  const glass = k.mats.flat(PALETTE.glass);
+  const stone = k.mats.pbrTextured("stone", PALETTE.greyStone, 1, "stone");
+  const dark = k.mats.pbrTextured("stone", PALETTE.greyStoneDark, 1, "stone");
+  const roof = k.mats.pbrTextured("slate", PALETTE.slate, 1, "slate");
+  const glass = k.mats.pbrFlat(PALETTE.glass, "glass");
   k.lighting?.registerGlow(glass, "#b08a4a");
-  const grass = k.mats.textured("grass", PALETTE.grass);
+  const grass = k.mats.pbrTextured("grass", PALETTE.grass, 1, "grass");
 
   // mound
   const mound = cyl(s, w * 0.9, w * 1.35, 0.6, grass, 0, 0, 0, 14);
@@ -94,10 +104,10 @@ export function buildCastle(k: KitContext, variant: string): Mesh {
     for (let i = 0; i < 3; i++) parts.push(box(s, 0.16, 0.26, 0.06, glass, x, baseY + 1 + i * 1.0, z - 0.6));
   }
   // flag
-  parts.push(cyl(s, 0.04, 0.04, 1.2, k.mats.flat(PALETTE.iron), w * 0.36, baseY + 5.4, -d * 0.22, 5));
+  parts.push(cyl(s, 0.04, 0.04, 1.2, k.mats.pbrFlat(PALETTE.iron, "metal"), w * 0.36, baseY + 5.4, -d * 0.22, 5));
   parts.push(box(s, 0.5, 0.3, 0.02, k.mats.flat("#3b5fa8"), w * 0.36 + 0.27, baseY + 6.3, -d * 0.22));
   // gate
-  const gate = box(s, 0.9, 1.4, 0.2, k.mats.textured("planks", PALETTE.wood, 2), 0, baseY, -d * 0.3 - 0.02);
+  const gate = box(s, 0.9, 1.4, 0.2, k.mats.pbrTextured("planks", PALETTE.wood, 2, "wood"), 0, baseY, -d * 0.3 - 0.02);
   parts.push(gate);
   // keep windows
   for (let i = 0; i < 4; i++) {
@@ -116,13 +126,13 @@ export function buildLandmark(k: KitContext, variant: string): Mesh {
   const d = parseFloat(v.d ?? "5");
   const s = k.scene;
   const parts: Mesh[] = [];
-  const glass = k.mats.flat(PALETTE.glass);
+  const glass = k.mats.pbrFlat(PALETTE.glass, "glass");
   k.lighting?.registerGlow(glass, "#b08a4a");
   switch (v.t) {
     case "mosque": {
-      const white = k.mats.textured("stone", "#f3f0ea", 0.8);
+      const white = k.mats.pbrTextured("stone", "#f3f0ea", 0.8, "marble");
       const gold = k.mats.flat("#d8b25a");
-      const dome = k.mats.flat("#f7f5f0");
+      const dome = k.mats.pbrFlat("#f7f5f0", "stucco");
       // prayer hall + courtyard wall
       parts.push(box(s, w * 0.9, 0.9, d * 0.9, white, 0, 0, 0, 0.8));
       parts.push(box(s, w * 0.55, 2.4, d * 0.6, white, 0, 0, 0.2, 0.8));
@@ -146,8 +156,8 @@ export function buildLandmark(k: KitContext, variant: string): Mesh {
       break;
     }
     case "big_ben": {
-      const lime = k.mats.textured("stone", "#d9c79a", 0.8);
-      const dark = k.mats.flat("#3e4a4a");
+      const lime = k.mats.pbrTextured("stone", "#d9c79a", 0.8, "stone");
+      const dark = k.mats.pbrFlat("#3e4a4a", "slate");
       const face = k.mats.flat("#f1ead2");
       // the Palace wing along the footprint, the clock tower at the east end
       parts.push(box(s, w * 0.9, 2.2, d * 0.5, lime, -w * 0.08, 0, 0.3, 0.8));
@@ -163,8 +173,9 @@ export function buildLandmark(k: KitContext, variant: string): Mesh {
       break;
     }
     case "burj": {
-      const steel = k.mats.flat("#b9c8d2");
-      const band = k.mats.flat("#7f95a4");
+      // glass curtain wall (opaque: a solid silhouette of stacked drums)
+      const steel = k.mats.pbrFlat("#b9c8d2", "glass");
+      const band = k.mats.pbrFlat("#7f95a4", "glass");
       let r = Math.min(w, d) * 0.55;
       let y = 0;
       for (let i = 0; i < 9; i++) {
@@ -178,7 +189,7 @@ export function buildLandmark(k: KitContext, variant: string): Mesh {
       break;
     }
     case "colosseum": {
-      const trav = k.mats.textured("stone", "#d8c29a", 0.8);
+      const trav = k.mats.pbrTextured("stone", "#d8c29a", 0.8, "stone");
       const arch = k.mats.flat("#4a3a2c");
       const r = Math.min(w, d) * 0.5;
       parts.push(cyl(s, r * 2, r * 2, 3.6, trav, 0, 0, 0, 24));
@@ -193,8 +204,8 @@ export function buildLandmark(k: KitContext, variant: string): Mesh {
     }
     default: {
       // civic hall: a columned front under a pediment
-      const lime = k.mats.textured("stone", "#e0d4bc", 0.8);
-      const roof = k.mats.textured("slate", PALETTE.slate);
+      const lime = k.mats.pbrTextured("stone", "#e0d4bc", 0.8, "stone");
+      const roof = k.mats.pbrTextured("slate", PALETTE.slate, 1, "slate");
       parts.push(box(s, w * 0.8, 3.0, d * 0.7, lime, 0, 0, 0.3, 0.8));
       const g = gable(s, w * 0.84, d * 0.74, 1.0, roof, lime, 0.5);
       g.position.set(0, 3.0, 0.3);

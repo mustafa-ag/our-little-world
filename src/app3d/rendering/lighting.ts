@@ -20,7 +20,6 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { Scene as SceneClass } from "@babylonjs/core/scene";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
@@ -252,8 +251,11 @@ const cloneLive = (l: Live): Live => {
   return o;
 };
 
+/** Anything with an emissive colour: StandardMaterial or (stylized) PBRMaterial. */
+export type GlowMaterial = Material & { emissiveColor: Color3 };
+
 interface GlowEntry {
-  mat: StandardMaterial;
+  mat: GlowMaterial;
   lit: Color3;
   dark: Color3;
 }
@@ -284,7 +286,7 @@ export interface Lighting {
   addCaster(mesh: AbstractMesh): void;
   removeCaster(mesh: AbstractMesh): void;
   /** Materials whose emissive turns on in the evening/night (lamps, windows). */
-  registerGlow(mat: StandardMaterial, litHex: string, darkHex?: string): void;
+  registerGlow(mat: GlowMaterial, litHex: string, darkHex?: string): void;
   /** Show `mesh` only while lamps are lit (faded via visibility). Returns an unregister function. */
   registerNightMesh(mesh: AbstractMesh): () => void;
   /**

@@ -16,6 +16,7 @@ export const SLOTS = [
   "olw_wood", // textured planks (vertex colour modulates)
   "olw_foliage", // flat white × vertex colour (leaves, grass)
   "olw_metal", // flat white × vertex colour (iron, hubcaps)
+  "olw_steel", // flat white × vertex colour, brushed steel (modern bench frames)
   "olw_glass", // flat pale glass
   "olw_glass_emissive", // lantern / headlight glass, glows at night
   "olw_paint", // flat white × vertex colour (painted wood, car body, misc)
@@ -60,6 +61,7 @@ const PREVIEW: Record<Slot, string> = {
   olw_wood: "#a8764f",
   olw_foliage: "#ffffff",
   olw_metal: "#ffffff",
+  olw_steel: "#ffffff",
   olw_glass: "#cfe3ee",
   olw_glass_emissive: "#ffd98a",
   olw_paint: "#ffffff",

@@ -20,13 +20,14 @@ import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import type { WorldData } from "../../game/worldgen";
-import { Materials, PALETTE } from "./materials";
+import { Materials, PALETTE, SURFACES, stylizedPBR, type SurfaceKind } from "./materials";
 import type { Lighting } from "./lighting";
 import { CURB_H } from "../world/scale";
 import { SCOTLAND_PROFILE, type WorldArtProfile } from "../world/artProfile";
@@ -78,6 +79,23 @@ const GRAIN_OF: Record<Paint, Grain> = {
   pavement: "paved",
   road: "road",
   water: "water",
+};
+
+/** PBR surface of a ground grain family (roads are handled with the road texture). */
+const groundSurface = (g: Grain, profile: WorldArtProfile): SurfaceKind => {
+  switch (g) {
+    case "grass":
+      return "grass";
+    case "sand":
+      return "sand";
+    case "paved":
+      // modern UAE squares & malls are polished stone; elsewhere plain flags
+      return profile.region === "uae_modern" ? "plaza" : "pavement";
+    case "cobble":
+      return "setts";
+    default:
+      return "asphalt";
+  }
 };
 
 /** Sidewalks / squares stand a curb height above the road and the verges. */
@@ -183,7 +201,7 @@ export interface Environment {
 export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighting | null, world: WorldData, profile: WorldArtProfile = SCOTLAND_PROFILE): Environment {
   const C = colours(profile);
   const meshes: Mesh[] = [];
-  const ownMats: StandardMaterial[] = [];
+  const ownMats: Material[] = [];
   const ownTex: Texture[] = [];
   const W = world.w;
   const H = world.h;
@@ -565,14 +583,14 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
       // hand-painted setts in world space (uv2, 2 tiles per repeat, slightly
       // rotated so courses never line up with the tile grid), modulated by the
       // baked macro map (uv1): wheel tracks, gutter grime, worn patches
-      const mat = new StandardMaterial("ground:road", scene);
+      const rs = SURFACES[profile.roadSurface === "setts" ? "setts" : "asphalt"];
+      const mat = stylizedPBR(scene, "ground:road", Color3.White(), rs.roughness);
       const setts = profile.roadSurface === "setts" ? settTexture(scene) : asphaltTexture(scene, profile.roadColor);
       setts.coordinatesIndex = 1;
       setts.uScale = 0.5;
       setts.vScale = 0.5;
       setts.wAng = 0.012;
-      mat.diffuseTexture = setts;
-      mat.specularColor = Color3.Black();
+      mat.albedoTexture = setts;
       macroTex.coordinatesIndex = 0;
       mat.detailMap.texture = macroTex;
       mat.detailMap.diffuseBlendLevel = 1;
@@ -581,9 +599,9 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
       m.material = mat;
       ownMats.push(mat);
     } else {
-      const mat = new StandardMaterial(`ground:${gr}`, scene);
-      mat.diffuseTexture = splat;
-      mat.specularColor = Color3.Black();
+      const gs = SURFACES[groundSurface(gr as Grain, profile)];
+      const mat = stylizedPBR(scene, `ground:${gr}`, Color3.White(), gs.roughness, gs.metallic ?? 0);
+      mat.albedoTexture = splat;
       const setup = GRAIN_SETUP[gr as Exclude<Grain, "water" | "road">];
       const dt = grain[gr as Exclude<Grain, "water" | "road">];
       dt.coordinatesIndex = 1;
@@ -609,19 +627,19 @@ export function buildEnvironment(scene: Scene, mats: Materials, lighting: Lighti
   const kerb = buildKerb(scene, W, H, paintAt, warp);
   if (kerb) {
     meshes.push(kerb);
-    ownMats.push(kerb.material as StandardMaterial);
+    ownMats.push(kerb.material!);
   }
 
   // ---- curbs, gutters, drain grates and manhole covers along the road edges ----
   for (const sm of buildStreetDetails(scene, W, H, paintAt, roadX, (tx, ty) => heights[ty]?.[tx] ?? 0)) {
     meshes.push(sm);
-    ownMats.push(sm.material as StandardMaterial);
+    ownMats.push(sm.material!);
   }
 
   // an endless meadow under everything so the horizon never shows the void
   const under = CreateGround("ground:under", { width: 600, height: 600, subdivisions: 1 }, scene);
   under.position.set(W / 2, -0.03, -H / 2);
-  under.material = mats.textured(profile.hasSand ? "noise" : "grass", profile.underColor, 0.5);
+  under.material = mats.pbrTextured(profile.hasSand ? "noise" : "grass", profile.underColor, 0.5, profile.hasSand ? "sand" : "grass");
   under.receiveShadows = true;
   under.isPickable = false;
   under.freezeWorldMatrix();
@@ -727,9 +745,7 @@ function buildKerb(
   }
   stone.updateVerticesData("position", pos);
   stone.convertToFlatShadedMesh();
-  const mat = new StandardMaterial("kerb", scene);
-  mat.diffuseColor = Color3.White();
-  mat.specularColor = Color3.Black();
+  const mat = stylizedPBR(scene, "kerb", Color3.White(), SURFACES.pavement.roughness);
   mat.freeze();
   stone.material = mat;
   stone.thinInstanceSetBuffer("matrix", new Float32Array(mats), 16, true);
@@ -1196,7 +1212,9 @@ function buildStreetDetails(scene: Scene, W: number, H: number, paintAt: (tx: nu
     }
     stone.updateVerticesData("position", pos);
     stone.convertToFlatShadedMesh();
-    stone.material = white("curb", null);
+    const curb = stylizedPBR(scene, "curb", Color3.White(), SURFACES.pavement.roughness);
+    curb.freeze();
+    stone.material = curb;
     out.push(instanced(stone, curbM, curbC));
   }
   if (gutM.length) {

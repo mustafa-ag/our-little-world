@@ -31,6 +31,7 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { SurfaceKind } from "../../rendering/materials";
 import type { CharColors } from "../../../game/palette";
 import { Outfits } from "../../../game/palette";
 import { JUJU_HEIGHT } from "../../world/scale";
@@ -389,6 +390,24 @@ interface SlotMeta {
   olwFaceSrc?: Material | null;
 }
 
+/** PBR surface per character colour role (see SURFACES). */
+const ROLE_SURFACE: Record<string, SurfaceKind> = {
+  olw_skin: "skin",
+  olw_hair: "hair",
+  olw_top: "fabric",
+  olw_outer: "fabric",
+  olw_bottom: "fabric",
+  olw_shoes: "leather",
+  olw_accent: "jewellery",
+};
+
+/** Cheap stand-in for subsurface scatter: nudge the skin's red channel warmer. */
+function warmSkin(hex: string): string {
+  const c = Color3.FromHexString(hex);
+  c.r = Math.min(1, c.r * 1.04 + 0.01);
+  return c.toHexString();
+}
+
 function dress(k: KitContext, ai: AnimatedInstance, a: Appearance) {
   const col: Record<string, string | undefined> = {
     olw_skin: a.skin,
@@ -420,7 +439,10 @@ function dress(k: KitContext, ai: AnimatedInstance, a: Appearance) {
       m.material = a.face ? proceduralFaceMaterial(k.scene, a.face) : faceMaterial(k, meta.olwFaceSrc ?? null);
       m.alphaIndex = DECAL_ALPHA_INDEX; // before a faded building's depth twin
     }
-    else if (col[slot]) m.material = k.mats.flat(col[slot]!);
+    else if (col[slot]) {
+      const surface = ROLE_SURFACE[slot] ?? "fabric";
+      m.material = k.mats.pbrFlat(surface === "skin" ? warmSkin(col[slot]!) : col[slot]!, surface);
+    }
   }
 }
 
@@ -576,7 +598,7 @@ function addHeadwear(k: KitContext, ai: AnimatedInstance, head: TransformNode, c
   const out: Mesh[] = [];
   const name = ai.root.name;
   if (x.hijab) {
-    const mat = k.mats.flat(x.hijab);
+    const mat = k.mats.pbrFlat(x.hijab, "fabric");
     // a hood around the head, open towards the face (sphere slice turned to face +Z, tilted a little down)
     const hood = CreateSphere(`${name}:hijab`, { diameter: 2, segments: 16, slice: 0.76, sideOrientation: Mesh.DOUBLESIDE }, k.scene);
     hood.parent = head;
@@ -596,7 +618,7 @@ function addHeadwear(k: KitContext, ai: AnimatedInstance, head: TransformNode, c
     }
   }
   if (x.beard) {
-    const mat = k.mats.flat(x.beard);
+    const mat = k.mats.pbrFlat(x.beard, "hair");
     const beard = CreateBox(`${name}:beard`, { width: 0.12, height: 0.066, depth: 0.06 }, k.scene);
     beard.parent = head;
     beard.position.set(0, HEAD_C.y - 0.114, HEAD_C.z + 0.078);

@@ -153,7 +153,7 @@ export interface Surface {
  * Surface types. Colours stay with the callers (palette / vertex tint); this
  * table only says how light a surface is and how much it glints.
  */
-export const SURFACES = {
+const SURFACE_TABLE = {
   // buildings
   glass: { roughness: 0.05, metallic: 0.1 },
   stucco: { roughness: 0.88 },
@@ -185,7 +185,8 @@ export const SURFACES = {
   jewellery: { roughness: 0.35, metallic: 0.3 },
 } satisfies Record<string, Surface>;
 
-export type SurfaceKind = keyof typeof SURFACES;
+export type SurfaceKind = keyof typeof SURFACE_TABLE;
+export const SURFACES: Readonly<Record<SurfaceKind, Surface>> = SURFACE_TABLE;
 
 /**
  * Makes a PBRMaterial read gamma-authored inputs the way StandardMaterial
@@ -373,7 +374,7 @@ export class Materials {
     const key = `pbr:${surface}:${hex}:${opts.emissive ?? 0}`;
     let m = this.pbrs.get(key);
     if (m) return m;
-    const s: Surface = SURFACES[surface];
+    const s = SURFACES[surface];
     m = stylizedPBR(this.scene, key, Color3.FromHexString(hex), s.roughness, s.metallic ?? 0);
     if (opts.emissive) m.emissiveColor = Color3.FromHexString(hex).scale(opts.emissive);
     m.freeze();
@@ -386,7 +387,7 @@ export class Materials {
     const key = `pbrtex:${surface}:${style}:${hex}:${scale}`;
     let m = this.pbrs.get(key);
     if (m) return m;
-    const s: Surface = SURFACES[surface];
+    const s = SURFACES[surface];
     m = stylizedPBR(this.scene, key, Color3.White(), s.roughness, s.metallic ?? 0);
     // own Texture wrapper per scale over the shared canvas (uScale is per texture)
     const t = this.texture(style, hex).clone();

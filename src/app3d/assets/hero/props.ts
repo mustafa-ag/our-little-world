@@ -1,7 +1,8 @@
 // Street furniture and garden props for the storybook village. Each builder
 // returns ONE merged mesh at the origin, base at y = 0, front facing -Z.
 // Material slots: olw_wood / olw_stone are textured at runtime (vertex colour
-// modulates), olw_paint / olw_metal / olw_foliage are flat × vertex colour.
+// modulates), olw_paint / olw_metal / olw_steel / olw_foliage are flat × vertex colour
+// (stylized PBR at runtime: metal = cast-iron lamps, steel = modern bench frames).
 
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { PALETTE } from "../../rendering/materials";
@@ -144,11 +145,11 @@ export function buildBenchModern(ctx: HeroCtx): Mesh {
   const frame = "#7080a0";
   for (const x of [-0.5, 0.5]) {
     // a flat "table-leg" frame: two uprights and a top rail
-    p.push(box(ctx, "olw_metal", 0.04, 0.4, 0.04, frame, x, 0, -0.17));
-    p.push(box(ctx, "olw_metal", 0.04, 0.4, 0.04, frame, x, 0, 0.17));
-    p.push(box(ctx, "olw_metal", 0.04, 0.03, 0.4, frame, x, 0.4, 0));
+    p.push(box(ctx, "olw_steel", 0.04, 0.4, 0.04, frame, x, 0, -0.17));
+    p.push(box(ctx, "olw_steel", 0.04, 0.4, 0.04, frame, x, 0, 0.17));
+    p.push(box(ctx, "olw_steel", 0.04, 0.03, 0.4, frame, x, 0.4, 0));
   }
-  p.push(box(ctx, "olw_metal", 1.04, 0.025, 0.03, frame, 0, 0.4, 0)); // stretcher under the slats
+  p.push(box(ctx, "olw_steel", 1.04, 0.025, 0.03, frame, 0, 0.4, 0)); // stretcher under the slats
   for (let i = 0; i < 3; i++) p.push(box(ctx, "olw_paint", 1.2, 0.035, 0.12, i % 2 ? shade("#c8b880", -0.06) : "#c8b880", 0, 0.43, -0.135 + i * 0.135));
   return merge("bench-modern", p);
 }

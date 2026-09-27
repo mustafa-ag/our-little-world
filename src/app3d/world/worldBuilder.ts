@@ -11,6 +11,7 @@ import { HERO_ASSETS, type AssetManager, type PieceInstance, type ThinPlacement 
 import type { GridCollider } from "./gridCollider";
 import type { Environment } from "../rendering/environment";
 import { buildingSpec, buildingVariant, mapProp } from "./propMap";
+import { strHash } from "../assets/kit/util";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { OccluderInfo } from "../rendering/occlusion";
@@ -392,7 +393,8 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
       placer.add(lm.key, lm.variant, { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
     }
     else if (hero) placer.add(hero.key, "", { x: cx + hx, y, z: cz + hero.dz, scale: hero.scale }, { id, solid: true, occluder: true, src: "worldgen-hero", fp: { w: bx1 - bx0 + 1, d: by1 - by0 + 1 } });
-    else placer.add("building", buildingVariant(spec!), { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
+    // regional architecture (buildingKit) outside Scotland; Edinburgh keeps its cottage-kit presets
+    else placer.add("building", buildingVariant(spec!, profile, strHash(id)), { x: cx, y, z: cz }, { id, solid: true, occluder: true, src: "worldgen", fp: { w, d } });
     const name = world.labels.find((l) => Math.abs(l.x - p.x) < 1 && !l.big)?.text;
     buildings.push({ tex: p.tex, tx: left(tx) + w / 2, ty, w, d, rotationY: 0, name, kind: isCastle ? "castle" : spec!.kind });
   };

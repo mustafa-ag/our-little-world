@@ -15,6 +15,8 @@ import { kitDoorX, presetVariant } from "../assets/kit/architecture";
 import type { BuildContext, BuiltWorld, PlaceMeta, PlacedBuilding } from "./worldBuilder";
 import { groundUnder, heroBuilding, isRoadTex, tileKey } from "./worldBuilder";
 import { PRESETS } from "../assets/kit/architecture/presets";
+import { regionalStyle, regionalVariant, usesRegionalGeometry } from "./buildingKit";
+import { regionalKind } from "./propMap";
 import { SCOTLAND_PROFILE, benchKeyFor, lampKeyFor, type RegionKind, type WorldArtProfile } from "./artProfile";
 
 const isTree = (k: string) => k.startsWith("tree") || k === "bush" || k.startsWith("bush-");
@@ -244,8 +246,11 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
       buildings.push({ tex: "extra", tx: cx, ty: y0 + hT - 1, w: wT, d: hT, rotationY: rot, kind, doorX: (hero.door?.x ?? 0) * hero.scale });
       return true;
     }
-    thin("building", presetVariant(preset, w, d), { x: cx, y, z: cz, rotationY: rot + jitter, scale }, meta);
-    buildings.push({ tex: "extra", tx: cx, ty: y0 + hT - 1, w: wT, d: hT, rotationY: rot, kind, doorX: kitDoorX(presetVariant(preset, w, d)) * scale });
+    // outside Scotland the filler buildings use the region's architecture (door centred)
+    const regional = usesRegionalGeometry(profile) ? regionalStyle(profile) : null;
+    const variant = regional ? regionalVariant(regional, w, d, PRESETS[preset]?.storeys ?? 2, regionalKind(kind), Math.floor(hash01(seed, x0, y0, salt + 2) * 4)) : presetVariant(preset, w, d);
+    thin("building", variant, { x: cx, y, z: cz, rotationY: rot + jitter, scale }, meta);
+    buildings.push({ tex: "extra", tx: cx, ty: y0 + hT - 1, w: wT, d: hT, rotationY: rot, kind, doorX: regional ? 0 : kitDoorX(variant) * scale });
     return true;
   };
 

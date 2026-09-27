@@ -7,6 +7,8 @@ import { TILE } from "../../game/constants";
 import { PROP_SIZES } from "../../game/propSizes";
 import { hash01, strHash } from "../assets/kit/util";
 import { PRESET_1S, PRESET_2S } from "../assets/kit/architecture";
+import { regionalStyle, regionalVariant, usesRegionalGeometry, type RegionalKind } from "./buildingKit";
+import type { WorldArtProfile } from "./artProfile";
 
 export interface KitPlacement {
   key: string;
@@ -91,9 +93,21 @@ export function buildingSpec(tex: string, tx: number, ty: number): BuildingSpec 
   }
 }
 
-export function buildingVariant(s: BuildingSpec) {
+/**
+ * Kit variant for a building. With a regional profile (anything but the
+ * hand-tuned Scottish presets) the building gets its region's architecture —
+ * see world/buildingKit.ts; otherwise the cottage-kit preset.
+ */
+export function buildingVariant(s: BuildingSpec, profile?: Pick<WorldArtProfile, "region" | "roofStyle">, seed = 0) {
+  const style = profile && usesRegionalGeometry(profile) ? regionalStyle(profile) : null;
+  if (style) return regionalVariant(style, s.w, s.d, s.storeys, regionalKind(s.kind), seed);
   if (s.preset) return `p=${s.preset},w=${s.w},d=${s.d}`;
   return `w=${s.w},d=${s.d},k=${s.kind},s=${s.style},r=${s.roof},f=${s.storeys}`;
+}
+
+/** Cottage-kit building kind → regional ground-floor use. */
+export function regionalKind(kind: string): RegionalKind {
+  return kind === "shop" || kind === "cafe" || kind === "tenement" ? kind : "house";
 }
 
 const TREE_GREENS = ["#6b8a4e", "#7a9a56", "#5f8048", "#8aa262"];

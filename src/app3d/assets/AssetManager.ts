@@ -26,14 +26,13 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
-import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import type { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import "@babylonjs/core/Meshes/instancedMesh";
 import type { Materials } from "../rendering/materials";
-import { DETAIL_HEX, PALETTE } from "../rendering/materials";
+import { ACTIVE_REGION, DETAIL_HEX, PALETTE } from "../rendering/materials";
 import type { Lighting } from "../rendering/lighting";
 import { type Slot, heroCtx, isSlot } from "./hero/slots";
 import { slotsOf, tagSlots } from "./hero/geo";
@@ -155,42 +154,54 @@ let glowRegistered: WeakSet<Material> = new WeakSet();
  */
 export function slotMaterial(k: KitContext, slot: Slot): Material {
   const m = k.mats;
+  const wall = ACTIVE_REGION.wallSurface;
+  const roof = ACTIVE_REGION.roofSurface;
   switch (slot) {
     case "olw_stone":
     case "olw_stone_dark":
-      return m.textured("stone", PALETTE.stoneWarm, 1.2);
+      return m.pbrTextured("stone", PALETTE.stoneWarm, 1.2, wall);
     case "olw_roof_tile":
-      return m.textured("roof", PALETTE.terracottaMuted, 1);
+      return m.pbrTextured("roof", PALETTE.terracottaMuted, 1, roof);
     case "olw_slate":
-      return m.textured("slate", PALETTE.slate, 1);
+      return m.pbrTextured("slate", PALETTE.slate, 1, "slate");
     case "olw_wood":
     case "olw_wood_dark":
-      return m.textured("planks", PALETTE.woodLight, 1.5);
+      return m.pbrTextured("planks", PALETTE.woodLight, 1.5, "wood");
     // Blender GLBs: absolute COLOR_0 × a neutral detail texture of the same style
     case "olw_stone_abs":
     case "olw_stone_dark_abs":
-      return m.textured("stone", DETAIL_HEX, 1.2);
+      return m.pbrTextured("stone", DETAIL_HEX, 1.2, wall);
     case "olw_roof_tile_abs":
-      return m.textured("roof", DETAIL_HEX, 1);
+      return m.pbrTextured("roof", DETAIL_HEX, 1, roof);
     case "olw_slate_abs":
-      return m.textured("slate", DETAIL_HEX, 1);
+      return m.pbrTextured("slate", DETAIL_HEX, 1, "slate");
     case "olw_wood_abs":
     case "olw_wood_dark_abs":
-      return m.textured("planks", DETAIL_HEX, 1.5);
+      return m.pbrTextured("planks", DETAIL_HEX, 1.5, "wood");
     case "olw_glass":
-      return m.flat(PALETTE.glass);
+      return m.pbrFlat(PALETTE.glass, "glass");
     case "olw_glass_emissive":
     case "olw_light_emissive": {
+      // a light source: stays a plain emissive StandardMaterial
       const g = m.flat(PALETTE.lamp, { emissive: 0.2 });
       if (k.lighting && !glowRegistered.has(g)) {
         glowRegistered.add(g);
-        k.lighting.registerGlow(g as StandardMaterial, PALETTE.lamp, "#4a3d26");
+        k.lighting.registerGlow(g, PALETTE.lamp, "#4a3d26");
       }
       return g;
     }
+    // vertex colours × white on stylized PBR
+    case "olw_metal": // lamp posts, bench frames, brackets, hubcaps
+      return m.pbrFlat("#ffffff", "metal");
+    case "olw_steel": // modern bench frames
+      return m.pbrFlat("#ffffff", "steel");
+    case "olw_paint": // painted wood, bench slats, car body, sills
+      return m.pbrFlat("#ffffff", "paint");
+    case "olw_rubber":
+      return m.pbrFlat("#ffffff", "rubber");
     default:
-      // olw_paint, olw_foliage, olw_metal, olw_awning, olw_flower, olw_bark, olw_rubber,
-      // character roles, face: vertex colours × white
+      // olw_foliage, olw_awning, olw_flower, olw_bark, character roles, face:
+      // vertex colours × white (characters are re-dressed in kit/characters.ts)
       return m.flat("#ffffff");
   }
 }
