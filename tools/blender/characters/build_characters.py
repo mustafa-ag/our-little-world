@@ -25,6 +25,7 @@ olw_bottom, olw_shoes, olw_face. COLOR_0 carries shading multipliers
 """
 
 import argparse
+import copy
 import math
 import os
 import sys
@@ -259,32 +260,34 @@ class Design:
         bust = 0.013 if juju else 0.006
         self.torso = [
             (0.40, 0.112 if juju else 0.100, 0.070, 0.078, 0.004),
-            (0.44, 0.094 if juju else 0.090, 0.062, 0.066, 0.002),
-            (0.475, 0.080 if juju else 0.084, 0.057, 0.058, 0.0),
-            (0.505, 0.080 if juju else 0.085, 0.057, 0.056, 0.0),
+            (0.44, 0.092 if juju else 0.090, 0.061 if juju else 0.062, 0.064 if juju else 0.066, 0.002),
+            # Juju: a slimmer waist under wider shoulders
+            (0.475, 0.075 if juju else 0.084, 0.054 if juju else 0.057, 0.055 if juju else 0.058, 0.0),
+            (0.505, 0.076 if juju else 0.085, 0.055 if juju else 0.057, 0.054 if juju else 0.056, 0.0),
             (0.535, 0.086 if juju else 0.088, 0.058 + bust * 0.6, 0.056, 0.0),
-            (0.562, 0.094, 0.058 + bust, 0.057, 0.0),
-            (0.588, 0.099, 0.058 + bust * 0.5, 0.057, 0.0),
-            (0.612, 0.102, 0.054, 0.055, 0.0),
-            (0.632, 0.090, 0.045, 0.049, 0.0),
-            (0.647, 0.062, 0.038, 0.042, 0.0),
-            (0.662, 0.042, 0.037, 0.039, 0.0),
-            (0.70, 0.038, 0.034, 0.037, 0.0),
-            (0.775, 0.035, 0.032, 0.035, 0.0),
+            (0.562, 0.096 if juju else 0.094, 0.058 + bust, 0.057, 0.0),
+            (0.588, 0.104 if juju else 0.099, 0.058 + bust * 0.5, 0.057, 0.0),
+            (0.612, 0.108 if juju else 0.102, 0.054, 0.055, 0.0),
+            (0.632, 0.095 if juju else 0.090, 0.045, 0.049, 0.0),
+            # neck: Juju gets a slimmer, defined neck (sloping trapezius -> narrow column)
+            (0.647, 0.060 if juju else 0.062, 0.036 if juju else 0.038, 0.042, 0.0),
+            (0.662, 0.039 if juju else 0.042, 0.033 if juju else 0.037, 0.037 if juju else 0.039, 0.0),
+            (0.70, 0.033 if juju else 0.038, 0.030 if juju else 0.034, 0.034 if juju else 0.037, 0.0),
+            (0.775, 0.031 if juju else 0.035, 0.029 if juju else 0.032, 0.032 if juju else 0.035, 0.0),
         ]
         # skirt rings: z, rx, ry_front, ry_back, y_offset
         hip = 0.124 if juju else 0.110
         if juju:  # pale denim maxi, softly fitted over the hips, a little flare at the hem
             self.skirt = [
-                (0.492, 0.086, 0.063, 0.063, 0.0),
-                (0.462, 0.095, 0.067, 0.070, 0.001),
-                (0.425, 0.112, 0.074, 0.080, 0.003),
+                (0.492, 0.081, 0.060, 0.060, 0.0),
+                (0.462, 0.091, 0.065, 0.068, 0.001),
+                (0.425, 0.110, 0.073, 0.079, 0.003),
                 (0.385, hip, 0.078, 0.088, 0.005),
                 (0.345, hip + 0.003, 0.081, 0.090, 0.005),
                 (0.285, hip + 0.005, 0.086, 0.090, 0.004),
-                (0.205, hip + 0.012, 0.095, 0.095, 0.002),
-                (0.135, hip + 0.020, 0.105, 0.101, 0.0),
-                (0.092, hip + 0.026, 0.111, 0.105, 0.0),
+                (0.205, hip + 0.013, 0.096, 0.096, 0.002),
+                (0.135, hip + 0.024, 0.108, 0.104, 0.0),
+                (0.092, hip + 0.034, 0.117, 0.110, 0.0),
             ]
         else:  # knee-length A-line
             self.skirt = [
@@ -300,8 +303,8 @@ class Design:
             (0.355, 0.108 if juju else 0.100, 0.070, 0.080, 0.004),
             (0.39, hip - 0.004, 0.074, 0.084, 0.005),
             (0.43, 0.108 if juju else 0.100, 0.070, 0.074, 0.003),
-            (0.465, 0.090 if juju else 0.090, 0.063, 0.064, 0.0),
-            (0.494, 0.086, 0.062, 0.062, 0.0),
+            (0.465, 0.086 if juju else 0.090, 0.061 if juju else 0.063, 0.062 if juju else 0.064, 0.0),
+            (0.494, 0.080 if juju else 0.086, 0.059 if juju else 0.062, 0.059 if juju else 0.062, 0.0),
         ]
         self.thigh_r = 0.060 if juju else 0.054
         # joints
@@ -313,6 +316,18 @@ class Design:
         self.knee = Vector((0.056, -0.004, 0.20))
         self.ankle = Vector((0.056, 0.004, 0.062))
         self.toe = Vector((0.056, -0.062, 0.016))
+        if juju:
+            # shoulders a touch wider than the hips (the arm chain moves out with them)
+            for j in (self.shoulder, self.elbow, self.wrist, self.hand_tip):
+                j.x += 0.006
+        # Juju's longer-legged, smaller-headed proportions are applied after modelling
+        # as a warp of the finished meshes + skeleton (see juju_warp_setup); the part
+        # builders and the weight painter keep working in these design units.
+        self.warp = juju
+        self.head_scale = 0.60  # head (and hair above the jaw) scale about the chin
+        self.chin0 = 0.72  # design-unit chin height (pivot of the head scaling)
+        self.zmap = None  # (z_design, z_warped) knots, filled by juju_warp_setup
+        self.chin_new = None
         if kind == "male":
             # a boyish build on the same rig: no bust, straighter waist, broader
             # chest / shoulders, narrower hips
@@ -382,16 +397,70 @@ def head_point(D, lat, lon, pad=0.0):
         g = math.exp(-(((fd - (-90 + side * 48)) / 22) ** 2)) * math.exp(-(((math.degrees(lat) + 22) / 18) ** 2))
         x += side * 0.006 * g
         y -= 0.005 * g
+    if D.kind == "juju" and y < 0:
+        x, y, z = juju_face_relief(x, y, z)
     return D.HC + Vector((x, y, z))
+
+
+def juju_face_relief(x, y, z):
+    """Sculpted relief under Juju's painted face (head-centre relative, design
+    units; the paint puts the eyes at x=+-0.047 z=-0.010, brows at z=+0.033, the
+    nose tip at z~-0.043, the lip line at z=-0.071). Mostly depth (y) offsets so
+    the planar face UVs stay registered with the paint."""
+    G = lambda u, v: math.exp(-(u * u + v * v))
+    front = smoothstep(-0.02, -0.09, y)  # fade out towards the sides of the head
+    dy = 0.0
+    ax = abs(x)
+    ex, ez = 0.047, -0.010
+    # eye sockets: the eye area sits a little deeper, under a soft brow ridge
+    dy += 0.0055 * G((ax - ex) / 0.024, (z - ez) / 0.019)
+    dy -= 0.0022 * G((ax - 0.044) / 0.030, (z - 0.030) / 0.011)
+    # upper-eyelid fold: a thin ridge following the lid crease over each eye
+    crease = ez + 0.0205 * 0.95 + 0.0035 - 0.007 * ((ax - ex) / 0.02) ** 2
+    dy -= 0.0018 * G((ax - ex) / 0.018, (z - crease) / 0.0045)
+    # nose: a slim bridge and a soft tip
+    dy -= 0.0055 * G(x / 0.0085, (z + 0.036) / 0.016) + 0.0025 * G(x / 0.012, (z + 0.042) / 0.007)
+    # cheekbones: forward/outward swell high on the cheek, a slight hollow below
+    cb = G((ax - 0.070) / 0.022, (z + 0.028) / 0.015)
+    dy -= 0.0035 * cb
+    x += math.copysign(0.0025 * cb, x) if x else 0.0
+    dy += 0.0022 * G((ax - 0.070) / 0.020, (z + 0.070) / 0.014)
+    # lips: an upper lip with a cupid's bow (two peaks either side of a small
+    # centre dip), a fuller lower lip, a shallow philtrum groove and lip line
+    mz = -0.071
+    bow = 1.0 + 0.45 * math.exp(-(((ax - 0.0045) / 0.003) ** 2)) - 0.3 * math.exp(-((x / 0.0025) ** 2))
+    dy -= 0.0030 * bow * G(x / 0.016, (z - (mz + 0.0035)) / 0.0045)
+    dy -= 0.0036 * G(x / 0.0135, (z - (mz - 0.0070)) / 0.0050)
+    dy += 0.0012 * G(x / 0.0170, (z - mz) / 0.0022)
+    dy += 0.0010 * G(x / 0.0035, (z - (mz + 0.0140)) / 0.0060)
+    # chin: a small forward projection under the lower lip
+    dy -= 0.0050 * G(x / 0.020, (z + 0.108) / 0.014)
+    dy += 0.0012 * G(x / 0.018, (z + 0.089) / 0.006)  # soft mentolabial crease
+    return x, y + dy * front, z
+
+
+def head_grid(D):
+    """Latitudes / longitudes of the head grid. Juju gets a denser grid packed
+    around the face (eyes, lips) so the relief sculpt reads; NPCs keep 24 x 14."""
+    if D.kind != "juju":
+        seg, nlat = 24, 15
+        return [-math.pi / 2 + math.pi * i / nlat for i in range(1, nlat)], [2 * math.pi * j / seg for j in range(seg)]
+    lats = [-84, -75, -67, -60, -54, -49, -45, -41, -38, -35, -32, -29, -26, -23, -20, -17, -14, -11, -8, -5,
+            -2, 1, 4, 7, 10, 13, 17, 22, 28, 36, 46, 57, 68, 79]
+    seg, c = 56, 0.68  # longitude density ~5x higher at the front than at the back
+    lons = []
+    for j in range(seg):
+        t = -1 + 2 * j / seg  # t = 0: front (-Y)
+        lons.append(-math.pi / 2 + math.pi * t - c * math.sin(math.pi * t))
+    return [math.radians(a) for a in lats], lons
 
 
 def build_head(D):
     P = Part()
-    seg, nlat = 24, 15
+    lats, lons = head_grid(D)
     rings = []
-    for i in range(1, nlat):
-        lat = -math.pi / 2 + math.pi * i / nlat
-        rings.append([head_point(D, lat, 2 * math.pi * j / seg) for j in range(seg)])
+    for lat in lats:
+        rings.append([head_point(D, lat, lon) for lon in lons])
     bottom = head_point(D, -math.pi / 2 + 1e-4, 0)
     top = head_point(D, math.pi / 2 - 1e-4, 0)
 
@@ -524,7 +593,10 @@ def build_top(D, frills=True):
         ring = []
         for th in ring_angles(seg):
             z = lerp(0.455, neckline(th), t)
-            ring.append(profile_point(D.torso, z, th, grow=0.0035))
+            grow = 0.0035
+            if juju:  # a little structure over the shoulder points
+                grow += 0.0045 * abs(math.cos(th)) ** 4 * smoothstep(0.57, 0.605, z) * smoothstep(0.64, 0.615, z)
+            ring.append(profile_point(D.torso, z, th, grow=grow))
         rings.append(ring)
 
     def col(p, i, j):
@@ -559,7 +631,7 @@ def build_frills(D):
 def build_sleeve(D, side, ruffle=True):
     tag = T_ARM_L if side > 0 else T_ARM_R
     start, sh, el, wr, _ = arm_path(D, side)
-    top = sh + Vector((-side * 0.012, 0, 0.02))
+    top = sh + Vector((-side * 0.012, 0, 0.026 if D.kind == "juju" else 0.02))  # Juju: a squarer, structured sleeve head
     pts = spline([top, sh, sh.lerp(el, 0.28), sh.lerp(el, 0.5)], 6)
     base_r = [0.026, 0.043, 0.046, 0.045, 0.042, 0.039] if ruffle else [0.026, 0.041, 0.040, 0.039, 0.038, 0.037]
     rings, fr = tube(pts, lambda i, t, th: (base_r[i] * math.cos(th), base_r[i] * 0.95 * math.sin(th)), 14, up_hint=(side, 0, 0))
@@ -642,6 +714,8 @@ def build_jeans(D):
         zs = [0.43, 0.38, 0.33, 0.27, 0.20, 0.14, 0.09, 0.055]
         tr = D.thigh_r
         rs = [tr - 0.004, tr, tr + 0.002, tr - 0.008, 0.041, 0.038, 0.036, 0.037]
+        if D.kind == "juju":  # wide-leg cut: straight from the knee, a soft flare at the hem
+            rs[-4:] = [0.042, 0.043, 0.047, 0.054]
         xs = [x * 0.8, x, x * 1.02, x * 1.02, x, x, x, x]
         pts = [Vector((xs[k], lerp(0.0, 0.004, clamp((0.36 - z) / 0.3)), z)) for k, z in enumerate(zs)]
 
@@ -752,9 +826,10 @@ def build_shoes(D):
 
 # ---------------------------------------------------------------- hair ------
 
-def cap_rings(D, hairline, seg=24, nr=8, pad=(0.011, 0.014, 0.020), center_off=(0, 0.006, 0.010), part=True, bumps=0.0):
+def cap_rings(D, hairline, seg=24, nr=8, pad=(0.011, 0.014, 0.020), center_off=(0, 0.006, 0.010), part=True, bumps=0.0, crown=0.0):
     """Hair cap: an ellipsoid shell from a per-longitude hairline latitude up to the
-    crown, so the hairline edge is a clean curve (no stair steps)."""
+    crown, so the hairline edge is a clean curve (no stair steps). crown: extra
+    lift (design units) on top / towards the back of the crown for volume."""
     rx, ry, rz = D.HR
     rx, ry, rz = rx + pad[0], ry + pad[1], rz + pad[2]
     C = D.HC + Vector(center_off)
@@ -783,9 +858,13 @@ def cap_rings(D, hairline, seg=24, nr=8, pad=(0.011, 0.014, 0.020), center_off=(
                 p = p + d.normalized() * (w * (-0.010 * g + 0.006 * lobe))
             if bumps:
                 p = p + d.normalized() * bumps * (0.5 + 0.5 * math.sin(lon * 7 + i * 1.7) * math.sin(lat * 9 + j))
+            if crown:
+                # lift peaks on the crown, slightly behind the top of the head
+                k = smoothstep(0.1, 0.85, sl) * (0.75 + 0.25 * smoothstep(-0.5, 0.6, math.sin(lon)))
+                p = p + d.normalized() * crown * k
             ring.append(p)
         rings.append(ring)
-    top = C + Vector((0, 0, rz - (0.008 if part else 0.0)))
+    top = C + Vector((0, 0, rz - (0.008 if part else 0.0) + crown * 0.9))
     return rings, top, C
 
 
@@ -831,10 +910,45 @@ def build_hair_juju(D):
     col = hair_col_fn(D, root=0.60, tip=1.0, z_root=0.95, z_tip=0.46)
     parts = []
     # --- cap (solidified later as its own object, then merged)
-    rings, top, C = cap_rings(D, juju_hairline, seg=24, nr=7)
+    rings, top, C = cap_rings(D, juju_hairline, seg=32, nr=8, crown=0.012)
     cap = Part()
     cap.grid(rings, closed=True, col=lambda p, i, j: col(p), tag=T_HAIR_CAP, cap1=top)
     parts.append(("cap", cap, 0.013))
+
+    # --- curtain fringe: two swept bangs from the parting across the forehead,
+    # skimming the brow tails and flowing into the temples / side lengths
+    hrx, hry, hrz = D.HR
+
+    def on_head(x, zr, pad):
+        """point on the head ellipsoid (front), `pad` off the skin, and its normal"""
+        q = 1 - (x / (hrx + pad)) ** 2 - (zr / (hrz + pad)) ** 2
+        y = -(hry + pad) * math.sqrt(max(0.02, q))
+        nrm = Vector((x / (hrx + pad) ** 2, y / (hry + pad) ** 2, zr / (hrz + pad) ** 2)).normalized()
+        return D.HC + Vector((x, y, zr)), nrm
+
+    for side in (1, -1):
+        for k, (ctrl, w0, sh) in enumerate((
+            ([(0.016, 0.088), (0.030, 0.072), (0.054, 0.052), (0.080, 0.031), (0.099, 0.002), (0.108, -0.034)], 0.020, 0.0),
+            ([(0.022, 0.090), (0.044, 0.073), (0.070, 0.053), (0.093, 0.026), (0.109, -0.006), (0.117, -0.044)], 0.016, 0.005),
+        )):
+            path = spline([Vector((side * c[0], 0, c[1])) for c in ctrl], 14)
+            pts, nrms = [], []
+            for i, q in enumerate(path):
+                t = i / (len(path) - 1)
+                p, nr_ = on_head(q.x, q.z, 0.009 + sh + 0.006 * math.sin(math.pi * t))
+                pts.append(p)
+                nrms.append(nr_)
+
+            def bsec(i, t, th, w0=w0):
+                w = w0 * (0.55 + 0.45 * math.sin(math.pi * min(1.0, 0.25 + t * 0.9))) * (1 - 0.6 * smoothstep(0.7, 1.0, t))
+                thick = 0.0060 * (1 - 0.5 * smoothstep(0.6, 1.0, t))
+                return (thick * math.cos(th), w * math.sin(th))
+
+            rings_b, fr_b = tube(pts, bsec, 8, up_hint=lambda i, nrms=nrms: nrms[i])
+            bp = Part()
+            bp.grid(rings_b, closed=True, col=lambda p, i, j: col(p), tag=T_HAIR_CAP,
+                    cap0=pts[0] - fr_b[0][2] * 0.004, cap1=pts[-1] + fr_b[-1][2] * 0.006)
+            parts.append(("fringe", bp, 0.0))
 
     # --- back mass: crescent sections from inside the cap down to mid-back
     back = Part()
@@ -859,21 +973,25 @@ def build_hair_juju(D):
         yc, Rx, Ry, ha, th = hermite_table([(r[0],) + r[1:] for r in table[::-1]], z)
         ha = math.radians(ha)
         wave = 0.010 * math.sin(z * 34.0)  # soft S-waves down the length
+        # rounded back: a fuller centre over the shoulder blades that eases in
+        # towards the tips, so the mass reads as a draped volume (not a flat sheet)
+        swell = 0.012 * math.exp(-(((z - 0.63) / 0.09) ** 2)) - 0.006 * smoothstep(0.56, 0.47, z)
         ring = []
         last = zi == len(zs) - 1
         for k in range(na):
             a = -ha + 2 * ha * k / (na - 1)
-            lock = 1 + 0.07 * (0.5 + 0.5 * math.cos(a * 9 + z * 6)) * smoothstep(0.9, 0.75, z)
+            lock = 1 + 0.085 * (0.5 + 0.5 * math.cos(a * 9 + z * 6)) * smoothstep(0.9, 0.75, z) + 0.025 * math.sin(a * 5 + z * 11)
             x = Rx * math.sin(a) * lock + wave * math.cos(a)
-            y = yc + Ry * math.cos(a) * lock
-            zz = z - (0.03 * (0.5 + 0.5 * math.cos(a * 9 + 1.3)) if last else 0.0)
+            y = yc + Ry * math.cos(a) * lock + swell * math.cos(a) ** 2
+            # tips: layered, longest in the middle (soft V)
+            zz = z - ((0.03 * (0.5 + 0.5 * math.cos(a * 9 + 1.3)) + 0.03 * math.cos(a) ** 2) if last else 0.0)
             ring.append(Vector((x, y, zz)))
         for k in range(na - 1, -1, -1):
             a = -ha + 2 * ha * k / (na - 1)
             t2 = th * (0.4 if last else 1.0)
             x = (Rx - t2) * math.sin(a) + wave * math.cos(a)
-            y = yc + (Ry - t2) * math.cos(a)
-            zz = z - (0.03 * (0.5 + 0.5 * math.cos(a * 9 + 1.3)) if last else 0.0) + (0.006 if last else 0)
+            y = yc + (Ry - t2) * math.cos(a) + swell * 0.8 * math.cos(a) ** 2
+            zz = z - ((0.03 * (0.5 + 0.5 * math.cos(a * 9 + 1.3)) + 0.03 * math.cos(a) ** 2) if last else 0.0) + (0.006 if last else 0)
             ring.append(Vector((x, y, zz)))
         brings.append(ring)
     # rings go downward; ring order (outer left->right as a goes -ha..ha: x from - to +... ) fix orientation below
@@ -1258,7 +1376,8 @@ def get_material(slot, image=None):
         nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
         nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
         m.blend_method = "BLEND"
-        m.surface_render_method = "BLENDED"
+        if hasattr(m, "surface_render_method"):  # bpy 4.2+ (4.0 only has blend_method)
+            m.surface_render_method = "BLENDED"
     else:
         ca = nt.nodes.new("ShaderNodeVertexColor")
         ca.layer_name = "Color"
@@ -1375,6 +1494,8 @@ def build_armature(D, scale):
     B = bone_table(D)
     for name in BONE_ORDER:
         parent, h, t = B[name]
+        if D.warp:
+            h, t = warp_bone(D, name, Vector(h), Vector(t))
         eb = arm.edit_bones.new(name)
         eb.head = Vector(h) * scale
         eb.tail = Vector(t) * scale
@@ -1386,6 +1507,81 @@ def build_armature(D, scale):
         eb.use_deform = True
     bpy.ops.object.mode_set(mode="OBJECT")
     return ob
+
+
+# ---------------------------------------------------- Juju proportion warp ----
+# Juju is modelled on the storybook base (big head, short legs) and then warped
+# to longer-legged, ~1:5.5 head proportions: the body is remapped in height
+# (legs ~1.33x, torso ~1.08x, hip joint at ~45% of her height), the head and the
+# hair cap / fringe scale down about the chin, and the long hair blends from the
+# head scaling above the shoulders to the body mapping down the back. Weights
+# are painted before the warp; the skeleton and the IK clips use warped joints.
+
+# final design->world scale for Juju; keeps the authored walk / run loop lengths
+# (WALK_SPEED / RUN_SPEED in src/app3d/assets/kit/characters.ts) unchanged
+JUJU_SCALE = 1.0161
+HIP_NEW = 0.470  # warped hip-joint height (design units): legs ~45% of the height
+TORSO_K = 1.11  # torso lengthening (hip joint -> shoulder)
+
+
+def juju_warp_setup(D, top):
+    """top: design-unit height of the (unwarped) hair crown."""
+    s = D.head_scale
+    D.chin_new = TARGET_HEIGHT / JUJU_SCALE - (top - D.chin0) * s
+    sh_new = HIP_NEW + (D.shoulder.z - D.hip_j.z) * TORSO_K
+    neck_k = (D.chin_new - sh_new) / (D.chin0 - D.shoulder.z)
+    D.zmap = [(-0.2, -0.2), (0.0, 0.0), (0.04, 0.04), (D.hip_j.z, HIP_NEW), (D.shoulder.z, sh_new),
+              (D.chin0, D.chin_new), (D.chin0 + 0.5, D.chin_new + 0.5 * neck_k)]
+
+
+def body_z(D, z):
+    return hermite_table(D.zmap, z)[0]
+
+
+def warp_point(D, p, mode):
+    """mode: 'body' (height remap), 'head' (scale about the chin), 'hair' (blend)."""
+    s = D.head_scale
+    if mode == "body":
+        return Vector((p.x, p.y, body_z(D, p.z)))
+    zh = D.chin_new + (p.z - D.chin0) * s
+    if mode == "head":
+        return Vector((p.x * s, p.y * s, zh))
+    f = lerp(1.0, s, smoothstep(0.60, 0.76, p.z))
+    return Vector((p.x * f, p.y * f, zh if p.z > D.chin0 else body_z(D, p.z)))
+
+
+def warp_mode(tag):
+    if tag in (T_HEAD, T_HAIR_CAP):
+        return "head"
+    if tag in (T_HAIR_BACK, T_HAIR_FL, T_HAIR_FR, T_TAIL):
+        return "hair"
+    return "body"
+
+
+def warp_object(D, ob):
+    me = ob.data
+    tags = [0] * len(me.vertices)
+    me.attributes["olw_tag"].data.foreach_get("value", tags)
+    for i, v in enumerate(me.vertices):
+        v.co = warp_point(D, v.co, warp_mode(tags[i]))
+    me.update()
+
+
+def warp_bone(D, name, h, t):
+    if name == "head":  # pivots at the top of the (remapped) neck
+        return warp_point(D, h, "body"), warp_point(D, t, "head")
+    mode = "hair" if name.startswith("hair") or name == "tail" else "body"
+    return warp_point(D, h, mode), warp_point(D, t, mode)
+
+
+def rig_design(D):
+    """D with the joints moved to the warped skeleton (for the IK clips)."""
+    if not D.warp:
+        return D
+    R = copy.copy(D)
+    for k in ("shoulder", "elbow", "wrist", "hand_tip", "hip_j", "knee", "ankle", "toe"):
+        setattr(R, k, warp_point(D, getattr(D, k), "body"))
+    return R
 
 
 def chain_weights(z, x):
@@ -1501,20 +1697,25 @@ def compute_weights(D, p, tag):
     return {"hips": 1.0}
 
 
-def skin_object(D, ob, rig, scale):
+def skin_object(D, ob, rig, scale, weights=True):
+    """Paint the weights (design-unit positions) and bind to the rig. rig=None:
+    weights only, keeping the olw_tag attribute (Juju: painted before the warp)."""
     me = ob.data
-    tags = [0] * len(me.vertices)
-    me.attributes["olw_tag"].data.foreach_get("value", tags)
-    groups = {}
-    for i, v in enumerate(me.vertices):
-        p = v.co / scale
-        w = compute_weights(D, p, tags[i])
-        items = sorted(((b, x) for b, x in w.items() if x > 0.01), key=lambda q: -q[1])[:4]
-        tot = sum(x for _, x in items) or 1.0
-        for b, x in items:
-            if b not in groups:
-                groups[b] = ob.vertex_groups.new(name=b)
-            groups[b].add([i], x / tot, "REPLACE")
+    if weights:
+        tags = [0] * len(me.vertices)
+        me.attributes["olw_tag"].data.foreach_get("value", tags)
+        groups = {}
+        for i, v in enumerate(me.vertices):
+            p = v.co / scale
+            w = compute_weights(D, p, tags[i])
+            items = sorted(((b, x) for b, x in w.items() if x > 0.01), key=lambda q: -q[1])[:4]
+            tot = sum(x for _, x in items) or 1.0
+            for b, x in items:
+                if b not in groups:
+                    groups[b] = ob.vertex_groups.new(name=b)
+                groups[b].add([i], x / tot, "REPLACE")
+    if rig is None:
+        return
     me.attributes.remove(me.attributes["olw_tag"])
     mod = ob.modifiers.new("rig", "ARMATURE")
     mod.object = rig
@@ -1844,6 +2045,14 @@ def build_character(kind, tmpdir):
 
     # uniform scale to the target height (hair top), feet at 0
     top = max((ob.matrix_world @ v.co).z for ob in objs.values() for v in ob.data.vertices)
+    if D.warp:
+        # Juju: paint weights on the design-unit model, then warp to her proportions
+        for ob in objs.values():
+            skin_object(D, ob, None, 1.0)
+        juju_warp_setup(D, top)
+        for ob in objs.values():
+            warp_object(D, ob)
+        top = max((ob.matrix_world @ v.co).z for ob in objs.values() for v in ob.data.vertices)
     scale = TARGET_HEIGHT / top if juju else TARGET_HEIGHT * 1.0 / top
     for ob in objs.values():
         me = ob.data
@@ -1851,12 +2060,13 @@ def build_character(kind, tmpdir):
         me.update()
     rig = build_armature(D, scale)
     for ob in objs.values():
-        skin_object(D, ob, rig, scale)
+        skin_object(D, ob, rig, scale, weights=not D.warp)
 
     P = Poser(rig)
+    DR = rig_design(D)
     build_idle(P, scale)
-    build_walk(P, D, scale)
-    build_run(P, D, scale)
+    build_walk(P, DR, scale)
+    build_run(P, DR, scale)
     build_wave(P, scale)
     build_nod(P, scale)
 
@@ -1866,7 +2076,7 @@ def build_character(kind, tmpdir):
 
 def export(path):
     bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.export_scene.gltf(
+    kw = dict(
         filepath=path,
         export_format="GLB",
         use_selection=False,
@@ -1889,7 +2099,11 @@ def export(path):
         export_morph=False,
         export_cameras=False,
         export_lights=False,
+        export_colors=True,  # bpy 4.0 name for the COLOR_0 export (4.2: export_vertex_color)
     )
+    # keep only the options this Blender's glTF exporter knows (4.0 vs 4.2 naming)
+    known = set(bpy.ops.export_scene.gltf.get_rna_type().properties.keys())
+    bpy.ops.export_scene.gltf(**{k: v for k, v in kw.items() if k in known})
 
 
 # ----------------------------------------------------------------------------
@@ -1928,7 +2142,10 @@ def render_previews(rig, objs, outdir, prefix, hide=()):
     co = bpy.data.objects.new("cam", cam)
     sc.collection.objects.link(co)
     sc.camera = co
-    views = [("front", 0, 0.55, 0.62), ("34", 35, 0.55, 0.62), ("side", 90, 0.55, 0.62), ("back", 180, 0.55, 0.62), ("face", 15, 0.86, 0.3)]
+    hb = rig.data.bones["head"]
+    face_z = lerp(hb.head_local.z, hb.tail_local.z, 0.45)
+    face_k = 0.3 * min(1.0, hb.length / 0.26)  # frame the face by the head size
+    views = [("front", 0, 0.55, 0.62), ("34", 35, 0.55, 0.62), ("side", 90, 0.55, 0.62), ("back", 180, 0.55, 0.62), ("face", 15, face_z, face_k)]
     ad = rig.animation_data
     for name, yaw, tz, dist_k in views:
         d = 3.2 * dist_k / 0.62
