@@ -17,6 +17,7 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { WorldArtProfile } from "../world/artProfile";
 
