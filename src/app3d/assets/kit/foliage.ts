@@ -168,6 +168,8 @@ function buildCypress(ctx: HeroCtx): Mesh {
 
 const PALM_BARK = "#8a6a3a";
 const PALM_FROND = "#4a7a30";
+/** Baked uniform scale: ~4.6 u as modelled -> ~3.2 u, crown radius ~1.3 u (oak-sized). */
+const PALM_SCALE = 0.7;
 
 /**
  * One palm frond as a flattened blade from `from`, heading `yaw` and pitched
@@ -255,7 +257,14 @@ function buildPalm(k: KitContext): Mesh {
   const heart = blob(s, 0.36, leafMat, x, h + 0.08, 0, 0.9, 6);
   tintVertices(heart, "#3f6a28");
   parts.push(heart);
-  return merge("tree-palm", [...trunkParts, ...parts]);
+  const palm = merge("tree-palm", [...trunkParts, ...parts]);
+  // bring the palm into the world-scale contract (world/scale.ts: Juju 1.05 u,
+  // oak ~3.3 u): modelled at ~4.6 u, its crown sat in the follow camera's
+  // height band (~4.5 u at the default radius/elevation), so a palm behind
+  // Juju put frond blades right against the lens as huge flat boards
+  palm.scaling.setAll(PALM_SCALE);
+  palm.bakeCurrentTransformIntoVertices();
+  return palm;
 }
 
 // ---------------------------------------------------------------- flower bed / heather / grass (procedural)
