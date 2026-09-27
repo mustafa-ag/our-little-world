@@ -16,7 +16,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { TimeOfDay } from "../game/systems/save";
 import { Materials, applyRegionPalette } from "./rendering/materials";
 import { getArtProfile, type WorldArtProfile } from "./world/artProfile";
-import { buildEnvironment, type Environment } from "./rendering/environment";
+import { buildEnvironment, setEnvironmentKind, setupEnvironment, type Environment, type EnvironmentKind } from "./rendering/environment";
 import { AssetManager, HERO_PRELOAD_KEYS, remapSlots, type KitContext } from "./assets/AssetManager";
 import * as architecture from "./assets/kit/architecture";
 import { registerProps } from "./assets/kit/props";
@@ -134,6 +134,11 @@ export class Game3D {
     this.lighting = createLighting(scene, isMobile);
     // starting region base (loadLocation() re-applies it for every location)
     this.lighting.setRegion(getArtProfile(Game3D.sessionLocation()).region);
+    // IBL environment texture (sky.ts keeps the visible sky, lighting.ts the clear colour)
+    setupEnvironment(scene, "day");
+    this.syncEnvironment();
+    store.on("time", this.syncEnvironment);
+    store.on("changed", this.syncEnvironment);
     this.camera = new CameraController(scene, canvas, { isMobile });
     this.sky = createSky(scene);
     this.occlusion = createOcclusion(scene, {
@@ -203,6 +208,7 @@ export class Game3D {
       applyRegionPalette(profile);
       // region key/fill/rim base under the time-of-day blend
       this.lighting.setRegion(profile.region);
+      this.syncEnvironment();
       this.sky.setRegion({ horizon: profile.skyHorizonColor, zenith: profile.skyZenithColor, fog: profile.fogColor, fogDensity: profile.fogDensity, strength: profile.atmosphereStrength });
       const world = generateWorld(def);
       const collider = createGridCollider(world.blocked.map((r) => r.slice()));
@@ -698,7 +704,23 @@ export class Game3D {
     };
   }
 
+  /** Environment kind for the current region + time of day. */
+  private environmentKind(t: TimeOfDay = store.state.timeOfDay): EnvironmentKind {
+    if (t === "night") return "night";
+    const region = this.lighting.region();
+    if (region === "scotland" || region === "london") return "overcast";
+    if (t === "evening") return "sunset";
+    return "day";
+  }
+
+  /** Re-pick the IBL environment for the current region / time of day. */
+  private readonly syncEnvironment = (t?: TimeOfDay): void => {
+    setEnvironmentKind(this.host.scene, this.environmentKind(t ?? store.state.timeOfDay));
+  };
+
   dispose() {
+    store.off("time", this.syncEnvironment);
+    store.off("changed", this.syncEnvironment);
     this.stopUpdate?.();
     this.unload();
     this.stopAtmo();
