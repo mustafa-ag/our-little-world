@@ -64,7 +64,7 @@ export interface CharacterRig {
 
 /** Character height (world units, feet at 0) and head centre height. */
 export const CHAR_HEIGHT = JUJU_HEIGHT;
-export const HEAD_Y = 0.875;
+export const HEAD_Y = 0.95;
 
 export const JUJU_KEY = "juju";
 export const NPC_BASE_KEY = "npc-base";
