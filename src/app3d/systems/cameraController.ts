@@ -156,7 +156,7 @@ export class CameraController {
     private readonly opts: CameraControllerOptions,
   ) {
     const camera = new TargetCamera("follow", new Vector3(0, 10, -10), scene);
-    camera.minZ = 0.1;
+    camera.minZ = 0.3; // close zoom + collision pull-in; keeps depth precision out to maxZ
     camera.maxZ = 520; // the sky dome / far skyline live out to ~400
     scene.activeCamera = camera;
     this.camera = camera;

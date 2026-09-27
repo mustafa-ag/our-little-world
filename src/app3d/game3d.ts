@@ -252,6 +252,8 @@ export class Game3D {
       const playerView = new PlayerView(this.kit, this.am, sp.x, sp.z);
       this.camera.setHeading(player.state.yaw);
       this.camera.setTarget(sp.x, sp.z, true, groundAt(env)(sp.x, sp.z));
+      // no orbit / camera keys while the world waits behind the title screen
+      this.camera.setOrbitEnabled(!opts.deferSetup);
       this.lighting.follow(sp.x, sp.z);
 
       const interaction = new InteractionSystem();
@@ -369,6 +371,7 @@ export class Game3D {
     const l = this.loaded;
     if (!l || !l.setupPending) return;
     l.setupPending = false;
+    this.camera.setOrbitEnabled(!this.driving);
     l.controller.setup(performance.now(), { travelled: l.travelled, fresh: opts.fresh });
     // NPCs are spawned by setup(); hand their spots to the DOM maps
     mapFeed.setNpcs([...l.npcs.values()].map((n) => ({ id: n.def.id, name: n.def.name, x: n.x, z: n.z })));
