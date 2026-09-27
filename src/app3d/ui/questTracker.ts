@@ -40,5 +40,5 @@ export function mountQuestTracker(ctx: UIContext) {
   refresh();
   d.on(store, "questUpdated", refresh);
   d.on(store, "changed", refresh);
-  return { refresh };
+  return { refresh, el: box };
 }

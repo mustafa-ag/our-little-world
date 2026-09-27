@@ -351,12 +351,79 @@
   }
 }
 
-/* quest tracker ---------------------------------------------------------------- */
-.olw-quests {
+/* top-right column: quest tracker + camera buttons ----------------------------- */
+.olw-hud-right {
   position: absolute;
   top: calc(var(--olw-safe-t) + 10px);
   right: calc(var(--olw-safe-r) + 10px);
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* camera FREE / LOCK toggle + reset (systems/cameraController.ts) */
+.olw-cam {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.olw-cam-lock,
+.olw-cam-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 36px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1.5px solid var(--olw-brown-soft);
+  border-radius: 999px;
+  background: rgba(251, 243, 228, 0.62);
+  color: var(--olw-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.olw-cam-reset {
+  font-size: 16px;
+  padding: 0;
+}
+
+.olw-cam-lock:hover,
+.olw-cam-reset:hover,
+.olw-cam-lock:focus-visible,
+.olw-cam-reset:focus-visible {
+  opacity: 1;
+  background: rgba(251, 243, 228, 0.9);
+}
+
+.olw-cam-lock--on {
+  border-color: var(--olw-rose-deep);
+  background: rgba(244, 166, 192, 0.55);
+  opacity: 1;
+}
+
+.olw-cam-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.olw-ui.olw-busy .olw-cam {
+  visibility: hidden;
+}
+
+/* quest tracker ---------------------------------------------------------------- */
+.olw-quests {
+  position: relative;
   width: max-content;
   max-width: min(300px, 46vw);
   padding: 0 12px 10px;

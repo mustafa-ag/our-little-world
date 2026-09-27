@@ -8,7 +8,6 @@ import type { NpcDef } from "../game/data/npcs";
 import { store } from "../game/systems/store";
 import { generateWorld, type WorldData } from "../game/worldgen";
 import { createRenderHost, type RenderHost } from "./rendering/engine";
-import { createFollowCamera, type FollowCamera } from "./rendering/camera";
 import { createLighting, type Lighting, type WarmSpot } from "./rendering/lighting";
 import { createSky, type Sky } from "./rendering/sky";
 import { createBackdrop, type Backdrop } from "./rendering/backdrop";
@@ -30,6 +29,7 @@ import { dressWorld } from "./world/dressing";
 import { pxToXZ } from "./world/coords";
 import { InteractionSystem } from "./systems/interaction";
 import { PlayerController } from "./systems/playerController";
+import { CameraController } from "./systems/cameraController";
 import { PORTED_LOCATIONS, WorldController, type PickupKind } from "./systems/worldController";
 import { mapFeed } from "./systems/mapFeed";
 import { PlayerView } from "./entities/PlayerView";
@@ -76,9 +76,14 @@ export interface LoadOptions {
 
 export const DEFAULT_LOCATION = "edinburgh_oldtown";
 
-/** Closer, higher framing for the small interior room (see rendering/camera.ts). */
+/** Closer, higher framing for the small interior room (see systems/cameraController.ts). */
 const INDOOR_CAMERA = { elev: 50, lookY: 0.6, lookAhead: 0.9, lead: 0.4 };
 const INDOOR_DISTANCE = 8;
+/** Indoors the camera may swing ~40 deg either side of looking north into the room. */
+const INDOOR_ALPHA_RANGE: [number, number] = [-Math.PI / 2 - 0.7, -Math.PI / 2 + 0.7];
+
+/** Terrain height at a world XZ (tile lookup), for the camera's ground clearance. */
+const groundAt = (env: Environment) => (x: number, z: number) => env.heightAt(Math.floor(x), Math.floor(-z));
 
 /** Higher, looser framing for the road trip: the road ahead fills the frame. */
 const DRIVE_CAMERA = { elev: 34, lookY: 0.4, lookAhead: 7, lead: 0 };
@@ -103,7 +108,7 @@ export class Game3D {
   mats: Materials;
   lighting: Lighting;
   am: AssetManager;
-  camera: FollowCamera;
+  camera: CameraController;
   sky: Sky;
   occlusion: Occlusion;
   private stopAtmo: () => void;
@@ -127,7 +132,7 @@ export class Game3D {
     const { scene, canvas, isMobile } = this.host;
     this.mats = new Materials(scene);
     this.lighting = createLighting(scene, isMobile);
-    this.camera = createFollowCamera(scene, canvas, isMobile);
+    this.camera = new CameraController(scene, canvas, { isMobile });
     this.sky = createSky(scene);
     this.occlusion = createOcclusion(scene, {
       addCaster: (m) => this.lighting.addCaster(m),
@@ -224,6 +229,9 @@ export class Game3D {
       // above; the thin-instance scan is a fallback for an empty list)
       const occluders = built.occluders.length ? built.occluders : occludersFromThinMeshes(this.host.scene.meshes, (m) => /^(building|castle|landmark)#/.test(m.name));
       this.occlusion.setOccluders(occluders);
+      // the camera pulls in rather than pass through the same building boxes
+      this.camera.setColliders(occluders);
+      this.camera.setGround(groundAt(env));
 
       // spawn (WorldScene.create semantics)
       let spawn = opts.spawn ?? built.world.spawn;
@@ -242,7 +250,8 @@ export class Game3D {
       const player = new PlayerController(collider, sp.x, sp.z);
       player.attach();
       const playerView = new PlayerView(this.kit, this.am, sp.x, sp.z);
-      this.camera.setTarget(sp.x, sp.z, true);
+      this.camera.setHeading(player.state.yaw);
+      this.camera.setTarget(sp.x, sp.z, true, groundAt(env)(sp.x, sp.z));
       this.lighting.follow(sp.x, sp.z);
 
       const interaction = new InteractionSystem();
@@ -405,6 +414,10 @@ export class Game3D {
     this.driving = { scene, destId: dest.id, distance: this.camera.getDistance() };
     this.camera.tune(DRIVE_CAMERA);
     this.camera.setDistance(DRIVE_DISTANCE, true);
+    // scripted road-trip framing: no orbit, no building collision, flat road
+    this.camera.setOrbitEnabled(false);
+    this.camera.setCollisionEnabled(false);
+    this.camera.setGround(null);
     const c = scene.carPos;
     this.camera.setTarget(c.x, c.z, true);
     this.lighting.follow(c.x, c.z);
@@ -419,12 +432,16 @@ export class Game3D {
     drv.scene.dispose();
     this.camera.clearTune();
     this.camera.setDistance(drv.distance, true);
+    this.camera.setOrbitEnabled(true);
+    this.camera.setCollisionEnabled(true);
     const l = this.loaded;
     if (l) {
+      this.camera.setGround(groundAt(l.env));
       l.player.attach();
       l.controller.setIndoors(false);
       const s = l.player.state;
-      this.camera.setTarget(s.x, s.z, true);
+      this.camera.setHeading(s.yaw);
+      this.camera.setTarget(s.x, s.z, true, l.env.heightAt(Math.floor(s.x), Math.floor(-s.z)));
       this.lighting.follow(s.x, s.z);
     }
     uiEvents.emit("driveClosed");
@@ -469,6 +486,12 @@ export class Game3D {
     this.lighting.apply("afternoon", true);
     this.camera.tune(INDOOR_CAMERA);
     this.camera.setDistance(INDOOR_DISTANCE, true);
+    // the room is a three-walled diorama open to the south: orbit a little
+    // either side of the classic view, no collision against the town
+    this.camera.setAlphaRange(INDOOR_ALPHA_RANGE);
+    this.camera.setCollisionEnabled(false);
+    this.camera.setGround(null);
+    this.camera.setHeading(player.state.yaw);
     this.camera.setTarget(scene.spawn.x, scene.spawn.z, true);
     l.playerView.update(0, player.state, 0);
     return true;
@@ -481,8 +504,10 @@ export class Game3D {
     this.indoors = null;
     ind.player.detach();
     ind.scene.dispose();
+    this.camera.setAlphaRange(null);
     this.camera.clearTune();
     this.camera.setDistance(ind.distance, true);
+    this.camera.setCollisionEnabled(true);
     this.lighting.apply(store.state.timeOfDay, true);
     const l = this.loaded;
     if (l) {
@@ -492,7 +517,9 @@ export class Game3D {
       s.yaw = Math.PI; // stepping out toward the camera
       l.player.attach();
       l.controller.setIndoors(false);
-      this.camera.setTarget(s.x, s.z, true);
+      this.camera.setGround(groundAt(l.env));
+      this.camera.setHeading(s.yaw);
+      this.camera.setTarget(s.x, s.z, true, l.env.heightAt(Math.floor(s.x), Math.floor(-s.z)));
       this.lighting.follow(s.x, s.z);
       l.playerView.update(0, s, l.env.heightAt(Math.floor(s.x), Math.floor(-s.z)));
     }
@@ -510,6 +537,8 @@ export class Game3D {
     mapFeed.clear();
     for (const t of l.timers) window.clearTimeout(t);
     this.occlusion.clear();
+    this.camera.setColliders([]);
+    this.camera.setGround(null);
     l.backdrop.dispose();
     this.backdrop = null;
     this.lighting.setLamps([]);
@@ -550,16 +579,19 @@ export class Game3D {
     }
     if (this.indoors) {
       const ind = this.indoors;
+      ind.player.viewYaw = this.camera.viewYaw;
       ind.player.update(dt);
       const s = ind.player.state;
       l.playerView.update(dt, s, 0);
       ind.scene.update(s.x, s.z);
+      this.camera.setHeading(s.yaw);
       this.camera.setTarget(s.x, s.z);
       this.camera.update(dt);
       this.sky.update(dt, this.camera.camera.position);
       if (l.effects.length) l.effects = l.effects.filter((fx) => !fx(dt));
       return;
     }
+    l.player.viewYaw = this.camera.viewYaw; // WASD / joystick move relative to the view
     l.player.update(dt);
     const s = l.player.state;
     const gy = l.env.heightAt(Math.floor(s.x), Math.floor(-s.z));
@@ -569,7 +601,8 @@ export class Game3D {
       mapFeed.setPlayer(s.x, s.z);
     }
     if (!l.setupPending) l.controller.update(dtMs, now); // no rules (time ticks, exits) behind the title
-    this.camera.setTarget(s.x, s.z);
+    this.camera.setHeading(s.yaw);
+    this.camera.setTarget(s.x, s.z, false, gy);
     this.camera.update(dt);
     this.lighting.follow(s.x, s.z);
     const cam = this.camera.camera.position;

@@ -63,6 +63,8 @@ export function mountUI(root: HTMLElement): { dispose(): void } {
   // order = stacking order among same-z siblings
   const hud = mountHud(ctx, () => quests.refresh());
   const quests = mountQuestTracker(ctx);
+  // top-right column: quest tracker, then the camera lock / reset buttons under it
+  layer.append(d.node(el("div", { class: "olw-hud-right" }, [quests.el, hud.camera])));
   mountJoystick(ctx);
   mountPrompt(ctx);
   const modals = mountModals(ctx);

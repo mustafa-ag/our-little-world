@@ -1,5 +1,6 @@
 // Top-left HUD: hearts, coins, clock, the evening "Rest" button + the big
-// location title card and the little heart pop on relationship gains.
+// location title card and the little heart pop on relationship gains. Also
+// builds the small camera FREE/LOCK + reset cluster (placed top-right by index.ts).
 import { store } from "../../game/systems/store";
 import { uiEvents } from "../../game/systems/controls";
 import { tryDeliverMessages } from "../../game/systems/phone";
@@ -153,6 +154,32 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
     onLocation();
   });
 
+  // ---- camera: FREE / LOCK toggle + reset (systems/cameraController.ts) ----
+  // The game owns the mode; the buttons ask over uiEvents and the indicator
+  // follows "cameraMode". Buttons drop focus after a click so Tab keeps
+  // toggling the camera instead of walking the HUD.
+  const camMode = el("span", { class: "olw-cam-mode", text: "FREE" });
+  const camLock = el("button", { class: "olw-cam-lock", attrs: { type: "button", title: "Toggle camera lock (Tab)", "aria-pressed": "false", "aria-label": "Camera lock" } }, [
+    el("span", { class: "olw-cam-icon", text: "\u{1F3A5}", attrs: { "aria-hidden": "true" } }),
+    camMode,
+  ]);
+  const camReset = el("button", { class: "olw-cam-reset", text: "\u21BA", attrs: { type: "button", title: "Reset camera (R)", "aria-label": "Reset camera" } });
+  d.listen(camLock, "click", () => {
+    uiEvents.emit("cameraToggleLock");
+    camLock.blur();
+  });
+  d.listen(camReset, "click", () => {
+    uiEvents.emit("cameraReset");
+    camReset.blur();
+  });
+  d.on(uiEvents, "cameraMode", (mode: "free" | "lock") => {
+    const locked = mode === "lock";
+    camMode.textContent = locked ? "LOCK" : "FREE";
+    camLock.classList.toggle("olw-cam-lock--on", locked);
+    camLock.setAttribute("aria-pressed", `${locked}`);
+  });
+  const camera = d.node(el("div", { class: "olw-cam olw-play-only", attrs: { role: "group", "aria-label": "Camera" } }, [camLock, camReset]));
+
   // ---- heart pop on relationship gain ----
   d.on(store, "relGain", () => {
     if (prefersReducedMotion()) return;
@@ -161,5 +188,5 @@ export function mountHud(ctx: UIContext, onLocation: () => void) {
     d.timeout(() => h.remove(), 800);
   });
 
-  return { refreshAll, el: hud, sleep };
+  return { refreshAll, el: hud, sleep, camera };
 }

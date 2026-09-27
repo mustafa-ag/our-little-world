@@ -2,8 +2,19 @@
 // procedural DynamicTextures (<=256px) for stone, roof tiles, cobbles, grass
 // and wood; StandardMaterial with black specular so nothing looks plastic.
 
+//
+// Key surfaces (buildings, ground, characters, street furniture) use a
+// *stylized* PBRMaterial instead (see `stylizedPBR` / `Materials.pbrFlat`):
+// roughness / metalness per surface type, but the same gamma-authored colours
+// and the same diffuse light response as the StandardMaterials around them.
+
 import type { Scene } from "@babylonjs/core/scene";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
@@ -129,6 +140,132 @@ const ROOF_HEX: Record<WorldArtProfile["roofStyle"], { tile: string; slate: stri
   glass: { tile: "#9fb8c6", slate: "#7f98a8" },
 };
 
+// ---------------------------------------------------------------------------
+// Stylized PBR.
+
+/** Roughness / metalness of one surface type. */
+export interface Surface {
+  roughness: number;
+  metallic?: number;
+}
+
+/**
+ * Surface types. Colours stay with the callers (palette / vertex tint); this
+ * table only says how light a surface is and how much it glints.
+ */
+export const SURFACES = {
+  // buildings
+  glass: { roughness: 0.05, metallic: 0.1 },
+  stucco: { roughness: 0.88 },
+  brick: { roughness: 0.92 },
+  stone: { roughness: 0.95 },
+  marble: { roughness: 0.4 },
+  flatRoof: { roughness: 0.78 },
+  terracotta: { roughness: 0.9 },
+  slate: { roughness: 0.8 },
+  leadRoof: { roughness: 0.6, metallic: 0.15 },
+  paint: { roughness: 0.85 },
+  // roads & ground
+  asphalt: { roughness: 0.97 },
+  setts: { roughness: 0.9 },
+  pavement: { roughness: 0.9 },
+  plaza: { roughness: 0.22, metallic: 0.05 },
+  sand: { roughness: 0.98 },
+  grass: { roughness: 0.96 },
+  // street furniture
+  metal: { roughness: 0.5, metallic: 0.7 },
+  steel: { roughness: 0.45, metallic: 0.8 },
+  wood: { roughness: 0.85 },
+  rubber: { roughness: 0.9 },
+  // characters
+  skin: { roughness: 0.72 },
+  fabric: { roughness: 0.88 },
+  hair: { roughness: 0.68 },
+  leather: { roughness: 0.6 },
+  jewellery: { roughness: 0.35, metallic: 0.3 },
+} satisfies Record<string, Surface>;
+
+export type SurfaceKind = keyof typeof SURFACES;
+
+/**
+ * Makes a PBRMaterial read gamma-authored inputs the way StandardMaterial
+ * does, so PBR and Standard meshes sit side by side without a seam:
+ *  - vertex / instance colours are sRGB (the kit tints in palette hex), so
+ *    they are linearised (the shader multiplies by c, we add c^1.2 → c^2.2);
+ *  - the summed diffuse light is raised to 2.2 before the output gamma, so
+ *    shaded sides stay as deep as under the StandardMaterial-tuned lighting
+ *    presets instead of lifting to a flat grey;
+ *  - emissive (lighting.registerGlow lerps palette hex) is linearised.
+ * Specular / Fresnel / metalness stay physically based: that is the upgrade.
+ */
+class GammaAuthoredPlugin extends MaterialPluginBase {
+  constructor(material: Material) {
+    super(material, "OlwGammaAuthored", 250, {}, true, true);
+  }
+  getClassName() {
+    return "OlwGammaAuthoredPlugin";
+  }
+  isCompatible(shaderLanguage: ShaderLanguage) {
+    return shaderLanguage === ShaderLanguage.GLSL;
+  }
+  getCustomCode(shaderType: string) {
+    if (shaderType !== "fragment") return null;
+    return {
+      CUSTOM_FRAGMENT_UPDATE_ALPHA: `
+#if defined(VERTEXCOLOR) || defined(INSTANCESCOLOR) && defined(INSTANCES)
+surfaceAlbedo *= pow(max(vColor.rgb, vec3(0.0)), vec3(1.2));
+#endif
+`,
+      CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: `
+#ifndef UNLIT
+finalDiffuse *= pow(max(diffuseBase, vec3(0.0)), vec3(1.2));
+#endif
+finalEmissive = toLinearSpace(max(finalEmissive, vec3(0.0)));
+`,
+    };
+  }
+}
+
+/**
+ * A PBRMaterial tuned for the painterly look: low environment contribution,
+ * Lambert diffuse, standard light falloff, no radiance occlusion. `color` is
+ * sRGB like every palette colour (it is linearised here).
+ */
+export function stylizedPBR(scene: Scene, name: string, color: Color3, roughness: number, metallic = 0): PBRMaterial {
+  const mat = new PBRMaterial(name, scene);
+  mat.albedoColor = color.toLinearSpace();
+  mat.roughness = roughness;
+  mat.metallic = metallic;
+  mat.environmentIntensity = 0.4; // keep it stylized, not a product render
+  mat.directIntensity = 1.0;
+  mat.useRadianceOcclusion = false; // cheaper
+  mat.useHorizonOcclusion = false;
+  mat.useSpecularOverAlpha = false;
+  mat.usePhysicalLightFalloff = false; // the lamp pool is tuned for linear range falloff
+  mat.brdf.baseDiffuseModel = Constants.MATERIAL_DIFFUSE_MODEL_LAMBERT; // match StandardMaterial shading
+  new GammaAuthoredPlugin(mat);
+  return mat;
+}
+
+/** Wall surface per region wall material (olw_stone slots, cottage walls). */
+const WALL_SURFACE: Record<WorldArtProfile["wallMaterial"], SurfaceKind> = {
+  stone: "stone",
+  render_white: "stucco",
+  render_cream: "stucco",
+  brick_london: "brick",
+  limestone: "stone",
+  marble: "marble",
+};
+
+/** Surface of the olw_roof_tile slot per region roof style. */
+const ROOF_SURFACE: Record<WorldArtProfile["roofStyle"], SurfaceKind> = {
+  slate: "terracotta", // Scotland's pantiles; the slate slot is SURFACES.slate
+  terracotta: "terracotta",
+  flat_parapet: "flatRoof",
+  lead_flat: "leadRoof",
+  glass: "glass",
+};
+
 export interface RegionPalette {
   ground: string;
   path: string;
@@ -140,6 +277,9 @@ export interface RegionPalette {
   roofTile: string;
   slate: string;
   accent: string;
+  /** PBR surface of walls (olw_stone) and of the olw_roof_tile slot. */
+  wallSurface: SurfaceKind;
+  roofSurface: SurfaceKind;
 }
 
 /** The palette of the region currently loaded (Scotland until a profile is applied). */
@@ -154,6 +294,8 @@ export const ACTIVE_REGION: RegionPalette = {
   roofTile: PALETTE.terracottaMuted,
   slate: PALETTE.slate,
   accent: PALETTE.wood,
+  wallSurface: "stone",
+  roofSurface: "terracotta",
 };
 
 /**
@@ -174,6 +316,8 @@ export function applyRegionPalette(profile: WorldArtProfile): RegionPalette {
   ACTIVE_REGION.roofTile = roof.tile;
   ACTIVE_REGION.slate = roof.slate;
   ACTIVE_REGION.accent = profile.accentColor;
+  ACTIVE_REGION.wallSurface = WALL_SURFACE[profile.wallMaterial];
+  ACTIVE_REGION.roofSurface = ROOF_SURFACE[profile.roofStyle];
   SLOT_STYLE.olw_stone.hex = wall.stone;
   SLOT_STYLE.olw_stone_dark.hex = wall.dark;
   SLOT_STYLE.olw_roof_tile.hex = roof.tile;
@@ -183,6 +327,7 @@ export function applyRegionPalette(profile: WorldArtProfile): RegionPalette {
 
 export class Materials {
   private mats = new Map<string, StandardMaterial>();
+  private pbrs = new Map<string, PBRMaterial>();
   private texes = new Map<string, DynamicTexture>();
 
   constructor(private scene: Scene) {}
@@ -221,6 +366,42 @@ export class Materials {
   }
 
   /**
+   * Flat stylized-PBR material for a surface type (cached by hex + surface +
+   * options). White hex = vertex colours carry the hue, as with `flat`.
+   */
+  pbrFlat(hex: string, surface: SurfaceKind, opts: { emissive?: number } = {}) {
+    const key = `pbr:${surface}:${hex}:${opts.emissive ?? 0}`;
+    let m = this.pbrs.get(key);
+    if (m) return m;
+    const s: Surface = SURFACES[surface];
+    m = stylizedPBR(this.scene, key, Color3.FromHexString(hex), s.roughness, s.metallic ?? 0);
+    if (opts.emissive) m.emissiveColor = Color3.FromHexString(hex).scale(opts.emissive);
+    m.freeze();
+    this.pbrs.set(key, m);
+    return m;
+  }
+
+  /** Hand-painted texture (shared with `textured`) on a stylized-PBR material. */
+  pbrTextured(style: TexStyle, hex: string, scale: number, surface: SurfaceKind) {
+    const key = `pbrtex:${surface}:${style}:${hex}:${scale}`;
+    let m = this.pbrs.get(key);
+    if (m) return m;
+    const s: Surface = SURFACES[surface];
+    m = stylizedPBR(this.scene, key, Color3.White(), s.roughness, s.metallic ?? 0);
+    // own Texture wrapper per scale over the shared canvas (uScale is per texture)
+    const t = this.texture(style, hex).clone();
+    t.wrapU = Texture.WRAP_ADDRESSMODE;
+    t.wrapV = Texture.WRAP_ADDRESSMODE;
+    t.anisotropicFilteringLevel = 4;
+    t.uScale = scale;
+    t.vScale = scale;
+    m.albedoTexture = t;
+    m.freeze();
+    this.pbrs.set(key, m);
+    return m;
+  }
+
+  /**
    * Shared material for a named slot (olw_stone, olw_roof_tile, olw_slate,
    * olw_wood, olw_stone_dark, olw_wood_dark, olw_bark, olw_awning,
    * olw_light_emissive, olw_rubber, olw_flower, …). Unknown slots (olw_paint,
@@ -254,8 +435,10 @@ export class Materials {
 
   dispose() {
     for (const m of this.mats.values()) m.dispose();
+    for (const m of this.pbrs.values()) m.dispose(false, true);
     for (const t of this.texes.values()) t.dispose();
     this.mats.clear();
+    this.pbrs.clear();
     this.texes.clear();
   }
 }

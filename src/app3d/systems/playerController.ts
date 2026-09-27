@@ -1,6 +1,7 @@
 // Engine-free player movement: merges keyboard (WASD / arrows) with the shared
 // `controls.moveX/moveY` joystick state exactly like WorldScene.update does,
-// normalises the vector, respects `controls.locked`, and adds a little
+// normalises the vector, turns it camera-relative (`viewYaw`, fed by
+// CameraController), respects `controls.locked`, and adds a little
 // acceleration/deceleration so the character feels weighty. Space / E emit
 // the same `uiEvents "action"` that the on-screen A button emits.
 
@@ -47,6 +48,12 @@ export interface PlayerState {
 
 export class PlayerController {
   state: PlayerState;
+  /**
+   * Ground yaw the camera looks along (coords.yawFor convention: 0 = north).
+   * Input is rotated by it so WASD / the joystick are camera-relative; the
+   * scene copies CameraController.viewYaw here every frame.
+   */
+  viewYaw = 0;
   private keys = new Set<string>();
   private lastAction = 0;
   private onKeyDown = (e: KeyboardEvent) => {
@@ -133,7 +140,11 @@ export class PlayerController {
       ix /= len;
       iy /= len;
     }
-    return { x: ix, z: -iy };
+    // camera-relative: "up" = where the camera looks (on the ground), "right" = its right
+    const fwd = -iy;
+    const c = Math.cos(this.viewYaw);
+    const s = Math.sin(this.viewYaw);
+    return { x: ix * c + fwd * s, z: -ix * s + fwd * c };
   }
 
   update(dt: number, frozen = false) {
