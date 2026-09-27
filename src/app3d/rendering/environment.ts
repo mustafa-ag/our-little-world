@@ -23,9 +23,14 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { RawCubeTexture } from "@babylonjs/core/Materials/Textures/rawCubeTexture";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
+import "@babylonjs/core/Engines/Extensions/engine.rawTexture";
 import type { WorldData } from "../../game/worldgen";
 import { Materials, PALETTE, SURFACES, stylizedPBR, type SurfaceKind } from "./materials";
 import type { Lighting } from "./lighting";
@@ -1286,4 +1291,201 @@ function buildStreetDetails(scene: Scene, W: number, H: number, paintAt: (tx: nu
     out.push(instanced(d, holeM, null));
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Image-based lighting / sky environment. Gives PBR materials (glass, metal,
+// water) something to reflect and a matching ambient term. With a prefiltered
+// .env for the kind it is used as-is; otherwise a small procedural cube map is
+// generated: a flat-coloured hemisphere sky (zenith -> horizon) over a plain
+// ground colour. The visible sky normally stays with sky.ts's gradient dome;
+// `dome: true` adds a simple solid-colour hemisphere for scenes without one.
+
+export type EnvironmentKind = "day" | "night" | "sunset" | "overcast";
+
+interface EnvPalette {
+  zenith: string;
+  horizon: string;
+  ground: string;
+}
+
+const ENV_PALETTE: Record<EnvironmentKind, EnvPalette> = {
+  day: { zenith: "#6fa6d8", horizon: PALETTE.sky, ground: "#8e9878" },
+  night: { zenith: "#10122e", horizon: "#2c2654", ground: "#101016" },
+  sunset: { zenith: "#d9829a", horizon: "#f2a06a", ground: "#6a5550" },
+  overcast: { zenith: "#9aa0a6", horizon: "#c3c6c9", ground: "#7a7d7e" },
+};
+
+export interface EnvironmentOptions {
+  /** Prefiltered .env URLs per kind; kinds without one use the procedural cube. */
+  envUrls?: Partial<Record<EnvironmentKind, string>>;
+  /** Add a solid-colour hemisphere sky dome (default false: sky.ts draws the sky). */
+  dome?: boolean;
+  /** Dome radius (default 400); keep it inside the camera's maxZ. */
+  domeRadius?: number;
+  /** Also set scene.clearColor to the horizon colour (default false: lighting.ts owns it). */
+  clearColor?: boolean;
+  /** Edge size of the procedural cube faces (default 32). */
+  cubeSize?: number;
+}
+
+export interface EnvironmentSky {
+  readonly kind: EnvironmentKind;
+  readonly texture: BaseTexture;
+  readonly dome: Mesh | null;
+  dispose(): void;
+}
+
+interface EnvState {
+  kind: EnvironmentKind;
+  opts: EnvironmentOptions;
+  texture: BaseTexture;
+  dome: Mesh | null;
+  domeMat: StandardMaterial | null;
+  handle: EnvironmentSky;
+}
+
+const ENV_STATE = new WeakMap<Scene, EnvState>();
+
+/**
+ * Install the environment (IBL texture, optional dome / clear colour) for a
+ * time-of-day kind. Calling it again on the same scene replaces the previous
+ * setup and its options.
+ */
+export function setupEnvironment(scene: Scene, kind: EnvironmentKind, opts: EnvironmentOptions = {}): EnvironmentSky {
+  ENV_STATE.get(scene)?.handle.dispose();
+  const state: EnvState = {
+    kind,
+    opts,
+    texture: envTexture(scene, kind, opts),
+    dome: null,
+    domeMat: null,
+    handle: null as unknown as EnvironmentSky,
+  };
+  scene.environmentTexture = state.texture;
+  if (opts.dome) {
+    const r = opts.domeRadius ?? 400;
+    const dome = CreateSphere("env:dome", { diameter: r * 2, segments: 16, slice: 0.5, sideOrientation: Mesh.BACKSIDE }, scene);
+    const mat = new StandardMaterial("env:dome", scene);
+    mat.disableLighting = true;
+    mat.diffuseColor = Color3.Black();
+    mat.specularColor = Color3.Black();
+    mat.fogEnabled = false;
+    mat.backFaceCulling = false;
+    dome.material = mat;
+    dome.infiniteDistance = true;
+    dome.isPickable = false;
+    dome.applyFog = false;
+    dome.receiveShadows = false;
+    dome.doNotSyncBoundingInfo = true;
+    state.dome = dome;
+    state.domeMat = mat;
+  }
+  applyKindColours(scene, state);
+  state.handle = {
+    get kind() {
+      return state.kind;
+    },
+    get texture() {
+      return state.texture;
+    },
+    get dome() {
+      return state.dome;
+    },
+    dispose() {
+      if (ENV_STATE.get(scene) === state) ENV_STATE.delete(scene);
+      if (scene.environmentTexture === state.texture) scene.environmentTexture = null;
+      state.texture.dispose();
+      state.dome?.dispose();
+      state.domeMat?.dispose();
+      state.dome = null;
+      state.domeMat = null;
+    },
+  };
+  ENV_STATE.set(scene, state);
+  return state.handle;
+}
+
+/**
+ * Switch the environment kind at runtime, keeping the options given to
+ * `setupEnvironment` (sets up with defaults if it was never called).
+ */
+export function setEnvironmentKind(scene: Scene, kind: EnvironmentKind): EnvironmentSky {
+  const state = ENV_STATE.get(scene);
+  if (!state) return setupEnvironment(scene, kind);
+  if (state.kind === kind) return state.handle;
+  const old = state.texture;
+  state.kind = kind;
+  state.texture = envTexture(scene, kind, state.opts);
+  if (scene.environmentTexture === old || !scene.environmentTexture) scene.environmentTexture = state.texture;
+  old.dispose();
+  applyKindColours(scene, state);
+  return state.handle;
+}
+
+function applyKindColours(scene: Scene, state: EnvState) {
+  const p = ENV_PALETTE[state.kind];
+  if (state.domeMat) state.domeMat.emissiveColor = Color3.FromHexString(p.horizon);
+  if (state.opts.clearColor) {
+    const c = Color3.FromHexString(p.horizon);
+    scene.clearColor = new Color4(c.r, c.g, c.b, 1);
+  }
+}
+
+function envTexture(scene: Scene, kind: EnvironmentKind, opts: EnvironmentOptions): BaseTexture {
+  const url = opts.envUrls?.[kind];
+  if (url) return CubeTexture.CreateFromPrefilteredData(url, scene);
+  return hemisphereCube(scene, kind, opts.cubeSize ?? 32);
+}
+
+/**
+ * Procedural sRGB cube map: sky gradient above the horizon, a quick fade to
+ * the ground colour below. Faces in GL order (+X, -X, +Y, -Y, +Z, -Z), row 0
+ * at the top of each side face; only elevation matters, so the side faces
+ * need no per-face orientation beyond that.
+ */
+function hemisphereCube(scene: Scene, kind: EnvironmentKind, size: number): RawCubeTexture {
+  const p = ENV_PALETTE[kind];
+  const zen = Color3.FromHexString(p.zenith);
+  const hor = Color3.FromHexString(p.horizon);
+  const gnd = Color3.FromHexString(p.ground);
+  const out = new Color3();
+  const colourAt = (elev: number) => {
+    if (elev >= 0) Color3.LerpToRef(hor, zen, Math.sqrt(elev), out);
+    else Color3.LerpToRef(hor, gnd, Math.min(1, -elev * 4), out);
+    return out;
+  };
+  const faces: Uint8Array[] = [];
+  for (let f = 0; f < 6; f++) {
+    const data = new Uint8Array(size * size * 4);
+    for (let row = 0; row < size; row++) {
+      const v = 1 - (2 * (row + 0.5)) / size; // +1 at the top row
+      for (let col = 0; col < size; col++) {
+        const u = (2 * (col + 0.5)) / size - 1;
+        const len = Math.hypot(1, u, v);
+        // elevation (y / |dir|): side faces carry y = v; +Y / -Y are the caps
+        const elev = f === 2 ? 1 / len : f === 3 ? -1 / len : v / len;
+        const c = colourAt(elev);
+        const i = (row * size + col) * 4;
+        data[i] = Math.round(c.r * 255);
+        data[i + 1] = Math.round(c.g * 255);
+        data[i + 2] = Math.round(c.b * 255);
+        data[i + 3] = 255;
+      }
+    }
+    faces.push(data);
+  }
+  const tex = new RawCubeTexture(
+    scene,
+    faces,
+    size,
+    Constants.TEXTUREFORMAT_RGBA,
+    Constants.TEXTURETYPE_UNSIGNED_BYTE,
+    true,
+    false,
+    Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
+  );
+  tex.name = `env:${kind}`;
+  tex.gammaSpace = true;
+  return tex;
 }

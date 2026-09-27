@@ -249,6 +249,269 @@ export function stylizedPBR(scene: Scene, name: string, color: Color3, roughness
   return mat;
 }
 
+// ---------------------------------------------------------------------------
+// PBR helpers: uncached factories over `stylizedPBR` for one-off surfaces
+// (share them through `MaterialCache` or `Materials.pbrFlat`). None of them
+// freeze the material: callers freeze static ones once configured, and must
+// never freeze `makeWater` (its UV scroll updates the texture every frame).
+
+/** A colour as palette hex ("#rrggbb", sRGB) or a Color3 (also sRGB). */
+export type ColorInput = Color3 | string;
+
+const toColor3 = (c: ColorInput): Color3 => (typeof c === "string" ? Color3.FromHexString(c) : c.clone());
+
+export interface PBROptions {
+  /** sRGB albedo. Default white, so vertex colours carry the hue. */
+  albedo?: ColorInput;
+  albedoTexture?: BaseTexture;
+  /** Default 0.8. */
+  roughness?: number;
+  /** Default 0. */
+  metallic?: number;
+  /** Tangent-space normal map: a texture, or a URL loaded (and owned) by the material. */
+  normalMap?: BaseTexture | string;
+  /** Normal map strength (`bumpTexture.level`). Default 1. */
+  normalStrength?: number;
+  /** sRGB emissive colour. */
+  emissive?: ColorInput;
+  /** < 1 switches the material to alpha blending. */
+  alpha?: number;
+  backFaceCulling?: boolean;
+}
+
+/** Stylized PBR material (environmentIntensity 0.4) with optional textures. */
+export function makePBR(scene: Scene, name: string, opts: PBROptions = {}): PBRMaterial {
+  const albedo = opts.albedo !== undefined ? toColor3(opts.albedo) : Color3.White();
+  const mat = stylizedPBR(scene, name, albedo, opts.roughness ?? 0.8, opts.metallic ?? 0);
+  mat.environmentIntensity = 0.4; // stylized, not a product render
+  if (opts.albedoTexture) mat.albedoTexture = opts.albedoTexture;
+  if (opts.normalMap !== undefined) {
+    const owned = typeof opts.normalMap === "string";
+    const n = typeof opts.normalMap === "string" ? new Texture(opts.normalMap, scene) : opts.normalMap;
+    if (owned || opts.normalStrength !== undefined) n.level = opts.normalStrength ?? 1;
+    mat.bumpTexture = n;
+    if (owned) mat.onDisposeObservable.addOnce(() => n.dispose());
+  }
+  if (opts.emissive !== undefined) mat.emissiveColor = toColor3(opts.emissive);
+  if (opts.alpha !== undefined && opts.alpha < 1) {
+    mat.alpha = opts.alpha;
+    mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  }
+  if (opts.backFaceCulling !== undefined) mat.backFaceCulling = opts.backFaceCulling;
+  return mat;
+}
+
+export interface GlassOptions {
+  /** sRGB tint. Default PALETTE.glass. */
+  tint?: ColorInput;
+  /** Default 0.2. */
+  alpha?: number;
+  /** Default 0.05. */
+  roughness?: number;
+}
+
+/** Clear, double-sided window glass: blended, with reflections kept over the alpha. */
+export function makeGlass(scene: Scene, name: string, opts: GlassOptions = {}): PBRMaterial {
+  const mat = makePBR(scene, name, { albedo: opts.tint ?? PALETTE.glass, roughness: opts.roughness ?? 0.05, metallic: 0 });
+  mat.alpha = opts.alpha ?? 0.2;
+  mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  mat.alphaMode = Constants.ALPHA_COMBINE; // === Engine.ALPHA_COMBINE, without pulling in Engine
+  mat.backFaceCulling = false;
+  mat.separateCullingPass = true; // back faces first, then front: stable sorting on double-sided panes
+  mat.useSpecularOverAlpha = true; // highlights and reflections stay visible on a nearly clear pane
+  mat.useRadianceOverAlpha = true;
+  return mat;
+}
+
+/** Rendered / painted walls: matte, with a faint trowelled bump. */
+export function makeStucco(scene: Scene, name: string, color: ColorInput = PALETTE.cream): PBRMaterial {
+  const mat = makePBR(scene, name, { albedo: color, roughness: 0.85, metallic: 0 });
+  mat.bumpTexture = stuccoNormalTexture(scene); // shared per scene: not disposed with the material
+  return mat;
+}
+
+/** Road surface: dark grey, almost fully rough. */
+export function makeAsphalt(scene: Scene, name: string, color: ColorInput = "#3b3b3d"): PBRMaterial {
+  return makePBR(scene, name, { albedo: color, roughness: 0.9, metallic: 0 });
+}
+
+export function makeGrass(scene: Scene, name: string, color: ColorInput = PALETTE.grass): PBRMaterial {
+  return makePBR(scene, name, { albedo: color, roughness: 0.8, metallic: 0 });
+}
+
+export interface WaterOptions {
+  /** sRGB colour. Default PALETTE.water. */
+  color?: ColorInput;
+  /** Default 0.7. */
+  alpha?: number;
+  /** Ripple UV scroll in texture repeats per second. Default (0.02, 0.012). */
+  flowU?: number;
+  flowV?: number;
+  /** Ripple repeats across the surface's UV range. Default 4. */
+  tiling?: number;
+}
+
+/**
+ * Glossy translucent water with a ripple normal map that scrolls every frame.
+ * The ripple texture is owned by the material (disposed with it) and the
+ * per-frame observer is removed on dispose. Do not freeze this material.
+ */
+export function makeWater(scene: Scene, name: string, opts: WaterOptions = {}): PBRMaterial {
+  const mat = makePBR(scene, name, { albedo: opts.color ?? PALETTE.water, roughness: 0.1, metallic: 0, alpha: opts.alpha ?? 0.7 });
+  mat.useSpecularOverAlpha = true; // sun glints read through the translucency
+  mat.useRadianceOverAlpha = true;
+  const ripple = proceduralNormalMap(scene, `${name}:ripple`, 128, 4, 0.9, 97);
+  const tiling = opts.tiling ?? 4;
+  ripple.uScale = tiling;
+  ripple.vScale = tiling;
+  ripple.level = 0.6;
+  mat.bumpTexture = ripple;
+  const flowU = opts.flowU ?? 0.02;
+  const flowV = opts.flowV ?? 0.012;
+  const obs = scene.onBeforeRenderObservable.add(() => {
+    const dt = Math.min(scene.getEngine().getDeltaTime(), 100) / 1000;
+    ripple.uOffset = (ripple.uOffset + flowU * dt) % 1;
+    ripple.vOffset = (ripple.vOffset + flowV * dt) % 1;
+  });
+  mat.onDisposeObservable.addOnce(() => {
+    scene.onBeforeRenderObservable.remove(obs);
+    ripple.dispose();
+  });
+  return mat;
+}
+
+/** Painted / weathered metal (railings, lamp posts, signs): glossy and metallic. */
+export function makeMetal(scene: Scene, name: string, color: ColorInput = PALETTE.iron): PBRMaterial {
+  return makePBR(scene, name, { albedo: color, roughness: 0.3, metallic: 0.9 });
+}
+
+export function makeWood(scene: Scene, name: string, color: ColorInput = PALETTE.wood): PBRMaterial {
+  return makePBR(scene, name, { albedo: color, roughness: 0.7, metallic: 0 });
+}
+
+/**
+ * Keyed cache of PBR materials. Materials disposed elsewhere drop out of the
+ * cache automatically. `dispose()` leaves textures alone (they may be shared,
+ * e.g. the stucco normal map); textures a helper created privately (water
+ * ripples, URL normal maps) are released by the material's own dispose hook.
+ */
+export class MaterialCache {
+  private readonly cache = new Map<string, PBRMaterial>();
+
+  get size(): number {
+    return this.cache.size;
+  }
+
+  has(key: string): boolean {
+    return this.cache.has(key);
+  }
+
+  /** The cached material, or (with `create`) a new one made and cached on a miss. */
+  get(key: string): PBRMaterial | undefined;
+  get(key: string, create: (key: string) => PBRMaterial): PBRMaterial;
+  get(key: string, create?: (key: string) => PBRMaterial): PBRMaterial | undefined {
+    const hit = this.cache.get(key);
+    if (hit || !create) return hit;
+    const mat = create(key);
+    this.set(key, mat);
+    return mat;
+  }
+
+  /** Cache `mat` under `key` (replacing, not disposing, any previous entry). */
+  set(key: string, mat: PBRMaterial): PBRMaterial {
+    this.cache.set(key, mat);
+    mat.onDisposeObservable.addOnce(() => {
+      if (this.cache.get(key) === mat) this.cache.delete(key);
+    });
+    return mat;
+  }
+
+  /** Remove an entry; disposes the material unless `dispose` is false. */
+  delete(key: string, dispose = true): boolean {
+    const mat = this.cache.get(key);
+    if (!mat) return false;
+    this.cache.delete(key);
+    if (dispose) mat.dispose(false, false);
+    return true;
+  }
+
+  keys(): IterableIterator<string> {
+    return this.cache.keys();
+  }
+
+  dispose(): void {
+    const all = [...this.cache.values()];
+    this.cache.clear();
+    for (const m of all) m.dispose(false, false);
+  }
+}
+
+const STUCCO_NORMAL = new WeakMap<Scene, DynamicTexture>();
+
+/** Shared faint trowel-noise normal map for stucco (one per scene). */
+function stuccoNormalTexture(scene: Scene): DynamicTexture {
+  const cached = STUCCO_NORMAL.get(scene);
+  if (cached && cached.getInternalTexture()) return cached;
+  const t = proceduralNormalMap(scene, "stucco:normal", 128, 8, 0.35, 311);
+  t.level = 0.5;
+  STUCCO_NORMAL.set(scene, t);
+  return t;
+}
+
+/**
+ * Tileable tangent-space normal map from a few octaves of wrapped value
+ * noise. `freq` = base noise cells across the tile, `strength` scales slopes.
+ */
+function proceduralNormalMap(scene: Scene, name: string, size: number, freq: number, strength: number, noiseSeed: number): DynamicTexture {
+  const h = new Float32Array(size * size);
+  const lattice = (ix: number, iy: number, cells: number, s: number) => {
+    const x = ((ix % cells) + cells) % cells;
+    const y = ((iy % cells) + cells) % cells;
+    const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  const fade = (t: number) => t * t * (3 - 2 * t);
+  for (let o = 0, cells = freq, amp = 1; o < 3; o++, cells *= 2, amp *= 0.5) {
+    for (let y = 0; y < size; y++) {
+      const fy = (y / size) * cells;
+      const iy = Math.floor(fy);
+      const ty = fade(fy - iy);
+      for (let x = 0; x < size; x++) {
+        const fx = (x / size) * cells;
+        const ix = Math.floor(fx);
+        const tx = fade(fx - ix);
+        const s = noiseSeed + o * 17;
+        const a = lattice(ix, iy, cells, s);
+        const b = lattice(ix + 1, iy, cells, s);
+        const c = lattice(ix, iy + 1, cells, s);
+        const d = lattice(ix + 1, iy + 1, cells, s);
+        h[y * size + x] += amp * (a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty);
+      }
+    }
+  }
+  const t = new DynamicTexture(name, { width: size, height: size }, scene, true);
+  t.wrapU = Texture.WRAP_ADDRESSMODE;
+  t.wrapV = Texture.WRAP_ADDRESSMODE;
+  const ctx = t.getContext() as CanvasRenderingContext2D;
+  const img = ctx.createImageData(size, size);
+  const at = (x: number, y: number) => h[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      const inv = 1 / Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      img.data[i] = Math.round((-dx * inv * 0.5 + 0.5) * 255);
+      img.data[i + 1] = Math.round((-dy * inv * 0.5 + 0.5) * 255);
+      img.data[i + 2] = Math.round((inv * 0.5 + 0.5) * 255);
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  t.update(false);
+  return t;
+}
+
 /** Wall surface per region wall material (olw_stone slots, cottage walls). */
 const WALL_SURFACE: Record<WorldArtProfile["wallMaterial"], SurfaceKind> = {
   stone: "stone",
