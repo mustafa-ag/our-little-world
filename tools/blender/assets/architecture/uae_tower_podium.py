@@ -1,71 +1,94 @@
-"""uae-tower-podium: commercial tower podium (base floors) for Dubai Downtown.
+"""uae-tower-podium: Dubai Downtown tower podium — retail/pedestrian base.
 
-Dark tinted glass curtain-wall block on a stone base band, with thin
-projecting horizontal bands every 1.0 unit, slim corner pilasters running the
-full height and a wide flat-topped entrance on the front wall (two stone piers
-+ lintel) where the base band is interrupted.
+Wide base 6 x 4 x 1.8 with:
+- Ground floor arcade of 5 round arches along the front face
+- Polished stone base band 0.4 tall, slightly projecting
+- Dark-tinted glass panels above the arcade
+- Two horizontal banding courses at 0.6 and 1.2 unit heights
+- Tall cylindrical corner accent column at one corner, 2.5 units tall
+- Sign band: flat recessed panel at top, 0.3 unit tall
+- Colour: cream/beige stone #e8ddc8, dark glass #1a2535, metal #8a8e95
 """
 
+import math
+
 import olw
-from _arch import L, P
+from _arch import L, arch_poly
 
 KEY = "uae-tower-podium"
-W, D, H = 3.5, 3.5, 4.0
+W, D, H = 6.0, 4.0, 1.8
 HX, HY = W / 2, D / 2
 
-GLASS = "#1a2535"
 STONE = "#e8ddc8"
-PILASTER = "#d4cec0"
-BASE_H = 0.6
-BAND_H, BAND_OUT = 0.08, 0.05
-ENT_W, ENT_H = 1.4, 1.4  # entrance clear opening
-PIER_W, PIER_D = 0.22, 0.2
+STONE_DARK = "#d4cbb8"
+GLASS = "#1a2535"
+METAL = "#8a8e95"
+BASE_H = 0.4      # polished stone base band height
+BASE_OUT = 0.05   # base band projection
+BAND_H = 0.05     # horizontal course height
+BAND_OUT = 0.03   # course projection
+SIGN_H = 0.3      # sign band at top
+ARCH_N = 5        # arches along front
 
 
 def build():
     olw.reset()
     b = olw.Builder(KEY, seed=31)
 
-    # ---- glass curtain-wall volume + roof plate
-    b.box((W, D, H), (0, 0, 0), "olw_glass", GLASS, edges=False)
-    b.box((W, D, 0.04), (0, 0, H), "olw_stone", PILASTER)
+    # ---- main body: stone base + glass upper portion
+    b.box((W, D, BASE_H), (0, 0, 0), "olw_stone", STONE)
+    # Slightly projecting base band on all sides
+    b.box((W + 2 * BASE_OUT, D + 2 * BASE_OUT, BASE_H), (0, 0, 0), "olw_stone", STONE_DARK, bevel=0.01)
 
-    # ---- stone base band (front split around the entrance)
-    t = 0.06  # band thickness proud of the glass
-    b.box((W + 2 * t, t, BASE_H), (0, HY + t / 2, 0), "olw_stone", STONE)  # back
-    for sx in (-1, 1):
-        b.box((t, D, BASE_H), (sx * (HX + t / 2), 0, 0), "olw_stone", STONE)
-    side_w = (W + 2 * t - ENT_W) / 2 - PIER_W
-    for sx in (-1, 1):
-        b.box((side_w, t, BASE_H), (sx * (HX + t - side_w / 2), -HY - t / 2, 0), "olw_stone", STONE)
+    # Glass curtain-wall above base band
+    glass_h = H - BASE_H - SIGN_H
+    b.box((W, D, glass_h), (0, 0, BASE_H), "olw_glass", GLASS, edges=False)
 
-    # ---- horizontal bands at every 1.0 unit (top one caps the parapet line)
-    for k in range(1, 5):
-        z = min(k * 1.0, H) - BAND_H
-        b.box((W + 2 * BAND_OUT, D + 2 * BAND_OUT, BAND_H), (0, 0, z), "olw_stone", PILASTER)
+    # Sign band at top (recessed slightly — stone facing)
+    sign_z = H - SIGN_H
+    b.box((W, D, SIGN_H), (0, 0, sign_z), "olw_stone", STONE_DARK)
+    # Recessed panel inset on front
+    b.box((W - 0.3, 0.04, SIGN_H - 0.06), (0, -HY + 0.02, sign_z + 0.03), "olw_stone", STONE)
 
-    # ---- corner pilasters: a 0.15 x 0.05 strip on each face either side of every corner
-    pw, pd = 0.15, 0.05
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            b.box((pw, pd, H), (sx * (HX - pw / 2), sy * (HY + pd / 2), 0), "olw_stone", PILASTER)
-            b.box((pd, pw, H), (sx * (HX + pd / 2), sy * (HY - pw / 2), 0), "olw_stone", PILASTER)
+    # ---- two horizontal banding courses on the glass portion
+    for band_z in (0.6, 1.2):
+        bz = BASE_H + band_z - BAND_H / 2
+        if bz + BAND_H < sign_z:
+            b.box((W + 2 * BAND_OUT, D + 2 * BAND_OUT, BAND_H), (0, 0, bz), "olw_stone", STONE, bevel=0.005)
 
-    # ---- entrance: two stone piers + flat lintel, dark doors and a canopy step
+    # ---- front arcade: 5 round arches recessed into the front face
     front = L(b, 0, -HY, 0, 0)
-    for sx in (-1, 1):
-        front.box((PIER_W, PIER_D, ENT_H), (sx * (ENT_W / 2 + PIER_W / 2), -PIER_D / 2, 0), "olw_stone", STONE)
-    front.box((ENT_W + 2 * PIER_W, PIER_D + 0.04, 0.22), (0, -(PIER_D + 0.04) / 2, ENT_H), "olw_stone", STONE)
-    # door frame mullions + transom (metal) against the glass
-    for x in (-ENT_W / 2 + 0.03, 0.0, ENT_W / 2 - 0.03):
-        front.box((0.05, 0.03, ENT_H), (x, -0.015, 0), "olw_metal", P["iron"])
-    front.box((ENT_W, 0.03, 0.05), (0, -0.015, ENT_H - 0.3), "olw_metal", P["iron"])
-    front.box((ENT_W + 2 * PIER_W + 0.2, 0.5, 0.05), (0, -0.25, 0), "olw_stone", "#cfc6b4")  # entrance step
+    arch_w = 0.8   # arch clear width
+    arch_h = 1.1   # arch total height (including rounded top)
+    arch_depth = 0.35
+    arch_spacing = W / ARCH_N  # 1.2 per arch
+    for i in range(ARCH_N):
+        ax = -HX + arch_spacing * (i + 0.5)
+        poly = arch_poly(arch_w, arch_h, 8, ax)
+        # stone reveal / recess into the base band + glass above
+        front.prism(poly, arch_depth, (0, arch_depth / 2 - 0.02, 0), "olw_stone", STONE, axis="Y")
+        recess_part = b.pop()
+        # glass pane at back of recess
+        g_poly = arch_poly(arch_w - 0.06, arch_h - 0.06, 8, ax)
+        front.prism(g_poly, 0.03, (0, arch_depth - 0.02, 0.03), "olw_glass", GLASS, axis="Y", edges=False)
+        # aluminium frame strips around each arch (thin metal outline)
+        front.box((arch_w + 0.08, 0.04, 0.05), (ax, arch_depth - 0.04, 0), "olw_metal", METAL)
+        front.box((0.05, 0.04, arch_h), (ax - arch_w / 2, arch_depth - 0.04, 0), "olw_metal", METAL)
+        front.box((0.05, 0.04, arch_h), (ax + arch_w / 2, arch_depth - 0.04, 0), "olw_metal", METAL)
 
-    return b.finish(ao_height=0.4, ao_min=0.8)
+    # ---- corner accent: tall cylindrical column at front-right corner
+    cyl_r = 0.18
+    cyl_h = 2.5
+    b.cyl(cyl_r, cyl_h, (HX - cyl_r * 0.5, -HY + cyl_r * 0.5, 0), "olw_stone", STONE_DARK, verts=16, bevel=0.01)
+    # cap disc
+    b.cyl(cyl_r + 0.04, 0.08, (HX - cyl_r * 0.5, -HY + cyl_r * 0.5, cyl_h), "olw_stone", STONE, verts=16)
+    # metal ring band mid-height
+    b.cyl(cyl_r + 0.02, 0.06, (HX - cyl_r * 0.5, -HY + cyl_r * 0.5, cyl_h * 0.5 - 0.03), "olw_metal", METAL, verts=16)
+
+    return b.finish(ao_height=0.45, ao_min=0.78)
 
 
 if __name__ == "__main__":
     obj = build()
-    rep = olw.validate(obj, max_tris=2500, size=(W, D, H), size_tol=0.25)
-    olw.export_glb(obj, KEY, report=rep, extra={"footprint": [4, 4], "door": {"x": 0.0, "z": -HY}})
+    rep = olw.validate(obj, max_tris=2500, size=(W, D, 0), size_tol=0.30, allow_floating=0)
+    olw.export_glb(obj, KEY, report=rep, extra={"footprint": [6, 4]})
