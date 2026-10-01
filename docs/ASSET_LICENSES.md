@@ -16,6 +16,13 @@ All new assets must be added here before being committed to the repository.
 |---|---|---|---|---|---|---|
 | (all assets) | Authored | tools/blender/ | Our Little World team | Proprietary / original | — | — |
 
+## Rain v3.3 (topology reference)
+- Source: Blender Studio, https://studio.blender.org/characters/rain/v3/
+- Downloaded as: Rain.v3.3.zip from https://github.com/mustafa-ag/our-little-world/releases/download/releasw/Rain.v3.3.zip
+- License: CC0 1.0 Universal (Creative Commons Zero)
+- Usage: Studied as topology/construction reference only. No geometry, textures, rigs, shape keys, or design elements from Rain are present in Juju.
+- Attribution: Blender Studio (https://studio.blender.org)
+
 ## Notes
 
 - All character models, building models, environment assets, and textures in `public/assets/` are currently original work authored by the project's Blender pipeline (`tools/blender/`).
