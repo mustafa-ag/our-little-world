@@ -406,7 +406,7 @@ export function buildWorld(ctx: BuildContext): BuiltWorld {
       if (buildingSpec(p.tex, 0, 0) || p.tex.startsWith("lm_")) placeBuilding(p);
       continue;
     }
-    const m = mapProp(p.tex, Math.floor(p.x / TILE), Math.floor(p.y / TILE) - 1);
+    const m = mapProp(p.tex, Math.floor(p.x / TILE), Math.floor(p.y / TILE) - 1, profile);
     if (!m) continue;
     // regional street furniture / trees (mapProp is region-agnostic: without this every
     // authored lamp is a Victorian iron post, every bench wooden, every palm an oak)

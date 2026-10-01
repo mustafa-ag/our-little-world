@@ -399,11 +399,13 @@ function band(c: C, b: Body, y: number, h: number, proud: number, hex: string, g
   }
 }
 
-/** Plain window: frame + glass (+ optional sill). Base y = sill line. */
-function windowAt(c: C, b: Body, f: Face, u: number, y: number, ww: number, wh: number, frameHex: string, sillHex: string | null, glassHex?: string) {
-  faceBox(c, b, f, u, y - 0.03, ww + 0.08, wh + 0.06, 0.03, 0.005, c.sl.paint, frameHex);
-  faceBox(c, b, f, u, y, ww, wh, 0.03, 0.02, c.sl.glass, glassHex ?? (rnd(c, u, y, f.length) > 0.7 ? GLASS_LIGHT : GLASS_DARK));
-  if (sillHex) faceBox(c, b, f, u, y - 0.07, ww + 0.14, 0.06, 0.1, 0.04, c.sl.paint, sillHex);
+/** Plain window: frame + glass (+ optional sill). Base y = sill line.
+ *  `frameOut` = how far the frame centre protrudes from the wall surface (default 0.005).
+ *  Raising it (e.g. 0.15 for Gulf reveals) makes a raised surround so the glass reads as recessed. */
+function windowAt(c: C, b: Body, f: Face, u: number, y: number, ww: number, wh: number, frameHex: string, sillHex: string | null, glassHex?: string, frameOut = 0.005) {
+  faceBox(c, b, f, u, y - 0.03, ww + 0.08, wh + 0.06, 0.03, frameOut, c.sl.paint, frameHex);
+  faceBox(c, b, f, u, y, ww, wh, 0.03, frameOut + 0.015, c.sl.glass, glassHex ?? (rnd(c, u, y, f.length) > 0.7 ? GLASS_LIGHT : GLASS_DARK));
+  if (sillHex) faceBox(c, b, f, u, y - 0.07, ww + 0.14, 0.06, 0.1, Math.max(0.04, frameOut - 0.001), c.sl.paint, sillHex);
 }
 
 /** White sash window: frame, glass, meeting rail and glazing bar, sill. */
@@ -600,7 +602,7 @@ function waterTank(c: C, x: number, y: number, z: number, hex: string) {
 
 // ============================================================== Gulf: L-shaped villa
 
-const GULF_WALLS = ["#E8D9B8", "#EFE4CC", "#E0CDA6"];
+const GULF_WALLS = ["#f5eed8", "#EFE4CC", "#F0E8D0"];
 
 function buildGulfVilla(c: C, width: number, depth: number) {
   const wall = pick(c, GULF_WALLS, 1);
@@ -622,7 +624,7 @@ function buildGulfVilla(c: C, width: number, depth: number) {
   const gap: [number, number] = [-0.5, 0.5];
   for (const b of [front, wing]) {
     for (let y = b.y0 + 0.9; y < b.y0 + b.h - 0.2; y += 0.9) band(c, b, y, 0.04, 0.025, trim, b === front ? gap : undefined);
-    parapet(c, b, shade(wall, -0.05), 0.15, 0.08);
+    parapet(c, b, shade(wall, -0.05), 0.25, 0.08);
     bx(c, b.hw * 2 + 0.06, 0.04, b.hd * 2 + 0.06, c.sl.paint, trim, b.ox, b.y0 + b.h - 0.04, b.oz);
   }
   bx(c, bw + 0.06, 0.16, bd + 0.06, c.sl.stone, shade(wall, -0.22), 0, 0, 0); // plinth
@@ -642,9 +644,9 @@ function buildGulfVilla(c: C, width: number, depth: number) {
     if (top) {
       faceBox(c, wing, "front", 0, y - 0.1, Math.min(0.8, ww - 0.2), 0.9, 0.04, 0.03, c.sl.wood, "#8a6a44", 3);
       for (let k = 1; k < 5; k++) faceBox(c, wing, "front", 0, y - 0.1 + k * 0.18, Math.min(0.8, ww - 0.2), 0.02, 0.02, 0.06, c.sl.paint, "#6b5238");
-    } else windowAt(c, wing, "front", 0, y, Math.min(0.55, ww - 0.3), 0.8, frame, null);
-    windowAt(c, wing, side > 0 ? "east" : "west", 0, y, 0.6, 0.7, frame, null);
-    if (rnd(c, f, 9) > 0.4) windowAt(c, wing, "back", 0, y, 0.5, 0.7, frame, null);
+    } else windowAt(c, wing, "front", 0, y, Math.min(0.55, ww - 0.3), 0.8, frame, null, undefined, 0.15);
+    windowAt(c, wing, side > 0 ? "east" : "west", 0, y, 0.6, 0.7, frame, null, undefined, 0.15);
+    if (rnd(c, f, 9) > 0.4) windowAt(c, wing, "back", 0, y, 0.5, 0.7, frame, null, undefined, 0.15);
   }
   const free0 = span / 2 + 0.2;
   const free1 = bw / 2 - 0.12;
@@ -653,9 +655,9 @@ function buildGulfVilla(c: C, width: number, depth: number) {
     if (isShop(c)) {
       faceBox(c, front, "front", u, 0.2, free1 - free0 - 0.1, 1.05, 0.03, 0.02, c.sl.glass, GLASS_WARM);
       faceBox(c, wing, "front", 0, wing.h - 0.45, ww - 0.12, 0.26, 0.05, 0.03, c.sl.paint, pick(c, ["#b08a54", "#5f9aa8", "#8a6a44"], 4));
-    } else windowAt(c, front, "front", u, 0.55, Math.min(0.9, free1 - free0 - 0.25), 0.62, frame, null);
+    } else windowAt(c, front, "front", u, 0.55, Math.min(0.9, free1 - free0 - 0.25), 0.62, frame, null, undefined, 0.15);
   }
-  windowAt(c, front, side > 0 ? "west" : "east", 0, 0.55, Math.min(0.6, fd - 0.3), 0.62, frame, null);
+  windowAt(c, front, side > 0 ? "west" : "east", 0, 0.55, Math.min(0.6, fd - 0.3), 0.62, frame, null, undefined, 0.15);
 
   // ---- walled garden in the open back corner of the L, with a palm
   const gx0 = -side * (bw / 2);
@@ -746,7 +748,9 @@ function buildGlassTower(c: C, width: number, depth: number) {
   const td = Math.max(1.1, bd - 0.4);
   const ratio = 3 + rnd(c, 1) * 2;
   const th = Math.max(5, Math.min(14, Math.min(tw, td) * ratio));
-  const skin = pick(c, ["#8fb6cc", "#9fc0c8", "#7fa6c2", "#a8bfcc"], 2);
+  // Gulf glass tower: dark tinted curtain wall (#1a2535 with two occasional
+  // lighter accent variants so batches of towers still read as individual)
+  const skin = pick(c, ["#1a2535", "#1a2535", "#1a2535", "#1e2e45"], 2);
   const core = shade(skin, -0.55);
   const podiumH = 0.6;
   const metal = "#c8d3da";

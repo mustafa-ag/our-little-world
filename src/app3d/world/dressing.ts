@@ -81,8 +81,9 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
   const seed = def.id.length * 17;
   const city = def.city;
   const profile = ctx.profile ?? SCOTLAND_PROFILE;
+  const isGulf = profile.region === "uae_modern" || profile.region === "uae_coastal";
   /** flower colours of the region (Scotland: dusty pink / cream / soft yellow / lavender / muted purple) */
-  const FLOWERS = profile.flowerPalette;
+  const FLOWERS: string[] = isGulf ? ["#e0449a", "#f8f8f0", "#e8c84a"] : profile.flowerPalette;
 
   // ---------------------------------------------------------------- asset keys
   // (hero keys from the AssetManager when registered, procedural fallbacks otherwise)
@@ -220,6 +221,25 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
     const r = hash01(seed, tx, ty, salt);
     thin("flower-bed", `c=${FLOWERS[Math.floor(r * 97) % FLOWERS.length]},d=${FLOWERS[Math.floor(r * 53 + 2) % FLOWERS.length]}`, { x: c.x + dx, z: c.z + dz, y: c.y, rotationY: r > 0.5 ? 0 : Math.PI, scale: scale * (0.9 + r * 0.2) });
     if (r > 0.55) thin("grass-tuft", "", { x: c.x + dx + (r - 0.75) * 1.6, z: c.z + dz * 0.7, y: c.y, rotationY: r * 9, scale: 1.1 });
+  };
+
+  /**
+   * A circular cluster of `n` instances of `key` around world centre (cx, cz),
+   * spread within `radius` tiles.  Placed with `thin` so flower suppression
+   * rules still apply.
+   */
+  const cluster = (k: string, variant: string, cx: number, cz: number, radius: number, n: number, salt: number) => {
+    for (let i = 0; i < n; i++) {
+      const r = hash01(seed, Math.floor(cx * 7), Math.floor(cz * 7), salt, i);
+      const angle = r * Math.PI * 2;
+      const dist = hash01(seed, Math.floor(cx * 7), i, salt + 1) * radius;
+      const x = cx + Math.cos(angle) * dist;
+      const z = cz + Math.sin(angle) * dist;
+      const tx2 = Math.floor(x);
+      const ty2 = Math.floor(-z);
+      if (!open(tx2, ty2)) continue;
+      thin(k, variant, { x, z, y: env.heightAt(tx2, ty2), rotationY: r * Math.PI * 2, scale: 0.9 + r * 0.3 }, { solid: isTree(k), trunk: isTree(k) ? 0.2 : undefined });
+    }
   };
 
   // ------------------------------------------------------------------ buildings
@@ -634,9 +654,9 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
           thin(PALM, "", { ...c, rotationY: rot, scale: 0.9 + hash01(seed, tx, ty, 3) * 0.35 }, { solid: true, trunk: 0.2 });
         }
       } else if (tex(tx, ty) === "t_pavement" || tex(tx, ty) === "t_plaza_stone" || tex(tx, ty) === "t_paving_light") {
-        // plazas: planters and flowers, sparse, never blocking
+        // plazas: planters only — loose flower clusters are completely suppressed on
+        // paving (a lone stem on flags reads as litter; beds and planters are used instead)
         if (r > 0.985) thin(K.planter, "", { ...c, rotationY: rot });
-        else if (r > 0.975) thin("flower-cluster", `c=${FLOWERS[i % FLOWERS.length]}`, { ...c, rotationY: rot, scale: 0.8 });
       } else if (tex(tx, ty) === "t_cobble" && !street(tx + 1, ty) && !street(tx - 1, ty) && !street(tx, ty + 1) && !street(tx, ty - 1)) {
         // the odd tree / planter / bush inside the village so squares don't feel empty
         if (r > 0.988 && ringFree(tx, ty, 1, 1)) {
@@ -650,6 +670,39 @@ export function dressWorld(ctx: BuildContext, built: BuiltWorld) {
           thin("flower-cluster", `c=${FLOWERS[i % FLOWERS.length]}`, { ...c, rotationY: rot, scale: 0.8 });
         } else if (r > 0.968) {
           thin(K.barrel, "", { ...c, rotationY: rot, scale: barrelScale });
+        }
+      }
+    }
+  }
+
+  // ------------------------------------------------ Gulf-region dressing
+  // Date-palm clusters at building bases, plaza entrance pairs, roundabout centres
+  if (isGulf && palms) {
+    const PALM_KEY = am.has(PALM) ? PALM : primary(K.oakA);
+    for (const b of buildings) {
+      // one cluster of 2-3 date palms per building base (every ~3rd building, deterministic)
+      const br = hash01(seed, Math.floor(b.tx * 3), Math.floor(b.ty * 3), 55);
+      if (br > 0.65) {
+        const cx = b.tx;
+        const cz = -(b.ty + 1) + b.d / 2;
+        const radius = Math.min(b.w, b.d) * 0.4;
+        cluster(PALM_KEY, "", cx, cz - b.d / 2 - 0.6, radius * 0.6, 2 + (br > 0.85 ? 1 : 0), 56);
+      }
+    }
+    // roundabout centres: a trio of date palms around a central point on sand / plaza
+    for (let ty2 = 3; ty2 < world.h - 3; ty2++) {
+      for (let tx2 = 3; tx2 < world.w - 3; tx2++) {
+        if (!free(tx2, ty2)) continue;
+        const rt = tex(tx2, ty2);
+        if (rt !== "t_sand" && rt !== "t_plaza_stone") continue;
+        const allSame = [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => {
+          const t2 = tex(tx2 + dx, ty2 + dy);
+          return t2 === rt;
+        });
+        if (!allSame) continue;
+        const pr = hash01(seed, tx2, ty2, 77);
+        if (pr > 0.97 && ringFree(tx2 - 1, ty2 - 1, 3, 3)) {
+          cluster(PALM_KEY, "", tx2 + 0.5, -(ty2 + 0.5), 0.6, 3, 78);
         }
       }
     }

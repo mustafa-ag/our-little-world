@@ -10,6 +10,7 @@ import { PRESET_1S, PRESET_2S } from "../assets/kit/architecture";
 import { regionalVariantFor, type RegionalKind } from "./buildingKit";
 import type { WorldArtProfile } from "./artProfile";
 
+
 export interface KitPlacement {
   key: string;
   variant?: string;
@@ -133,9 +134,10 @@ const TREE_GREENS = ["#6b8a4e", "#7a9a56", "#5f8048", "#8aa262"];
 const CONIFER_GREENS = ["#5f7f4a", "#557344", "#6a8a52"];
 
 /** Non-building props. Returns null to skip. */
-export function mapProp(tex: string, tx: number, ty: number): KitPlacement | null {
+export function mapProp(tex: string, tx: number, ty: number, profile?: Pick<WorldArtProfile, "region">): KitPlacement | null {
   const r = hash01(strHash(tex) % 997, tx, ty);
   const rot = Math.floor(r * 4) * (Math.PI / 2) + (r - 0.5) * 0.4;
+  const isGulf = profile?.region === "uae_modern" || profile?.region === "uae_coastal";
   switch (tex) {
     case "o_tree":
     case "o_palm":
@@ -159,9 +161,9 @@ export function mapProp(tex: string, tx: number, ty: number): KitPlacement | nul
       return { key: "wooden-fence", rotationY: 0, solid: true };
     case "o_lamp":
     case "o_lamp_ldn":
-      return { key: "lamp-post", rotationY: 0, solid: true };
+      return { key: "lamp-post", variant: isGulf ? "c=#8a8e95" : undefined, rotationY: 0, solid: true };
     case "o_bench":
-      return { key: "bench", rotationY: 0, solid: true };
+      return { key: "bench", variant: isGulf ? "c=#c8c4b8" : undefined, rotationY: 0, solid: true };
     case "o_sign":
       return { key: "signpost", rotationY: rot, solid: true };
     case "o_well":
@@ -169,6 +171,7 @@ export function mapProp(tex: string, tx: number, ty: number): KitPlacement | nul
     case "o_fountain":
       return { key: "fountain", solid: true, footprint: { w: 2, d: 2 } };
     case "o_phonebox":
+      if (isGulf) return null; // no traditional phone boxes in the Gulf
       return { key: "phone-box", rotationY: 0, solid: true };
     case "o_bollard":
       return { key: "bollard" };
