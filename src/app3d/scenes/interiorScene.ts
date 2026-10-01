@@ -66,6 +66,23 @@ interface Box {
   z1: number;
 }
 
+/**
+ * Configuration for non-home interior variants.
+ * Pass as the optional third constructor argument.
+ * Omitting it (or `type: 'home'`) uses the existing home-bedroom build.
+ */
+export interface InteriorConfig {
+  type: "home" | "cafe" | "campus-corridor" | "office" | "mall-lobby";
+  region?: "gulf" | "scotland" | "london" | "default";
+  /** Room width (X). Default 6. */
+  width?: number;
+  /** Room depth (Z). Default 5. */
+  depth?: number;
+  /** Room height. Default 2.8. */
+  height?: number;
+  propertyId?: string;
+}
+
 const hex6 = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
 function mix(a: string, b: string, t: number) {
@@ -160,10 +177,131 @@ export class InteriorScene {
   constructor(
     private scene: Scene,
     opts: InteriorOptions,
+    config?: InteriorConfig,
   ) {
     const O = INTERIOR_ORIGIN;
     this.root = new TransformNode("interior", scene);
     this.root.position.set(O.x, 0, O.z);
+
+    // ── Non-home variant: build the config-driven room and return early ──────
+    const effectiveType = config?.type ?? "home";
+    if (effectiveType !== "home") {
+      const W  = config?.width  ?? 6;
+      const D  = config?.depth  ?? 5;
+      const H  = config?.height ?? 2.8;
+
+      this.propertyId     = config?.propertyId ?? "";
+      this.propertyWidth  = W;
+      this.propertyHeight = D;
+      this.showFurniture  = false;
+
+      const typeLabel: Record<string, string> = {
+        "cafe": "Café", "campus-corridor": "Campus Corridor",
+        "office": "Office", "mall-lobby": "Mall Lobby",
+      };
+      this.title    = typeLabel[effectiveType] ?? effectiveType;
+      this.subtitle = effectiveType;
+
+      // -- Shared shell: void, floor, walls, ceiling --------------------------
+      this.unlit("void",
+        CreateBox("int:void", { width: 90, height: 0.02, depth: 90 }, scene),
+        "#2b2233", 0, -0.08, 0);
+
+      const floorColors: Record<string, string> = {
+        "cafe": "#7a4f28", "campus-corridor": "#d8d8d8",
+        "office": "#6a6a72", "mall-lobby": "#d8d4cc",
+      };
+      const wallColors: Record<string, string> = {
+        "cafe": "#f5f0e0", "campus-corridor": "#f0f0f0",
+        "office": "#f0f0f0", "mall-lobby": "#f5f5f0",
+      };
+      const floorHex = floorColors[effectiveType] ?? "#c0c0c0";
+      const wallHex  = wallColors[effectiveType]  ?? "#f0f0f0";
+
+      if (effectiveType === "cafe") {
+        const planks = plankTexture(scene, floorHex);
+        planks.uScale = 2; planks.vScale = 1.5;
+        this.textures.push(planks);
+        const fm = this.mat("floor", floorHex);
+        fm.diffuseTexture = planks;
+        this.box("floor", W, 0.1, D, fm, 0, -0.05, 0).receiveShadows = true;
+      } else {
+        this.box("floor", W, 0.1, D, this.mat("floor", floorHex), 0, -0.05, 0).receiveShadows = true;
+      }
+
+      const wallMat = this.mat("wall", wallHex);
+      this.box("wallN", W + 0.2, H, 0.2, wallMat, 0, H / 2, D / 2 + 0.1).receiveShadows = true;
+      this.box("wallS", W + 0.2, H, 0.2, wallMat, 0, H / 2, -D / 2 - 0.1).receiveShadows = true;
+      this.box("wallE", 0.2, H, D + 0.2, wallMat, W / 2 + 0.1, H / 2, 0).receiveShadows = true;
+      this.box("wallW", 0.2, H, D + 0.2, wallMat, -W / 2 - 0.1, H / 2, 0).receiveShadows = true;
+      this.box("ceiling", W + 0.2, 0.1, D + 0.2, this.mat("ceiling", "#f0f0ec"), 0, H + 0.05, 0);
+
+      // -- Type-specific content ----------------------------------------------
+      if (effectiveType === "cafe")             this.buildCafe(W, D, H);
+      else if (effectiveType === "campus-corridor") this.buildCampusCorridor(W, D, H);
+      else if (effectiveType === "office")      this.buildOffice(W, D, H);
+      else if (effectiveType === "mall-lobby")  this.buildMallLobby(W, D, H);
+
+      // -- Lights -------------------------------------------------------------
+      const toWorld = (x: number, y: number, z: number) => new Vector3(O.x + x, y, O.z + z);
+      const hemi = new HemisphericLight("int:hemi", new Vector3(0, 1, 0.1), scene);
+      hemi.diffuse = Color3.FromHexString("#fff4e8");
+      hemi.groundColor = Color3.FromHexString("#c8b890");
+      hemi.specular = Color3.Black();
+      hemi.intensity = 0.5;
+      const ceiling = new PointLight("int:ceiling", toWorld(0, H - 0.2, 0), scene);
+      ceiling.diffuse = Color3.FromHexString("#ffe4a8");
+      ceiling.specular = Color3.Black();
+      ceiling.intensity = 0.9;
+      ceiling.range = Math.max(W, D) * 2;
+      this.lights = [hemi, ceiling];
+
+      if (effectiveType === "cafe") {
+        // 3 pendant point lights: warm #ffe4b0, intensity 1.2, at y=2.4
+        const pendantXZ: [number, number][] = [[-W / 4, D / 4], [0, 0], [-W / 4, -D / 4]];
+        pendantXZ.forEach(([px, pz], i) => {
+          const pl = new PointLight(`int:pendant${i}`, toWorld(px, 2.4, pz), scene);
+          pl.diffuse = Color3.FromHexString("#ffe4b0");
+          pl.specular = Color3.Black();
+          pl.intensity = 1.2;
+          pl.range = 4;
+          this.lights.push(pl);
+        });
+      }
+
+      // Interior light isolation
+      for (const l of this.lights) l.includedOnlyMeshes = [...this.meshes];
+      for (const l of scene.lights) {
+        if (this.lights.includes(l)) continue;
+        l.excludedMeshes = [...l.excludedMeshes, ...this.meshes];
+        this.excludedFrom.push(l);
+      }
+
+      // -- Collision + spawn --------------------------------------------------
+      const ox = (x: number) => O.x + x;
+      const oz = (z: number) => O.z + z;
+      const mkbox = (x0: number, x1: number, z0: number, z1: number): Box =>
+        ({ x0: ox(x0), x1: ox(x1), z0: oz(z0), z1: oz(z1) });
+      const obs = this.variantObstacles(effectiveType, W, D);
+      this.collider = roomCollider(
+        mkbox(-W / 2 + 0.05, W / 2 - 0.05, -D / 2 + 0.15, D / 2 - 0.05),
+        obs.map(([x0, x1, z0, z1]) => mkbox(x0, x1, z0, z1)),
+      );
+      this.spawn = { x: ox(0), z: oz(-D / 2 + 0.5) };
+
+      // Door hotspot (leave back to exterior)
+      this.interaction.add({
+        id: "int:door", x: ox(0), z: oz(-D / 2 + 0.4),
+        radius: 0.75, prompt: "Go outside", kind: "zone",
+        trigger: () => uiEvents.emit("leaveHouse"),
+      });
+
+      uiEvents.on("action", this.tryInteract, this);
+      uiEvents.on("uiClosed", this.onUiClosed, this);
+      uiEvents.on("furnitureChanged", this.onFurnitureChanged, this);
+      return;
+    }
+    // ── End non-home branch ───────────────────────────────────────────────────
 
     const def = propertyById(opts.propertyId);
     this.propertyId = opts.propertyId;
@@ -572,6 +710,160 @@ export class InteriorScene {
     this.mats.set(`unlit:${name}`, m);
     mesh.material = m;
     return this.place(mesh, x, y, z);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Variant room builders (called from the non-home constructor branch)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  private buildCafe(W: number, D: number, H: number): void {
+    // Warm timber floor already applied in shell; cream walls.
+    // L-shaped counter in northeast corner
+    const counterExt = this.mat("counterExt", "#f0e8d8");
+    const counterTop = this.mat("counterTop", "#8a5a3a");
+    const cx = W / 2 - 1.5;
+    const cz = D / 2 - 0.4;
+    this.box("counterLong",    2.0, 0.9, 0.5,  counterExt, cx,          0.45, cz);
+    this.box("counterLongTop", 2.05, 0.06, 0.55, counterTop, cx,         0.93, cz);
+    const sx2 = W / 2 - 0.25, sz2 = D / 2 - 1.2;
+    this.box("counterShort",    0.5, 0.9, 1.0,  counterExt, sx2,  0.45, sz2);
+    this.box("counterShortTop", 0.55, 0.06, 1.05, counterTop, sx2, 0.93, sz2);
+
+    // 3 tables (cylinder r=0.4, h=0.75) + 2 chairs each
+    const tableMat = this.mat("cafeTable", "#d8ceba");
+    const chairMat = this.mat("cafeChair", "#a87858");
+    const tables: [number, number][] = [
+      [-W / 2 + 1.5,  D / 4],
+      [-W / 2 + 1.5, -D / 4],
+      [0.5,          -D / 4 + 0.2],
+    ];
+    tables.forEach(([tx, tz], i) => {
+      this.cyl(`cafeTab${i}`, 0.4, 0.4, 0.75, tableMat, tx, 0.375, tz, 18);
+      this.box(`cafeChA${i}`, 0.38, 0.42, 0.38, chairMat, tx + 0.65, 0.21, tz);
+      this.box(`cafeChB${i}`, 0.38, 0.42, 0.38, chairMat, tx - 0.65, 0.21, tz);
+    });
+
+    // Window emissive panel on south wall
+    this.unlit("cafeWin",
+      CreateBox("int:cafeWin", { width: 1.5, height: 0.9, depth: 0.05 }, this.scene),
+      "#fff8e0", 0, 1.6, -D / 2 + 0.03);
+
+    // Pendant lamp shades (visual; matching point lights added in constructor)
+    const pendantXZ: [number, number][] = [[-W / 4, D / 4], [0, 0], [-W / 4, -D / 4]];
+    pendantXZ.forEach(([px, pz], i) => {
+      this.unlit(`cafShade${i}`,
+        CreateCylinder(`int:cafShd${i}`, { diameterTop: 0.15, diameterBottom: 0.36, height: 0.2, tessellation: 12 }, this.scene),
+        "#ffe4a0", px, H - 0.45, pz);
+    });
+  }
+
+  private buildCampusCorridor(W: number, D: number, H: number): void {
+    // Locker row: 6 units along west wall, blue-grey
+    const lockerMat = this.mat("locker", "#7a8fa0");
+    const lockerLineMat = this.mat("lockerLine", "#5a6f80");
+    const nLock = 6;
+    const lSpacing = D / nLock;
+    for (let i = 0; i < nLock; i++) {
+      const lz = -D / 2 + lSpacing * 0.5 + i * lSpacing;
+      this.box(`locker${i}`, 0.45, 1.6, lSpacing * 0.88, lockerMat,     -W / 2 + 0.325, 0.8, lz);
+      this.box(`lkLine${i}`, 0.47, 0.02, lSpacing * 0.88, lockerLineMat, -W / 2 + 0.325, 1.36, lz);
+    }
+
+    // Notice board on east wall with 4 coloured rect patches
+    this.box("noticeBoard", 1.2, 0.8, 0.06, this.mat("board", "#d4b87a"), W / 2 - 0.06, 1.5, 0);
+    const patchColors = ["#d46060", "#60a0d4", "#80c870", "#e8c048"];
+    patchColors.forEach((c, i) => {
+      const pz = (i % 2 === 0 ? -0.24 : 0.24);
+      const py = i < 2 ? 1.62 : 1.36;
+      this.box(`patch${i}`, 0.38, 0.22, 0.02, this.mat(`ptch${i}`, c), W / 2 - 0.025, py, pz);
+    });
+
+    // Ceiling strip lights: 3 emissive boxes (fluorescent #f0f0ff)
+    for (let i = 0; i < 3; i++) {
+      const lz = -D / 3 + i * (D / 3);
+      this.unlit(`strip${i}`,
+        CreateBox(`int:strip${i}`, { width: W - 0.4, height: 0.06, depth: 0.28 }, this.scene),
+        "#f0f0ff", 0, H - 0.04, lz);
+    }
+
+    // 2 doorway suggestion panels per side wall (east/west) – decorative recesses
+    for (const sx of [-W / 2 + 0.02, W / 2 - 0.02]) {
+      for (const dz of [-D / 4, D / 4]) {
+        this.box(`dframe${sx > 0 ? "E" : "W"}${dz > 0 ? "n" : "s"}`,
+          0.04, 2.0, 0.8, this.mat("doorArch", "#e0dcd8"), sx, 1.0, dz);
+      }
+    }
+
+    void H; // used above via H - 0.04
+  }
+
+  private buildOffice(W: number, D: number, H: number): void {
+    // Glass partition strips
+    const glassMat = this.mat("offGlass", "#cfe3ee", 0.4);
+    glassMat.backFaceCulling = false;
+    for (let i = 0; i < 2; i++) {
+      const gx = -W / 4 + i * (W / 2);
+      this.box(`partition${i}`, 0.05, 1.5, D - 0.3, glassMat, gx, 0.75, 0);
+    }
+
+    // 3×2 desk grid with box monitors
+    const deskMat    = this.mat("desk",    "#c8c0b0");
+    const deskLegMat = this.mat("deskLeg", "#d0c8b8");
+    const monMat     = this.mat("monitor", "#2a2a2a");
+    const cols = 3, rows = 2;
+    const colStep = (W - 1.6) / cols;
+    const rowStep = (D - 1.0) / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const dx = -W / 2 + 0.9 + c * colStep;
+        const dz = -D / 2 + 0.7 + r * rowStep;
+        this.box(`deskTop${r}${c}`, 1.0, 0.05, 0.6, deskMat,    dx, 0.75, dz);
+        this.box(`deskBod${r}${c}`, 1.0, 0.74, 0.6, deskLegMat, dx, 0.37, dz);
+        this.box(`mon${r}${c}`,     0.5, 0.4, 0.05, monMat,      dx, 1.15, dz - 0.1);
+        this.box(`monBase${r}${c}`, 0.14, 0.08, 0.2, deskMat,    dx, 0.79, dz - 0.1);
+      }
+    }
+
+    void H;
+  }
+
+  private buildMallLobby(W: number, D: number, H: number): void {
+    // Central pot plant
+    this.cyl("lobPot",   0.5, 0.4, 0.5, this.mat("lobPot",  "#c0b090"), 0, 0.25, 0, 14);
+    this.cyl("lobTrunk", 0.1, 0.12, 1.0, this.mat("lobTrunk", "#7a5a3a"), 0, 1.0, 0, 6);
+    this.sphere("lobLeaf0", 1.2, this.mat("lobLeaf",  "#6b8a4e"), 0,   1.7, 0);
+    this.sphere("lobLeaf1", 0.85, this.mat("lobLeaf2", "#8fa87c"), 0.3, 2.0, 0.2);
+
+    // Reception desk near south wall
+    this.box("recDesk", W * 0.4, 0.9, 0.5, this.mat("recDesk", "#e8e0d0"), 0, 0.45, -D / 2 + 1.0);
+
+    void H;
+  }
+
+  /**
+   * Returns [x0,x1,z0,z1] obstacle tuples (room-local) for each variant type,
+   * used to build the circle-vs-AABB room collider.
+   */
+  private variantObstacles(type: InteriorConfig["type"], W: number, D: number): [number, number, number, number][] {
+    switch (type) {
+      case "cafe":
+        return [
+          // L-shaped counter (northeast)
+          [W / 2 - 2.55, W / 2 - 0.05, D / 2 - 0.7, D / 2 - 0.05],
+          [W / 2 - 0.6,  W / 2 - 0.05, D / 2 - 1.7, D / 2 - 0.7 ],
+        ];
+      case "campus-corridor":
+        return [[-W / 2 + 0.05, -W / 2 + 0.6, -D / 2 + 0.05, D / 2 - 0.05]];
+      case "office":
+        return [
+          [-W / 2 + 0.3, -W / 2 + 1.4, -D / 4 - 0.4, D / 4 + 0.4],
+          [W / 2 - 1.4,  W / 2 - 0.3,  -D / 4 - 0.4, D / 4 + 0.4],
+        ];
+      case "mall-lobby":
+        return [[-0.6, 0.6, -0.6, 0.6]];
+      default:
+        return [];
+    }
   }
 
   dispose() {
