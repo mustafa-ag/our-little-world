@@ -98,6 +98,13 @@ export const HERO_ASSETS = {
   // Blender nature (E2) with fallbacks registered by kit/foliage.ts
   "tree-cypress": { url: glb("tree-cypress"), source: "blender", variant: foliageVariant },
   heather: { url: glb("heather"), shadow: false, source: "blender" },
+  // UAE/Gulf region assets (tools/blender)
+  "date-palm": { url: glb("date-palm"), source: "blender", variant: foliageVariant },
+  "ghaf-tree": { url: glb("ghaf-tree"), source: "blender", variant: foliageVariant },
+  bougainvillea: { url: glb("bougainvillea"), shadow: false, source: "blender", variant: foliageVariant },
+  "uae-villa": { url: glb("uae-villa"), source: "blender" },
+  "uae-tower-podium": { url: glb("uae-tower-podium"), source: "blender" },
+  "uae-wall": { url: glb("uae-wall"), source: "blender" },
 } satisfies Record<string, HeroEntry>;
 
 export type HeroKey = keyof typeof HERO_ASSETS;
