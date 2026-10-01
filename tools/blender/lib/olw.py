@@ -82,6 +82,7 @@ PALETTE = {
 SLOTS = [
     "olw_stone", "olw_stone_dark", "olw_roof_tile", "olw_slate", "olw_wood", "olw_wood_dark",
     "olw_paint", "olw_metal", "olw_glass", "olw_glass_emissive", "olw_awning", "olw_foliage", "olw_flower",
+    "olw_bark",
 ]
 
 # runtime textured slots: exported as "<slot>_abs"; the game multiplies COLOR_0
