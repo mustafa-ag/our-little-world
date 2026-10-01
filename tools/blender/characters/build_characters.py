@@ -244,6 +244,38 @@ def spline(ctrl, n):
     return out
 
 
+def sphere_y(c, r, su=10, sv=5, col=(1, 1, 1), tag=T_HEAD):
+    """UV sphere with Y poles; su=longitudinal seg, sv=latitudinal rings."""
+    P = Part()
+    c = Vector(c)
+    rings = []
+    for i in range(1, sv):
+        lat = math.pi * i / sv - math.pi / 2
+        cl, sl = math.cos(lat), math.sin(lat)
+        row = []
+        for j in range(su):
+            lon = 2 * math.pi * j / su
+            row.append(c + Vector((r * cl * math.cos(lon), r * sl, r * cl * math.sin(lon))))
+        rings.append(row)
+    P.grid(rings, closed=True, col=col, tag=tag,
+           cap0=c + Vector((0, -r, 0)), cap1=c + Vector((0, r, 0)))
+    return P
+
+
+def disc_neg_y(c, r, col=(1, 1, 1), tag=T_HEAD, seg=10):
+    """Flat disc in X-Z plane; normal faces -Y (toward the camera)."""
+    P = Part()
+    c = Vector(c)
+    ci = P.vert(c, col, tag)
+    for j in range(seg):
+        a = 2 * math.pi * j / seg
+        P.vert(c + Vector((r * math.cos(a), 0, r * math.sin(a))), col, tag)
+    for j in range(seg):
+        # CCW around +Y → normal = -Y (forward-facing)
+        P.f.append((ci, ci + 1 + j, ci + 1 + (j + 1) % seg))
+    return P
+
+
 # ----------------------------------------------------------------------------
 # body design (Blender units before the final uniform scale; front = -Y, left = +X)
 # ----------------------------------------------------------------------------
@@ -477,9 +509,10 @@ def build_head(D):
 FACE_W = 0.24  # face texture covers a 0.24 x 0.24 window in front of the head
 
 
-def build_face_decal(D, head_rings):
-    """A shell over the front of the head (same vertices, pushed out 1.2 mm) with
-    planar UVs into the painted face texture."""
+def build_face_surface(D, head_rings):
+    """A convex shell over the front of the head (same vertices, pushed out 1.2 mm)
+    with planar UVs into the painted face texture. Window is slightly wider/taller
+    than the original decal to capture more of the face relief geometry."""
     P = Part()
     P.uv = []
     fz0 = D.HC.z - 0.13
@@ -488,7 +521,7 @@ def build_face_decal(D, head_rings):
 
     def inside(p):
         d = p - D.HC
-        return d.y < -0.03 and abs(d.x) < 0.108 and -0.125 < d.z < 0.075
+        return d.y < -0.03 and abs(d.x) < 0.118 and -0.132 < d.z < 0.086
 
     rx, ry, rz = D.HR
     for i in range(len(head_rings) - 1):
@@ -507,6 +540,115 @@ def build_face_decal(D, head_rings):
                     P.uv.append(((p.x + FACE_W / 2) / FACE_W, (p.z - fz0) / FACE_W))
                 ids.append(keep[key])
             P.f.append(tuple(ids))
+    return P
+
+
+# ---------------------------------------------------------------- eye geometry ----
+
+def _eye_pos(D, side):
+    """World position of the eye sphere centre, just in front of the head surface."""
+    rx, ry, rz = D.HR
+    ex, ez_rel = 0.047, -0.010
+    q = max(0.0, 1.0 - (ex / rx) ** 2 - (ez_rel / rz) ** 2)
+    ey_surface = D.HC.y - ry * math.sqrt(q)
+    return Vector((D.HC.x + side * ex, ey_surface + 0.005, D.HC.z + ez_rel))
+
+
+def build_eye_assembly(D, side):
+    """Sclera sphere + iris disc + pupil disc + specular highlight (material: olw_accent)."""
+    sr = 0.016
+    ec = _eye_pos(D, side)
+    P = Part()
+    # sclera (white of the eye)
+    P.extend(sphere_y(ec, sr, su=10, sv=5, col=(0.97, 0.96, 0.95), tag=T_HEAD))
+    # iris
+    iris_c = ec + Vector((0, -(sr * 0.82), 0))
+    P.extend(disc_neg_y(iris_c, sr * 0.59, col=(0.30, 0.17, 0.10), seg=10, tag=T_HEAD))
+    # pupil
+    pupil_c = ec + Vector((0, -(sr * 0.84), 0))
+    P.extend(disc_neg_y(pupil_c, sr * 0.29, col=(0.06, 0.03, 0.02), seg=8, tag=T_HEAD))
+    # specular highlight (small bright sphere)
+    hl_c = ec + Vector((-side * 0.005, -(sr * 0.87), sr * 0.35))
+    P.extend(sphere_y(hl_c, 0.0028, su=6, sv=3, col=(1.0, 1.0, 1.0), tag=T_HEAD))
+    return P
+
+
+def build_eyelids(D, side):
+    """Thin curved ribbons for upper and lower eyelids (material: olw_skin)."""
+    ec = _eye_pos(D, side)
+    sr = 0.016
+    ew, eh = 0.0165, 0.0205
+    P = Part()
+    n = 8
+    # upper lid
+    row0, row1 = [], []
+    for k in range(n):
+        t = k / (n - 1)
+        u = -1.0 + 2.0 * t
+        x = ec.x + side * ew * u
+        z = ec.z + eh * 0.72 - 0.003 * u * u
+        y_base = ec.y - sr * 0.72
+        row0.append(Vector((x, y_base, z)))
+        row1.append(Vector((x, y_base + 0.0008, z + 0.0015)))
+    P.grid([row0, row1], closed=False, col=(1, 1, 1), tag=T_HEAD)
+    # lower lid
+    row2, row3 = [], []
+    for k in range(n):
+        t = k / (n - 1)
+        u = -1.0 + 2.0 * t
+        x = ec.x + side * ew * u
+        z = ec.z - eh * 0.70 + 0.002 * u * u
+        y_base = ec.y - sr * 0.78
+        row2.append(Vector((x, y_base, z)))
+        row3.append(Vector((x, y_base + 0.0006, z - 0.001)))
+    P.grid([row2, row3], closed=False, col=(1, 1, 1), tag=T_HEAD)
+    return P
+
+
+def build_eyelashes(D, side):
+    """Thin tapered triangle lashes along the upper eyelid arc (material: olw_hair)."""
+    ec = _eye_pos(D, side)
+    sr = 0.016
+    ew, eh = 0.0165, 0.0205
+    P = Part()
+    n_lash = 7
+    for k in range(n_lash):
+        t = (k + 0.5) / n_lash
+        u = -0.85 + 1.7 * t
+        x = ec.x + side * ew * u
+        z_lid = ec.z + eh * 0.72 - 0.003 * u * u
+        y_lid = ec.y - sr * 0.76
+        lash_len = 0.005 * (1.0 - abs(u) * 0.35)
+        half_w = 0.0007
+        v0 = P.vert(Vector((x - half_w * side, y_lid, z_lid)), (0.15, 0.08, 0.06), T_HEAD)
+        v1 = P.vert(Vector((x + half_w * side, y_lid, z_lid)), (0.15, 0.08, 0.06), T_HEAD)
+        v2 = P.vert(Vector((x, y_lid - 0.0005, z_lid + lash_len)), (0.08, 0.04, 0.03), T_HEAD)
+        P.f.append((v0, v2, v1) if side > 0 else (v1, v2, v0))
+    return P
+
+
+def build_eyebrow(D, side):
+    """Raised half-cylinder strip following the brow arch (material: olw_hair)."""
+    ec = _eye_pos(D, side)
+    ew = 0.0165
+    bz_base = ec.z + 0.043
+    ctrl_xz = [
+        (side * (-ew * 1.15), bz_base - 0.004),
+        (side * (-ew * 0.35), bz_base + 0.005),
+        (side * (ew * 0.50), bz_base + 0.002),
+        (side * (ew * 1.25), bz_base - 0.005),
+    ]
+    brow_pts = spline([Vector((c[0], ec.y - 0.008, c[1])) for c in ctrl_xz], 8)
+
+    def brow_sec(i, t, th):
+        w = 0.0038 * (0.7 + 0.3 * math.sin(math.pi * clamp(t)))
+        h = 0.0012
+        return (h * math.cos(th), w * math.sin(th))
+
+    rings, fr = tube(brow_pts, brow_sec, 6, up_hint=(0, -1, 0))
+    P = Part()
+    P.grid(rings, closed=True, col=(0.20, 0.12, 0.09), tag=T_HEAD,
+           cap0=brow_pts[0] - fr[0][2] * 0.002, cap1=brow_pts[-1] + fr[-1][2] * 0.002)
     return P
 
 
@@ -910,10 +1052,37 @@ def build_hair_juju(D):
     col = hair_col_fn(D, root=0.60, tip=1.0, z_root=0.95, z_tip=0.46)
     parts = []
     # --- cap (solidified later as its own object, then merged)
-    rings, top, C = cap_rings(D, juju_hairline, seg=32, nr=8, crown=0.012)
-    cap = Part()
-    cap.grid(rings, closed=True, col=lambda p, i, j: col(p), tag=T_HAIR_CAP, cap1=top)
-    parts.append(("cap", cap, 0.013))
+    # --- hair cap replaced with 5 curved clumps: no solidify, clean tapered masses
+    hrx_c, hry_c, hrz_c = D.HR
+
+    def on_skull(x, zr, pad=0.012):
+        q = max(0.02, 1.0 - (x / hrx_c) ** 2 - (zr / hrz_c) ** 2)
+        ys = -hry_c * math.sqrt(q)
+        nrm = Vector((x / hrx_c ** 2, ys / hry_c ** 2, zr / hrz_c ** 2)).normalized()
+        return D.HC + Vector((x, ys, zr)) + nrm * pad
+
+    clump_defs = [
+        ("crown", [(0.004, 0.130), (0.006, 0.090), (0.008, 0.050), (0.010, 0.010)], T_HAIR_CAP, 0.020),
+        ("cL", [(0.022, 0.130), (0.065, 0.095), (0.100, 0.055), (0.118, 0.010), (0.125, -0.025)], T_HAIR_CAP, 0.022),
+        ("cR", [(-0.022, 0.130), (-0.065, 0.095), (-0.100, 0.055), (-0.118, 0.010), (-0.125, -0.025)], T_HAIR_CAP, 0.022),
+        ("bkL", [(0.048, 0.090), (0.058, 0.055), (0.065, 0.015), (0.068, -0.025)], T_HAIR_BACK, 0.018),
+        ("bkR", [(-0.048, 0.090), (-0.058, 0.055), (-0.065, 0.015), (-0.068, -0.025)], T_HAIR_BACK, 0.018),
+    ]
+    for cl_name, cl_ctrl, cl_tag, cl_w in clump_defs:
+        ctrl_pts = [on_skull(c[0], c[1]) for c in cl_ctrl]
+        cl_path = spline(ctrl_pts, max(4, len(ctrl_pts) * 2))
+        _cl_w = cl_w  # capture loop variable
+
+        def cl_sec(i, t, th, w=_cl_w):
+            r_w = w * (0.3 + 0.7 * math.sin(math.pi * clamp(t * 1.2)))
+            r_t = 0.006 * (1 - 0.5 * smoothstep(0.6, 1.0, t))
+            return (r_t * math.cos(th), r_w * math.sin(th))
+
+        cl_rings, cl_fr = tube(cl_path, cl_sec, 8, up_hint=(0, -1, 0))
+        cl_part = Part()
+        cl_part.grid(cl_rings, closed=True, col=lambda p, i, j: col(p), tag=cl_tag,
+                     cap0=cl_path[0] - cl_fr[0][2] * 0.003, cap1=cl_path[-1] + cl_fr[-1][2] * 0.004)
+        parts.append((f"clump_{cl_name}", cl_part, 0.0))
 
     # --- curtain fringe: two swept bangs from the parting across the forehead,
     # skimming the brow tails and flowing into the temples / side lengths
@@ -1765,7 +1934,24 @@ class Poser:
             pb.keyframe_insert("location", frame=frame, group=bone)
 
     def end(self, linear=False, cyclic=True):
-        for fc in self.act.fcurves:
+        # Iterate fcurves: bpy 4.x uses act.fcurves; bpy 5.x uses layered actions.
+        fcs = []
+        if hasattr(self.act, "fcurves"):
+            try:
+                fcs = list(self.act.fcurves)
+            except Exception:
+                pass
+        if not fcs:
+            for layer in getattr(self.act, "layers", []):
+                for strip in layer.strips:
+                    cb = getattr(strip, "channelbag", None)
+                    if cb is not None:
+                        try:
+                            bag = cb() if callable(cb) else cb
+                            fcs.extend(bag.fcurves)
+                        except Exception:
+                            pass
+        for fc in fcs:
             for kp in fc.keyframe_points:
                 kp.interpolation = "LINEAR" if linear else "BEZIER"
                 if not linear:
@@ -2017,7 +2203,19 @@ def build_character(kind, tmpdir):
 
     rgba = paint_face(D, npc=not juju, male=kind == "male")
     img = face_image(f"{kind}_face", rgba, os.path.join(tmpdir, f"{kind}_face.png"))
-    objs["face"] = make_object("face", build_face_decal(D, head_rings), "olw_face", img)
+    objs["face"] = make_object("face", build_face_surface(D, head_rings), "olw_face", img)
+
+    if juju:
+        for _side in (1, -1):
+            _sfx = "L" if _side > 0 else "R"
+            objs[f"eye_{_sfx}"] = make_object(f"eye_{_sfx}", build_eye_assembly(D, _side), "olw_accent")
+            objs[f"eyelid_{_sfx}"] = make_object(f"eyelid_{_sfx}", build_eyelids(D, _side), "olw_skin")
+            objs[f"lash_{_sfx}"] = make_object(f"lash_{_sfx}", build_eyelashes(D, _side), "olw_hair")
+            objs[f"brow_{_sfx}"] = make_object(f"brow_{_sfx}", build_eyebrow(D, _side), "olw_hair")
+        # viewport SubD on skin mesh (display quality; export_apply=False keeps tris unchanged in GLB)
+        _subd = objs["skin"].modifiers.new("subd", "SUBSURF")
+        _subd.levels = 1
+        _subd.subdivision_type = "CATMULL_CLARK"
 
     objs["top"] = make_object("top", build_top(D), "olw_top")
     if juju:
