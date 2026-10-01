@@ -21,6 +21,58 @@ import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { WorldArtProfile } from "../world/artProfile";
 
+// ---------------------------------------------------------------------------
+// TextureSet: a bundle of PBR texture URLs loaded from external files.
+
+export interface TextureSet {
+  baseColor?: string;  // URL to base color PNG
+  normal?: string;     // URL to normal map PNG (OpenGL Y-up convention)
+  orm?: string;        // R=occlusion, G=roughness, B=metallic
+  emissive?: string;   // URL to emissive PNG
+  tilingU?: number;
+  tilingV?: number;
+}
+
+/**
+ * Create a PBRMaterial from a set of texture URLs. Each provided URL is loaded
+ * as a Texture and wired to the appropriate PBR slot. Tiling is applied via
+ * uScale/vScale on each texture.
+ */
+export function loadTextureSet(scene: Scene, set: TextureSet, name: string): PBRMaterial {
+  const mat = new PBRMaterial(name, scene);
+  if (set.baseColor !== undefined) {
+    const t = new Texture(set.baseColor, scene);
+    if (set.tilingU !== undefined) t.uScale = set.tilingU;
+    if (set.tilingV !== undefined) t.vScale = set.tilingV;
+    mat.albedoTexture = t;
+  }
+  if (set.normal !== undefined) {
+    // invertY=true converts OpenGL Y-up normal maps to BabylonJS (DirectX) convention
+    const t = new Texture(set.normal, scene, undefined, true);
+    if (set.tilingU !== undefined) t.uScale = set.tilingU;
+    if (set.tilingV !== undefined) t.vScale = set.tilingV;
+    mat.bumpTexture = t;
+    mat.invertNormalMapX = false;
+    mat.invertNormalMapY = false; // Y already flipped via texture invertY
+  }
+  if (set.orm !== undefined) {
+    const t = new Texture(set.orm, scene);
+    if (set.tilingU !== undefined) t.uScale = set.tilingU;
+    if (set.tilingV !== undefined) t.vScale = set.tilingV;
+    mat.metallicTexture = t;
+    mat.useAmbientOcclusionFromMetallicTextureRed = true;
+    mat.useRoughnessFromMetallicTextureGreen = true;
+    mat.useMetallnessFromMetallicTextureBlue = true;
+  }
+  if (set.emissive !== undefined) {
+    const t = new Texture(set.emissive, scene);
+    if (set.tilingU !== undefined) t.uScale = set.tilingU;
+    if (set.tilingV !== undefined) t.vScale = set.tilingV;
+    mat.emissiveTexture = t;
+  }
+  return mat;
+}
+
 export const PALETTE = {
   cream: "#f0e2c6",
   creamLight: "#f8efdb",
@@ -61,6 +113,24 @@ export const PALETTE = {
 
 export type PaletteKey = keyof typeof PALETTE;
 
+// ---------------------------------------------------------------------------
+// UAE (Gulf / desert) colour palette — used by the UAE material factories below.
+
+const UAE_PALETTE = {
+  stucco:       '#f5eed8',
+  stuccoWhite:  '#f8f4ed',
+  stone:        '#e8ddc8',
+  marble:       '#f0ece4',
+  marbleGrey:   '#d8d4cc',
+  tintedGlass:  '#1a2535',
+  brushedMetal: '#8a8e95',
+  warmWood:     '#8a5a3a',
+  concrete:     '#c8c4b8',
+  asphalt:      '#4a4840',
+  pavement:     '#ddd4bc',
+  sand:         '#c8b898',
+} as const;
+
 /**
  * Hue-neutral light grey the Blender "detail" textures are painted with: the
  * *_abs slots multiply it by COLOR_0 (absolute colour ÷ 0.91, see
@@ -92,7 +162,7 @@ function vary(hex: string, t: number, jitter = 0) {
   return rgb(c.r + (to - c.r) * k + j, c.g + (to - c.g) * k + j, c.b + (to - c.b) * k + j);
 }
 
-export type TexStyle = "noise" | "stone" | "cobble" | "roof" | "slate" | "planks" | "grass" | "awning" | "paving" | "bark" | "canvas";
+export type TexStyle = "noise" | "stone" | "cobble" | "roof" | "slate" | "planks" | "grass" | "awning" | "paving" | "bark" | "canvas" | "stucco" | "marble" | "paving_tile";
 
 /**
  * Runtime material slots (see assets/hero/slots.ts). `Materials.slot(name)`
@@ -389,6 +459,152 @@ export function makeWood(scene: Scene, name: string, color: ColorInput = PALETTE
   return makePBR(scene, name, { albedo: color, roughness: 0.7, metallic: 0 });
 }
 
+// ---------------------------------------------------------------------------
+// UAE (Gulf / desert) material factories
+
+/** Fine sand-grain stucco for Gulf facades. */
+export function makeUAEStucco(scene: Scene, colour: ColorInput = UAE_PALETTE.stucco): PBRMaterial {
+  const colKey = typeof colour === "string" ? colour : "color3";
+  const mat = makePBR(scene, `uae_stucco:${colKey}`, { albedo: colour, roughness: 0.82, metallic: 0.0 });
+  // High-frequency, low-strength normal map for sand-grain texture
+  const n = proceduralNormalMap(scene, `uae_stucco:normal:${colKey}`, 128, 12, 0.22, 419);
+  n.level = 0.6;
+  mat.bumpTexture = n;
+  return mat;
+}
+
+/** Polished or honed marble for lobbies, plazas. Procedural vein albedo. */
+export function makeUAEMarble(scene: Scene, polished = false): PBRMaterial {
+  const matName = polished ? "uae_marble_polished" : "uae_marble_honed";
+  const mat = makePBR(scene, matName, { roughness: polished ? 0.05 : 0.3, metallic: 0.0 });
+  // Procedural marble albedo texture: cream base with diagonal vein lines
+  const size = 512;
+  const tex = new DynamicTexture(`${matName}:albedo`, { width: size, height: size }, scene, true);
+  tex.wrapU = Texture.WRAP_ADDRESSMODE;
+  tex.wrapV = Texture.WRAP_ADDRESSMODE;
+  const mctx = tex.getContext() as CanvasRenderingContext2D;
+  mctx.fillStyle = UAE_PALETTE.marble;
+  mctx.fillRect(0, 0, size, size);
+  // Soft blotches for natural tonal variation
+  for (let i = 0; i < 8; i++) {
+    const bx = rnd() * size;
+    const by = rnd() * size;
+    const br = 40 + rnd() * 80;
+    const grd = mctx.createRadialGradient(bx, by, 0, bx, by, br);
+    grd.addColorStop(0, "rgba(240,235,220,0.18)");
+    grd.addColorStop(1, "rgba(240,235,220,0)");
+    mctx.fillStyle = grd;
+    mctx.fillRect(0, 0, size, size);
+  }
+  // 3–4 thin diagonal vein lines in grey-beige
+  const veins = 3 + (rnd() > 0.5 ? 1 : 0);
+  mctx.lineCap = "round";
+  for (let v = 0; v < veins; v++) {
+    const vx0 = rnd() * size;
+    const vy0 = rnd() * size;
+    const angle = Math.PI * (0.15 + rnd() * 0.25);
+    const len = size * (0.6 + rnd() * 0.6);
+    const nx = Math.cos(angle + Math.PI / 2);
+    const ny = Math.sin(angle + Math.PI / 2);
+    const vr = 180 + Math.floor(rnd() * 30);
+    const vg = 175 + Math.floor(rnd() * 25);
+    const vb = 160 + Math.floor(rnd() * 20);
+    mctx.strokeStyle = `rgba(${vr},${vg},${vb},0.55)`;
+    mctx.lineWidth = 0.8 + rnd() * 1.5;
+    mctx.beginPath();
+    const steps = 40;
+    for (let i = 0; i <= steps; i++) {
+      const tt = i / steps;
+      const px = vx0 + Math.cos(angle) * len * tt + nx * (rnd() - 0.5) * 10;
+      const py = vy0 + Math.sin(angle) * len * tt + ny * (rnd() - 0.5) * 10;
+      if (i === 0) mctx.moveTo(px, py);
+      else mctx.lineTo(px, py);
+    }
+    mctx.stroke();
+    // Faint sub-vein alongside the main vein
+    mctx.strokeStyle = "rgba(200,195,180,0.25)";
+    mctx.lineWidth = 0.4 + rnd();
+    mctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const tt = i / steps;
+      const px = vx0 + Math.cos(angle) * len * tt + nx * ((rnd() - 0.5) * 8 + 4);
+      const py = vy0 + Math.sin(angle) * len * tt + ny * ((rnd() - 0.5) * 8 + 4);
+      if (i === 0) mctx.moveTo(px, py);
+      else mctx.lineTo(px, py);
+    }
+    mctx.stroke();
+  }
+  tex.update(false);
+  mat.albedoTexture = tex;
+  mat.onDisposeObservable.addOnce(() => tex.dispose());
+  return mat;
+}
+
+/** Deep blue-green tinted glass for towers and curtain walls. */
+export function makeUAETintedGlass(scene: Scene): PBRMaterial {
+  const mat = makePBR(scene, "uae_tinted_glass", {
+    albedo: UAE_PALETTE.tintedGlass,
+    roughness: 0.04,
+    metallic: 0.05,
+    alpha: 0.65,
+  });
+  mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  mat.backFaceCulling = false;
+  return mat;
+}
+
+/** Brushed aluminium / steel cladding panels. */
+export function makeUAEBrushedMetal(scene: Scene): PBRMaterial {
+  return makePBR(scene, "uae_brushed_metal", {
+    albedo: UAE_PALETTE.brushedMetal,
+    roughness: 0.4,
+    metallic: 0.92,
+  });
+}
+
+/** Warm teak / oak timber cladding with procedural grain. */
+export function makeUAEWarmWood(scene: Scene): PBRMaterial {
+  const mat = makePBR(scene, "uae_warm_wood", { albedo: UAE_PALETTE.warmWood, roughness: 0.78, metallic: 0.0 });
+  // Procedural grain texture (256 wide × 512 tall so grain runs along V)
+  const tw = 256;
+  const th = 512;
+  const tex = new DynamicTexture("uae_warm_wood:albedo", { width: tw, height: th }, scene, true);
+  tex.wrapU = Texture.WRAP_ADDRESSMODE;
+  tex.wrapV = Texture.WRAP_ADDRESSMODE;
+  const wctx = tex.getContext() as CanvasRenderingContext2D;
+  wctx.fillStyle = UAE_PALETTE.warmWood;
+  wctx.fillRect(0, 0, tw, th);
+  // Elongated thin noise lines along V axis (wood grain)
+  wctx.lineCap = "round";
+  for (let i = 0; i < 120; i++) {
+    const gx = rnd() * tw;
+    const dark = rnd() > 0.5;
+    wctx.strokeStyle = dark ? "rgba(40,20,8,0.13)" : "rgba(200,160,100,0.11)";
+    wctx.lineWidth = 0.6 + rnd() * 2.0;
+    wctx.beginPath();
+    let cx = gx;
+    wctx.moveTo(cx, 0);
+    for (let gy = 0; gy < th; gy += 8) {
+      cx += (rnd() - 0.5) * 3;
+      wctx.lineTo(cx, gy);
+    }
+    wctx.stroke();
+  }
+  // Occasional wood knot
+  for (let k = 0; k < 2; k++) {
+    if (rnd() > 0.4) {
+      wctx.fillStyle = "rgba(50,28,12,0.35)";
+      wctx.beginPath();
+      wctx.ellipse(rnd() * tw, rnd() * th, 4, 6, 0, 0, Math.PI * 2);
+      wctx.fill();
+    }
+  }
+  tex.update(false);
+  mat.albedoTexture = tex;
+  mat.onDisposeObservable.addOnce(() => tex.dispose());
+  return mat;
+}
+
 /**
  * Keyed cache of PBR materials. Materials disposed elsewhere drop out of the
  * cache automatically. `dispose()` leaves textures alone (they may be shared,
@@ -681,6 +897,61 @@ export class Materials {
     return this.textured(d.style, d.hex, d.scale ?? 1, d.emissive ? { emissive: d.emissive } : {});
   }
 
+  /** UAE stucco (lazy-cached by colour). */
+  uaeStucco(hex: string = UAE_PALETTE.stucco): Material {
+    const key = `uae_stucco:${hex}`;
+    const hit = this.pbrs.get(key);
+    if (hit) return hit;
+    const m = makeUAEStucco(this.scene, hex);
+    this.pbrs.set(key, m);
+    m.onDisposeObservable.addOnce(() => { if (this.pbrs.get(key) === m) this.pbrs.delete(key); });
+    return m;
+  }
+
+  /** UAE marble (lazy-cached by polished flag). */
+  uaeMarble(polished = false): Material {
+    const key = `uae_marble:${polished ? "polished" : "honed"}`;
+    const hit = this.pbrs.get(key);
+    if (hit) return hit;
+    const m = makeUAEMarble(this.scene, polished);
+    this.pbrs.set(key, m);
+    m.onDisposeObservable.addOnce(() => { if (this.pbrs.get(key) === m) this.pbrs.delete(key); });
+    return m;
+  }
+
+  /** UAE tinted glass (singleton). */
+  uaeTintedGlass(): Material {
+    const key = "uae_tinted_glass";
+    const hit = this.pbrs.get(key);
+    if (hit) return hit;
+    const m = makeUAETintedGlass(this.scene);
+    this.pbrs.set(key, m);
+    m.onDisposeObservable.addOnce(() => { if (this.pbrs.get(key) === m) this.pbrs.delete(key); });
+    return m;
+  }
+
+  /** UAE brushed metal (singleton). */
+  uaeBrushedMetal(): Material {
+    const key = "uae_brushed_metal";
+    const hit = this.pbrs.get(key);
+    if (hit) return hit;
+    const m = makeUAEBrushedMetal(this.scene);
+    this.pbrs.set(key, m);
+    m.onDisposeObservable.addOnce(() => { if (this.pbrs.get(key) === m) this.pbrs.delete(key); });
+    return m;
+  }
+
+  /** UAE warm wood (singleton). */
+  uaeWarmWood(): Material {
+    const key = "uae_warm_wood";
+    const hit = this.pbrs.get(key);
+    if (hit) return hit;
+    const m = makeUAEWarmWood(this.scene);
+    this.pbrs.set(key, m);
+    m.onDisposeObservable.addOnce(() => { if (this.pbrs.get(key) === m) this.pbrs.delete(key); });
+    return m;
+  }
+
   texture(style: TexStyle, hex: string): DynamicTexture {
     const key = `${style}:${hex}`;
     let t = this.texes.get(key);
@@ -932,6 +1203,74 @@ function paint(ctx: CanvasRenderingContext2D, s: number, style: TexStyle, hex: s
         ctx.moveTo(x, 0);
         ctx.bezierCurveTo(x + (rnd() - 0.5) * 12, s * 0.33, x + (rnd() - 0.5) * 12, s * 0.66, x, s);
         ctx.stroke();
+      }
+      break;
+    }
+    case "stucco": {
+      // Fine sand-grain noise: small blotches at low contrast
+      blotches(ctx, s, hex, 80, 0.04, s / 14);
+      // Scatter tiny pits / specks
+      for (let i = 0; i < 120; i++) {
+        ctx.fillStyle = vary(hex, rnd() > 0.5 ? -0.06 : 0.04, 0.01);
+        ctx.beginPath();
+        ctx.ellipse(rnd() * s, rnd() * s, 1 + rnd() * 2.5, 0.8 + rnd() * 2, rnd() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case "marble": {
+      // Cream/white base with 2–3 thin diagonal vein lines in grey-beige
+      ctx.fillStyle = vary(hex, 0.02, 0.005);
+      ctx.fillRect(0, 0, s, s);
+      blotches(ctx, s, hex, 6, 0.02, s / 5);
+      const veins = 2 + (rnd() > 0.5 ? 1 : 0);
+      ctx.lineCap = "round";
+      for (let v = 0; v < veins; v++) {
+        const vx0 = rnd() * s;
+        const vy0 = rnd() * s;
+        const angle = Math.PI * (0.18 + rnd() * 0.2);
+        const len = s * (0.7 + rnd() * 0.5);
+        const nx = Math.cos(angle + Math.PI / 2);
+        const ny = Math.sin(angle + Math.PI / 2);
+        const vr = 175 + Math.floor(rnd() * 25);
+        const vg = 170 + Math.floor(rnd() * 20);
+        const vb = 155 + Math.floor(rnd() * 20);
+        ctx.strokeStyle = `rgba(${vr},${vg},${vb},0.5)`;
+        ctx.lineWidth = 0.7 + rnd() * 1.2;
+        ctx.beginPath();
+        for (let i = 0; i <= 36; i++) {
+          const tt = i / 36;
+          const px = vx0 + Math.cos(angle) * len * tt + nx * (rnd() - 0.5) * 8;
+          const py = vy0 + Math.sin(angle) * len * tt + ny * (rnd() - 0.5) * 8;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      break;
+    }
+    case "paving_tile": {
+      // Cream/beige tile grid with thin joint lines (joint ~4% of tile width)
+      const n = 4;
+      const cw = s / n;
+      const joint = Math.max(1, cw * 0.04);
+      // Joint fill (darker)
+      ctx.fillStyle = vary(hex, -0.14, 0);
+      ctx.fillRect(0, 0, s, s);
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          const tx = c * cw + joint;
+          const ty = r * cw + joint;
+          const tw2 = cw - joint * 2;
+          const th2 = cw - joint * 2;
+          ctx.fillStyle = vary(hex, (rnd() - 0.5) * 0.08, 0.01);
+          roundRect(ctx, tx, ty, tw2, th2, 1.5);
+          ctx.fill();
+          // Subtle highlight on upper half
+          ctx.fillStyle = "rgba(255,252,240,0.07)";
+          roundRect(ctx, tx, ty, tw2, th2 * 0.45, 1.5);
+          ctx.fill();
+        }
       }
       break;
     }
