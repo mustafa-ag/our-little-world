@@ -39,6 +39,8 @@ import { createLabel, type Label } from "./entities/Label";
 import { InteriorScene, type InteriorStyle } from "./scenes/interiorScene";
 import { DrivingScene } from "./scenes/drivingScene";
 import { uiEvents } from "../game/systems/controls";
+import { isAnniversary } from "../game/data/anniversary";
+import { createAnniversaryFx, type AnniversaryFx } from "./rendering/anniversary";
 
 interface Loaded {
   id: string;
@@ -126,6 +128,9 @@ export class Game3D {
   private indoors: Indoors | null = null;
   /** The arcade road trip, while driving (the exterior stays loaded). */
   private driving: Driving | null = null;
+  /** October 11 only: petals, hearts, rose tint, fireworks. */
+  private anniv: AnniversaryFx | null = null;
+  private readonly onAnnivFireworks = () => this.anniv?.fireworks();
 
   constructor(root: HTMLElement) {
     this.host = createRenderHost(root);
@@ -145,9 +150,15 @@ export class Game3D {
       addCaster: (m) => this.lighting.addCaster(m),
       removeCaster: (m) => this.lighting.removeCaster(m),
     });
+    if (isAnniversary()) {
+      this.anniv = createAnniversaryFx(scene, isMobile);
+      uiEvents.on("anniversaryFireworks", this.onAnnivFireworks);
+    }
     this.stopAtmo = this.lighting.onAtmosphere((a) => {
       this.sky.setAtmosphere(a);
       this.backdrop?.setAtmosphere(a);
+      // after the blend wrote the hemi colours, warm them golden-rose
+      this.anniv?.tint(this.lighting.hemi);
     });
     this.kit = { scene, mats: this.mats, lighting: this.lighting };
     this.am = new AssetManager(this.kit);
@@ -385,6 +396,7 @@ export class Game3D {
     l.controller.setup(performance.now(), { travelled: l.travelled, fresh: opts.fresh });
     // NPCs are spawned by setup(); hand their spots to the DOM maps
     mapFeed.setNpcs([...l.npcs.values()].map((n) => ({ id: n.def.id, name: n.def.name, x: n.x, z: n.z })));
+    if (this.anniv) uiEvents.emit("anniversaryArrived", l.id);
   }
 
   /**
@@ -618,6 +630,7 @@ export class Game3D {
     this.camera.setTarget(s.x, s.z, false, gy);
     this.camera.update(dt);
     this.lighting.follow(s.x, s.z);
+    this.anniv?.update(s.x, gy, s.z);
     const cam = this.camera.camera.position;
     this.sky.update(dt, cam);
     l.backdrop.update(cam);
@@ -724,6 +737,9 @@ export class Game3D {
     this.stopUpdate?.();
     this.unload();
     this.stopAtmo();
+    uiEvents.off("anniversaryFireworks", this.onAnnivFireworks);
+    this.anniv?.dispose();
+    this.anniv = null;
     this.occlusion.dispose();
     this.sky.dispose();
     this.am.disposeScene();

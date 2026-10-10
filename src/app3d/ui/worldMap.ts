@@ -12,6 +12,7 @@
 //     quests need it.
 //   - only locations with a 3D scene (PORTED_LOCATIONS) are listed.
 import { store } from "../../game/systems/store";
+import { isAnniversary, specialPlace } from "../../game/data/anniversary";
 import { currentStep, statusOf } from "../../game/systems/quests";
 import { QUESTS } from "../../game/data/quests";
 import { CITIES, LOCATIONS, districtsOf, type LocationDef } from "../../game/data/locations";
@@ -119,12 +120,15 @@ export function worldMapView(md: Disposer, travel: (id: string) => void): HTMLEl
           a.state === "here" ? "You're here" : a.state === "open" ? (a.quest ? "Quest" : "Unlocked") : "Locked";
         const detail = a.state === "locked" ? a.reason : a.state === "open" && a.quest ? `Quest: ${a.quest}` : loc.subtitle;
         const go = a.state === "open" ? travelButton(loc) : null;
-        return el("li", { class: `olw-world-loc olw-world-loc--${a.state}` }, [
+        // October 11: our special places wear a gold star and their memory
+        const special = isAnniversary() ? specialPlace(loc.id) : undefined;
+        return el("li", { class: `olw-world-loc olw-world-loc--${a.state}${special ? " olw-world-loc--special" : ""}` }, [
           el("div", { class: "olw-world-loc-head" }, [
-            el("span", { class: "olw-world-loc-name", text: loc.name }),
+            el("span", { class: "olw-world-loc-name", text: special ? `★ ${loc.name}` : loc.name }),
             el("span", { class: `olw-world-chip olw-world-chip--${a.state}`, text: chip }),
           ]),
           el("span", { class: "olw-world-loc-detail", text: detail }),
+          special ? el("span", { class: "olw-world-loc-special", text: `Our special place — ${special.memory}` }) : null,
           go,
         ]);
       });
