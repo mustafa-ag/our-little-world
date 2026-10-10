@@ -16,6 +16,7 @@ import {
 } from "../../game/data/anniversary";
 import { button, el, icon, prefersReducedMotion } from "./dom";
 import type { UIContext } from "./context";
+import { playAnniversaryStory } from "./anniversaryStory";
 
 const PETALS = 18;
 
@@ -122,7 +123,7 @@ export function mountAnniversary(ctx: UIContext) {
           placesList(),
         ],
         cta: "Let's celebrate 🎉",
-        onClose: bouquet,
+        onClose: () => playAnniversaryStory(ctx, d, bouquet),
       });
     }, 450);
   });
